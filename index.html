@@ -40,11 +40,13 @@
     font-size:16.5px;line-height:1.65;margin:0;
     padding:clamp(1.4rem,4vw,3.5rem) clamp(.9rem,1.5vw,1.5rem) 6rem;
     -webkit-font-smoothing:antialiased}
-  /* 114rem (2026-09-24, owner): exactly wide enough that the Board's FULL
-     column set (~1820px measured with everything checked) fits without
-     horizontal scrolling, and no wider — full-bleed sprawled too much on
-     the default view. Reading-width tabs re-cap themselves below. */
-  .wrap{max-width:114rem;margin:0 auto;display:flex;flex-direction:column;gap:3rem}
+  /* 100rem (2026-09-25, owner: "fills the whole screen" at 114rem). All
+     Board columns are on by default and need ~1430px of natural width (the
+     player column only stretches to fill), so 1600px still fits them with
+     no horizontal scroll on wide screens. Below ~1470px viewport the table
+     scrolls inside its own frame, as it did at 114rem. Side padding kept
+     as before so laptops are unchanged. Reading-width tabs re-cap below. */
+  .wrap{max-width:100rem;margin:0 auto;display:flex;flex-direction:column;gap:3rem}
   .prose{max-width:40rem;display:flex;flex-direction:column;gap:1rem}
   /* A <p class="prose"> must stay a block: as a flex column every inline
      <strong>/<em> became its own flex item and broke onto its own line. */
