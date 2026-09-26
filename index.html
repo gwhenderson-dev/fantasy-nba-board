@@ -298,9 +298,10 @@
   .scoregrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(5.6rem,1fr));gap:.45rem .7rem}
   .scoregrid label{display:flex;flex-direction:column;gap:.2rem;font-family:var(--mono);
     font-size:.66rem;letter-spacing:.08em;color:var(--muted)}
-  .scoregrid input,.weeks input{font:inherit;font-family:var(--mono);font-size:.84rem;color:var(--ink);
+  .scoregrid input,.scoregrid select,.weeks input{font:inherit;font-family:var(--mono);font-size:.84rem;color:var(--ink);
     background:var(--paper);border:1px solid var(--rule-strong);border-radius:8px;
     padding:.3rem .4rem;width:100%;min-height:1.9rem}
+  .scoregrid select{cursor:pointer}
   .weeks{display:flex;gap:.9rem;align-items:flex-end;flex-wrap:wrap}
   .weeks label{display:flex;flex-direction:column;gap:.2rem;font-family:var(--mono);
     font-size:.66rem;letter-spacing:.08em;color:var(--muted);width:6.4rem}
@@ -445,7 +446,7 @@
         </div>
         <div class="scoregrid" style="margin-top:.5rem;grid-template-columns:repeat(4,minmax(5.6rem,8rem))">
           <label>DD<input type="number" step="1" data-bonus="DD" value="0"></label><label>TD<input type="number" step="1" data-bonus="TD" value="5"></label><label>QD<input type="number" step="1" data-bonus="QD" value="50"></label>
-          <label>cumulative<select id="cum"><option value="1">yes</option><option value="0">no</option></select></label>
+          <label title="Yes: a triple-double earns the DD bonus AND the TD bonus (ESPN default, and this league). No: it earns only the highest bonus reached.">Bonuses stack<select id="cum"><option value="1">Yes</option><option value="0">No</option></select></label>
         </div>
       </div>
       <div style="flex:1 1 18rem;display:flex;flex-direction:column;gap:.8rem">
@@ -467,6 +468,8 @@
           All-Star weeks are merged). Replacement level is teams &times; roster
           spots + 1. Recovery is the share of a missed game you get back from
           the waiver wire &mdash; lower it if your league has few adds or one IR slot.
+          <strong>Bonuses stack</strong>: with Yes a triple-double also earns the
+          double-double bonus; with No it earns only the highest bonus reached.
         </p>
       </div>
     </div>
