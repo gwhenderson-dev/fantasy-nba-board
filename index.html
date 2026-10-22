@@ -450,12 +450,14 @@
   .w-sub{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
   .w-sub .fa{color:var(--good);font-weight:640} .w-sub .wv{color:var(--tag-yellow);font-weight:640}
   .w-sub .oo{color:var(--warn);font-weight:640}
-  .w-sig{display:flex;gap:.3rem;flex-wrap:wrap}
-  .w-sig span{font-family:var(--mono);font-size:.68rem;border:1px solid var(--rule-strong);
-    border-radius:7px;padding:.08rem .35rem;color:var(--body);white-space:nowrap}
-  .w-sig span.up{color:var(--good);border-color:var(--good)}
-  .w-sig span.dn{color:var(--warn);border-color:var(--warn)}
-  .w-sig span.hot{color:var(--warn)} .w-sig span.cool{color:var(--good)}
+  .w-sig{display:flex;gap:.45rem;align-items:baseline;flex-wrap:wrap}
+  .w-badge{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;font-weight:680;
+    border-radius:7px;padding:.14rem .45rem;white-space:nowrap}
+  .w-badge.buy{color:var(--paper);background:var(--good)}
+  .w-badge.fade{color:var(--paper);background:var(--warn)}
+  .w-badge.mixed{color:var(--ink);background:var(--band);border:1px solid var(--rule-strong)}
+  .w-badge.steady{color:var(--muted);border:1px solid var(--rule-strong)}
+  .w-phrase{font-size:.78rem;color:var(--body);line-height:1.35}
   .w-right{flex:none;text-align:right;display:flex;flex-direction:column;gap:.1rem}
   .w-right b{font-family:var(--mono);font-size:1.25rem;color:var(--ink);letter-spacing:-.01em}
   .w-right span{font-family:var(--mono);font-size:.64rem;color:var(--muted);white-space:nowrap}
@@ -1416,6 +1418,18 @@
         <button type="button" class="fchip" id="wweek" aria-pressed="false" title="Ranked by rest-of-season FP/G x games in the next 7 days">Next 7 days</button></div></div>
       <span class="count" id="waddcount"></span>
     </div>
+    <p class="note" style="max-width:none">
+      Read a card left to right: <strong>who</strong> &rarr; <strong>the
+      verdict</strong> &rarr; <strong>what he&rsquo;s worth</strong> (big
+      number = projected FP per game from here on, under your scoring) and
+      tonight&rsquo;s opponent. <span class="lg-buy">REAL RISE</span> =
+      minutes/shots/assists genuinely up, not luck-driven &middot;
+      <span style="color:var(--warn)">MIRAGE</span> = big box scores built
+      on luck &middot; <span class="lg-buy">QUIET BUY</span> = playing
+      better than his box score looks &middot; RISE, RAN HOT = role is
+      real but the point totals are inflated. Hover any card for the exact
+      numbers.
+    </p>
     <div class="wadds" id="wadds"></div>
     <div class="prose" style="margin-top:1rem"><h2 style="margin-bottom:0">The working &mdash; every game, process vs luck</h2></div>
     <div class="tablewrap proof-wrap" id="wwrap">
@@ -2870,25 +2884,43 @@
       (wireLeague ? " available" : " (load a league to filter to YOUR free agents)") +
       (wWindow === "tonight" ? " · playing " + (tonight || "-") : " · next 7 days");
     wrap.innerHTML = list.map(function (a, i) {
-      var p = a.p, r = a.row, sig = [];
-      if (r && r.dmin != null) {
-        sig.push('<span class="' + (r.dmin > 0 ? "up" : r.dmin < 0 ? "dn" : "") + '"' +
-          (r.sg > 0 ? ' title="' + r.sg + " of " + r.gp + ' games came without a key starter — minutes gained there keep ~41% when he returns"' : "") +
-          '>ΔMin ' + (r.dmin > 0 ? "+" : "") + r.dmin.toFixed(1) + (r.sg > 0 ? "°" : "") + "</span>");
-      }
-      if (r && r.dfga36 != null)
-        sig.push('<span class="' + (r.dfga36 > 0 ? "up" : "dn") + '">FGA/36 ' + (r.dfga36 > 0 ? "+" : "") + r.dfga36.toFixed(1) + "</span>");
-      if (r && r.ast != null && Math.abs(r.ast) >= 1)
-        sig.push('<span class="' + (r.ast > 0 ? "up" : "dn") + '">Ast ' + (r.ast > 0 ? "+" : "") + r.ast.toFixed(1) + "</span>");
-      if (r && r.luck != null && Math.abs(r.luck) >= 3)
-        sig.push('<span class="' + (r.luck > 0 ? "hot" : "cool") + '" title="' +
-          (r.luck > 0 ? "box score has overstated him — fade the surface stats" : "box score has understated him — quiet buy") +
-          '">Luck ' + (r.luck > 0 ? "+" : "") + r.luck.toFixed(0) + "</span>");
-      if (!r) sig.push("<span>no games yet</span>");
-      else sig.push("<span>" + r.gp + " gp · " + (r.fppg == null ? "-" : r.fppg.toFixed(1)) + " FP/G</span>");
+      var p = a.p, r = a.row;
+      // one plain-words verdict per card; the exact numbers live on hover
+      var v = (function () {
+        if (!r || r.dmin == null)
+          return {cls: "steady", badge: "NO GAMES YET",
+                  phrase: "ranked on the projection alone", tip: ""};
+        var role = r.dmin >= 3, roleDn = r.dmin <= -3;
+        var usage = (r.dfga36 != null && r.dfga36 >= 2) || (r.ast != null && r.ast >= 2);
+        var hot = r.luck != null && r.luck >= 8, cold = r.luck != null && r.luck <= -8;
+        var bits = [];
+        if (role) bits.push("minutes up +" + r.dmin.toFixed(0) +
+          (r.sg > 0 ? " (starter was out)" : ""));
+        if (roleDn) bits.push("minutes down " + Math.abs(r.dmin).toFixed(0));
+        if (r.dfga36 != null && r.dfga36 >= 2) bits.push("shooting it more");
+        if (r.dfga36 != null && r.dfga36 <= -2) bits.push("shooting it less");
+        if (r.ast != null && r.ast >= 2) bits.push("more playmaking");
+        if (hot) bits.push("box score flattered by luck");
+        if (cold) bits.push("played better than the box score shows");
+        var b2 = hot && !(role || usage) ? ["fade", "MIRAGE"]
+          : (role || usage) && hot ? ["mixed", "RISE, RAN HOT"]
+          : (role || (usage && !roleDn)) ? ["buy", "REAL RISE"]
+          : cold ? ["buy", "QUIET BUY"]
+          : roleDn ? ["fade", "ROLE DOWN"] : ["steady", "STEADY"];
+        return {cls: b2[0], badge: b2[1],
+          phrase: bits.length ? bits.join(" · ") : "nothing unusual in " + r.gp + " game" + (r.gp > 1 ? "s" : ""),
+          tip: "ΔMin " + (r.dmin > 0 ? "+" : "") + r.dmin.toFixed(1) + (r.sg > 0 ? "° (" + r.sg + "/" + r.gp + " shorthanded)" : "") +
+            " · ΔFGA/36 " + (r.dfga36 == null ? "-" : (r.dfga36 > 0 ? "+" : "") + r.dfga36.toFixed(1)) +
+            " · Ast " + (r.ast == null ? "-" : (r.ast > 0 ? "+" : "") + r.ast.toFixed(1)) +
+            " · Luck " + (r.luck == null ? "-" : (r.luck > 0 ? "+" : "") + r.luck.toFixed(0)) +
+            " · " + r.gp + " gp, " + (r.fppg == null ? "-" : r.fppg.toFixed(1)) + " FP/G so far"};
+      })();
+      var sig = ['<span class="w-badge ' + v.cls + '">' + v.badge + "</span>",
+                 '<span class="w-phrase">' + esc(v.phrase) + "</span>"];
       var stH = a.st === "FA" ? '<span class="fa">FA</span>' : a.st === "WVR" ? '<span class="wv">WVR</span>' : "";
       var injH = p.inj && p.inj !== "ACTIVE" ? ' <span class="oo">' + esc(p.inj === "DAY_TO_DAY" ? "DTD" : p.inj) + "</span>" : "";
-      return '<div class="wcard' + (a.st === "WVR" ? " wv" : "") + '">' +
+      return '<div class="wcard' + (a.st === "WVR" ? " wv" : "") + '"' +
+        (v.tip ? ' title="' + esc(v.tip) + '"' : "") + ">" +
         '<span class="w-rk">' + (i + 1) + "</span>" +
         '<div class="w-main"><span class="w-name">' + esc(p.name) + "</span>" +
         '<span class="w-sub">' + esc(p.pos || "") + " · " + esc((a.row ? a.row.tm : p.team) || "") +
