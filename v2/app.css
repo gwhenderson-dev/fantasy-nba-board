@@ -206,10 +206,13 @@ textarea { font: inherit; background: var(--paper); color: var(--ink); border: 1
 
 /* ---- placeholder / prose ---------------------------------------------- */
 .plan { max-width: 46rem; }
+.toc { font-size: .86rem; line-height: 1.9; margin: 0 0 1rem; color: var(--muted); }
+.prose h2 { scroll-margin-top: 7rem; border-top: 1px solid var(--rule); padding-top: 1.1rem; }
+.prose h3 { margin-top: 1rem; }
 .plan li { margin: .35rem 0; }
 .prose { max-width: 46rem; }
 .prose p { margin: .5rem 0 .8rem; }
-.formula { font-family: var(--mono); background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: .7rem .9rem; font-size: .84rem; white-space: pre-wrap; }
+.formula { font-family: var(--mono); background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: .7rem .9rem; font-size: .84rem; white-space: pre; overflow-x: auto; }
 
 @media (max-width: 640px) {
   .top { position: static; }

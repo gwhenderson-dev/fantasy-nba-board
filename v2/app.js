@@ -1561,6 +1561,12 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     bindTrade();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+    // in-page links scroll without touching the hash (the hash names the tab)
+    document.querySelectorAll(".toc a").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const t = document.getElementById(a.getAttribute("href").slice(1));
+      if (t) t.scrollIntoView({behavior: "smooth", block: "start"});
+    }));
     $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closePlayer(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePlayer(); });
     renderAll();
