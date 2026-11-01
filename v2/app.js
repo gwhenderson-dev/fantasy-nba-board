@@ -12,6 +12,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 let META, PLAYERS, BYID = {}, STATS, TEAMLEFT = {}, GAMES = null, GAMES_P = null;
 let DATA_V = "";                     // cache-buster, set by the Refresh button
+const NC = {cache: "no-cache"};      // revalidate data files: a daily build must not be hidden by the browser cache
 const SI = {};                       // stat name -> index in a stat line
 
 // ================================================================ LEAGUES
@@ -313,12 +314,13 @@ const VIEWS = {
 };
 function projRows() {
   return PLAYERS.map((p) => {
-    const left = TEAMLEFT[p.tm] || 0;
+    const left = gamesLeftFor(p);
     const ros = fpg(p.s, p.bp), rosGp = (p.av || 0) * left;
     const pre = p.ps ? fpg(p.ps, p.pbp) : null;
     const sofar = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
     const adj = p.adj ? fpg(p.adj, p.abp) : null;
-    return {p, ros, rosGp, rosTot: ros * rosGp, pre, preGp: p.pre_gp ?? null,
+    const bi = boostInfo(p);
+    return {p, ros, rosGp, rosTot: ros * rosGp + (bi ? bi.tot : 0), boost: bi, pre, preGp: p.pre_gp ?? null,
       preTot: pre != null && p.pre_gp ? pre * p.pre_gp : null,
       sofar, gp: p.gp || 0, sofarTot: sofar != null ? sofar * p.gp : null,
       adj, luck: sofar != null && adj != null ? sofar - adj : null};
@@ -338,6 +340,202 @@ function offTitle(o) {
   return `Official NBA injury report (${OFF.as_of}): ${o[0]} for ${o[1] || "his next game"}` +
     (o[0] === "Out" && o[2] >= 2 ? ` — listed out on his team's last ${o[2]} reports` : "");
 }
+// ========================================================= INJURY BOOSTS
+// When a rotation player is out, his minutes go to healthy teammates. Model
+// tested in src/backtest/injury_opportunity.py (7,669 past absences, every
+// parameter identical in all 10 leave-one-season-out folds):
+//   key absentee = out + played in his team's last 5 + 24+ minutes
+//   w_i   = (1 + b * same position group) * max(1, 38 - his minutes)^d
+//   +min_i = s * absentee's minutes * w_i / sum(w)     (s = .6, b = 1, d = .5)
+//   a lone backup centre (starting C out, one other C) gets at least +4.8
+// Each teammate keeps his own per-minute rate. The boost lasts until the
+// absentee's return: the visitor's weeks-out > ESPN's expected return date >
+// the historical mean absence for that body part (minus games already missed).
+// The same window removes the absentee's own games.
+const BK = {out: "fnba.v2.manualout", wk: "fnba.v2.outwk"};
+let BC = null;                              // computed boosts, rebuilt on any change
+const RET = {}, RTYPE = {};                 // ESPN expected return date / body part
+function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k) || "null") ?? d; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
+const manualOut = () => lsGet(BK.out, []);
+const outWeeks = () => lsGet(BK.wk, {});
+const isAbsent = (p) => !!p && (outNow(p) || manualOut().includes(p.id));
+function boostDirty() { BC = null; }
+const nowDay = () => { const t = todayET(), l = META.last_game_day ? addDays(META.last_game_day, 1) : t; return t > l ? t : l; };
+function absWindow(p) {
+  const today = nowDay(), wk = outWeeks()[p.id];
+  if (wk != null && wk !== "" && !isNaN(+wk)) return {ret: addDays(today, Math.round(+wk * 7)), src: `your ${+wk} wk`};
+  if (RET[p.id] && RET[p.id] > today) return {ret: RET[p.id], src: "ESPN return date"};
+  const fb = META.inj_fallback || {}, ty = RTYPE[p.id];
+  const key = ty ? String(ty).toLowerCase().replace(/[^a-z]/g, "") : null;
+  const mean = key && fb[key] != null ? fb[key] : (fb._all || 6);
+  const left = Math.max(1, Math.round(mean - (p.missed || 0)));
+  const fut = (META.sched[p.tm] || []).map((g) => g[0]).filter((d) => d >= today);
+  return {ret: fut[left] || addDays(today, 60), src: `typical ${ty ? String(ty).toLowerCase() + " " : ""}absence (~${Math.round(mean)} games)`};
+}
+let RET_P = null;
+function loadReturns2() {
+  const ids = PLAYERS.filter(isAbsent).map((p) => p.id).filter((id) => !(id in RET));
+  if (!ids.length) return Promise.resolve();
+  ids.forEach((id) => { RET[id] = null; });
+  const flt = JSON.stringify({players: {filterIds: {value: ids}, limit: ids.length + 5,
+                                        sortPercOwned: {sortPriority: 1, sortAsc: false}}});
+  // league-scoped endpoint (any public league can read any player's card)
+  return fetch(espnBase() + META.league.id + "?view=kona_playercard", {headers: {"x-fantasy-filter": flt}})
+    .then((r) => (r.ok ? r.json() : {players: []})).catch(() => ({players: []}))
+    .then((k) => {
+      (k.players || []).forEach((w) => {
+        const pl = w.player || {}, det = pl.injuryDetails || {}, d = det.expectedReturnDate;
+        if (pl.id == null) return;
+        if (det.type) RTYPE[pl.id] = det.type;
+        if (d && d.length === 3) RET[pl.id] = `${d[0]}-${String(d[1]).padStart(2, "0")}-${String(d[2]).padStart(2, "0")}`;
+      });
+      boostDirty();
+    });
+}
+const posGroups = (pos) => {
+  const s = {};
+  String(pos || "").split(/[,/]/).forEach((t) => {
+    t = t.trim().toUpperCase();
+    if (t === "PG" || t === "SG" || t === "G") s.G = 1;
+    else if (t === "SF" || t === "PF" || t === "F") s.F = 1;
+    else if (t === "C") s.C = 1;
+  });
+  return s;
+};
+function computeBoosts() {
+  if (BC) return BC;
+  const P = META.opp, by = {}, abs = {};
+  if (!P) return (BC = {by, abs});
+  const byTeam = {};
+  PLAYERS.forEach((p) => { (byTeam[p.tm] = byTeam[p.tm] || []).push(p); });
+  Object.entries(byTeam).forEach(([tm, roster]) => {
+    const keys = roster.filter((p) => isAbsent(p) && p.fresh && Math.max(p.rec || 0, p.mpg || 0) >= P.key_min);
+    if (!keys.length) return;
+    const mates = roster.filter((p) => !isAbsent(p) && ((p.gp || 0) >= 1 || (p.mpg || 0) >= 15) && p.mpg > 0);
+    keys.forEach((k) => {
+      const kg = posGroups(k.pos), center = !!kg.C && !kg.G;
+      const b = center ? P.b_center : P.b_gf, mK = Math.max(k.rec || 0, k.mpg || 0);
+      const ws = mates.map((p) => {
+        const g = posGroups(p.pos), same = Object.keys(kg).some((x) => g[x]) ? 1 : 0;
+        return (1 + b * same) * Math.pow(Math.max(1, 38 - (p.mpg || 0)), P.d);
+      });
+      const tot = ws.reduce((a, x) => a + x, 0);
+      if (tot <= 0) return;
+      const cm = mates.filter((p) => posGroups(p.pos).C);
+      const lone = center && cm.length === 1 ? cm[0].id : null;
+      abs[k.id] = {p: k, min: mK, win: absWindow(k), mates: []};
+      mates.forEach((p, i) => {
+        let d = P.s * mK * ws[i] / tot;
+        if (p.id === lone) d = Math.max(d, P.lone_c);
+        const o = by[p.id] = by[p.id] || {parts: [], lone: false};
+        o.parts.push({k: k.id, d});
+        if (p.id === lone) o.lone = true;
+        abs[k.id].mates.push({p, d});
+      });
+      abs[k.id].mates.sort((a, b2) => b2.d - a.d);
+    });
+  });
+  return (BC = {by, abs});
+}
+// extra minutes / fantasy points for player p on date d
+function boostMin(p, d) {
+  const B = computeBoosts(), o = B.by[p.id];
+  if (!o) return 0;
+  return o.parts.reduce((a, pt) => a + (d < B.abs[pt.k].win.ret ? pt.d : 0), 0);
+}
+const perMin = (p) => (p.mpg > 0 ? fpg(p.s, p.bp) / p.mpg : 0);
+const boostFP = (p, d) => boostMin(p, d) * perMin(p);
+// remaining team games he is expected to play (an absentee's start at his return)
+function gamesLeftFor(p) {
+  const last = META.last_game_day || "";
+  const from = isAbsent(p) ? absWindow(p).ret : "";
+  return (META.sched[p.tm] || []).filter((g) => g[0] > last && g[0] >= from).length;
+}
+// season-long boost: sum over his remaining games while any absentee is out
+function boostInfo(p) {
+  const B = computeBoosts(), o = B.by[p.id];
+  if (!o) return null;
+  const last = META.last_game_day || "";
+  let tot = 0, n = 0, thru = "";
+  (META.sched[p.tm] || []).forEach((g) => {
+    if (g[0] <= last) return;
+    const f = boostFP(p, g[0]);
+    if (f > 0) { tot += f; n++; }
+  });
+  o.parts.forEach((pt) => { const r = B.abs[pt.k].win.ret; if (r > thru) thru = r; });
+  const names = o.parts.map((pt) => B.abs[pt.k].p.n);
+  const now = o.parts.reduce((a, pt) => a + pt.d, 0);
+  return {tot: tot * (p.av || 0), games: n, min: now, fpg: now * perMin(p), thru, names, lone: o.lone};
+}
+const boostTip = (b) => `+${b.min.toFixed(1)} min (+${b.fpg.toFixed(1)} FP/G) while ${b.names.join(", ")} ${b.names.length > 1 ? "are" : "is"} out` +
+  ` — ${b.games} games, through about ${b.thru.slice(5)}${b.lone ? "; lone backup centre" : ""}`;
+
+const BUI = {open: {"wv-boosts": true, "is-boosts": true}};
+function renderBoostPanel(cid) {
+  const el = $(cid);
+  if (!el) return;
+  const B = computeBoosts();
+  const ab = Object.values(B.abs).sort((a, b) => b.min - a.min);
+  const wks = outWeeks(), mo = manualOut();
+  const rows = ab.map((a) => {
+    const p = a.p;
+    const top = a.mates.slice(0, 4).map((m) => `<span class="name" data-id="${m.p.id}">${esc(m.p.n)}</span> <span class="pos-up">+${m.d.toFixed(1)}</span>`).join(", ");
+    return `<tr><td class="l"><span class="name" data-id="${p.id}">${esc(p.n)}</span>${tags(p)}${mo.includes(p.id) && !outNow(p) ? ' <span class="dim">(marked by you)</span>' : ""}</td>` +
+      `<td class="l dim">${esc(p.tm)}</td><td>${a.min.toFixed(0)}</td>` +
+      `<td class="l">${a.win.ret.slice(5)} <span class="dim" style="font-size:.76rem">${esc(a.win.src)}</span></td>` +
+      `<td><input type="number" min="0" max="30" step="1" data-wk="${p.id}" value="${wks[p.id] ?? ""}" placeholder="wks" style="width:4.2rem" aria-label="Weeks ${esc(p.n)} is out"></td>` +
+      `<td class="l" style="white-space:normal;min-width:14rem">${top || '<span class="dim">no healthy teammates with a role</span>'}</td></tr>`;
+  }).join("");
+  const manualOnly = mo.filter((id) => BYID[id] && !B.abs[id]);
+  el.innerHTML = `<details class="card"${BUI.open[cid] ? " open" : ""} data-bp="${cid}" style="margin:1rem 0">` +
+    `<summary><strong>Injury boosts</strong> <span class="dim">&mdash; ${ab.length} rotation player${ab.length === 1 ? "" : "s"} out, their minutes go to teammates</span></summary>` +
+    `<p class="note">When a player who has been playing 24+ minutes is out, about 60% of his minutes go to healthy teammates, more to the same position and to players with more room to grow (tested on 7,669 past absences: the top beneficiary gained +3.3 minutes against +3.7 predicted; a lone backup centre gains at least +4.8). ` +
+    `Each teammate keeps his own per-minute production, and the boost runs until the return date. That date is your weeks-out if you type one, else ESPN&rsquo;s expected return, else the typical absence for that injury. ` +
+    `The injured player&rsquo;s own games before that date are taken off his rest-of-season value. Boosts feed every projection on the site.</p>` +
+    (rows ? '<div class="tablewrap" style="max-height:26rem"><table><thead><tr><th class="l">Out</th><th class="l">Tm</th><th title="Minutes he had been playing">Min</th>' +
+      '<th class="l">Back about</th><th title="Override: weeks he will be out">Weeks out</th><th class="l">Biggest gains (+minutes per game)</th></tr></thead><tbody>' + rows + "</tbody></table></div>"
+      : '<p class="note">No rotation players are out right now.</p>') +
+    `<div class="controls" style="margin-top:.7rem"><div class="ctl"><label for="${cid}-add">Mark a player out (news ESPN hasn&rsquo;t caught up with)</label>` +
+    `<input id="${cid}-add" list="${cid}-dl" type="search" placeholder="player name" autocomplete="off" style="min-width:14rem"></div>` +
+    `<button class="btn" data-addout="${cid}">Mark out</button>` +
+    (manualOnly.length ? `<span class="note">Also marked out: ${manualOnly.map((id) => `${esc(BYID[id].n)} <button class="x" style="width:1.4rem;height:1.4rem;font-size:.8rem" data-unout="${id}" aria-label="Unmark">×</button>`).join(" ")}</span>` : "") +
+    (mo.length ? ` <button class="btn" data-clearout="1">Clear my marks (${mo.length})</button>` : "") +
+    `</div><datalist id="${cid}-dl">${PLAYERS.filter((p) => (p.mpg || 0) >= 15).map((p) => `<option value="${esc(p.n)}">${esc(p.tm)}</option>`).join("")}</datalist></details>`;
+}
+function bindBoostPanel(cid) {
+  const el = $(cid);
+  el.addEventListener("toggle", (e) => { if (e.target.dataset.bp) BUI.open[cid] = e.target.open; }, true);
+  el.addEventListener("change", (e) => {
+    const i = e.target.closest("input[data-wk]");
+    if (!i) return;
+    const m = outWeeks();
+    if (i.value === "") delete m[i.dataset.wk]; else m[i.dataset.wk] = +i.value;
+    lsSet(BK.wk, m); boostDirty(); renderAll();
+  });
+  el.addEventListener("click", (e) => {
+    const add = e.target.closest("[data-addout]"), un = e.target.closest("[data-unout]"), clr = e.target.closest("[data-clearout]");
+    if (add) {
+      const v = normName($(cid + "-add").value);
+      const p = PLAYERS.find((x) => normName(x.n) === v);
+      if (!p) return;
+      const mo = manualOut();
+      if (!mo.includes(p.id)) lsSet(BK.out, mo.concat([p.id]));
+      boostDirty(); loadReturns2().then(renderAll); renderAll();
+    } else if (un) {
+      const id = +un.dataset.unout;
+      lsSet(BK.out, manualOut().filter((x) => x !== id));
+      const m = outWeeks(); delete m[id]; lsSet(BK.wk, m);
+      boostDirty(); renderAll();
+    } else if (clr) {
+      lsSet(BK.out, []); boostDirty(); renderAll();
+    } else {
+      const n = e.target.closest(".name[data-id]");
+      if (n && BYID[+n.dataset.id]) { e.stopPropagation(); openPlayer(+n.dataset.id); }
+    }
+  });
+}
+
 function tags(p) {
   let t = "";
   const o = off(p);
@@ -447,7 +645,7 @@ function bindProj() {
 // ============================================================ PLAYER PAGE
 function loadGames() {
   if (GAMES) return Promise.resolve(GAMES);
-  if (!GAMES_P) GAMES_P = fetch("data/games.json" + DATA_V).then((r) => r.json()).then((j) => {
+  if (!GAMES_P) GAMES_P = fetch("data/games.json" + DATA_V, NC).then((r) => r.json()).then((j) => {
     const C = {};
     j.cols.forEach((c, i) => { C[c] = i; });
     const byP = {}, byG = {};
@@ -551,7 +749,7 @@ function closePlayer() { $("scrim").hidden = true; document.body.style.overflow 
 let RECAP = null, RECAP_P = null;
 const RC = {day: null, g: null};
 function loadRecap() {
-  if (!RECAP_P) RECAP_P = fetch("data/recap.json" + DATA_V).then((r) => (r.ok ? r.json() : null))
+  if (!RECAP_P) RECAP_P = fetch("data/recap.json" + DATA_V, NC).then((r) => (r.ok ? r.json() : null))
     .then((j) => { RECAP = j; return j; }).catch(() => null);
   return RECAP_P;
 }
@@ -774,7 +972,7 @@ function streamRows() {
   const B = META.b2b, CZ = META.ceiling.z;
   const out = [];
   PLAYERS.forEach((p) => {
-    if (outNow(p)) return;
+    if (isAbsent(p)) return;
     const rostered = lg && lg.owner[p.id] != null;
     if (WV.avail && rostered) return;
     if (WV.pos && !String(p.pos || "").split(/[,/ ]+/).includes(WV.pos)) return;
@@ -801,19 +999,21 @@ function streamRows() {
         tip = `${opp}: pace ${(mf.pace * 100).toFixed(0)}% of league, allows ${((mf[c] || 1) * 100).toFixed(0)}% of league FP to ${c}s, ` +
           `opponents shoot ${((mf.fgp || 1) * 100).toFixed(0)}% of league FG% against them; ${home ? "home" : "away"} (${mf.n} games so far)`;
       }
-      proj += play * (fp + adj);
-      if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, fp + adj + CZ * sd);
-      return {d, opp, home, second, play, adj, tip};
+      const bst = boostFP(p, d);
+      proj += play * (fp + adj + bst);
+      if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, fp + adj + bst + CZ * sd);
+      return {d, opp, home, second, play, adj, bst, tip};
     });
     const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
     const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
-    out.push({p, fp, games, proj, ceil, now, adjFp, luck: now != null && adjFp != null ? now - adjFp : null,
+    out.push({p, fp, games, proj, ceil, now, adjFp, boost: boostInfo(p), luck: now != null && adjFp != null ? now - adjFp : null,
       psit, listed, risk: listed || psit >= B.flag, ng: games.length,
       st: rostered ? (lg.byId[lg.owner[p.id]] || {}).ab : lg ? (lg.wv[p.id] ? "WVR" : "FA") : null});
   });
   return out;
 }
 function renderWaivers() {
+  renderBoostPanel("wv-boosts");
   const rows = streamRows();
   const key = WV.sort || (WV.rank === "ceil" ? "ceil" : "proj");
   const val = (r) => (key === "n" ? r.p.n : key === "own" ? r.p.own : r[key]);
@@ -846,10 +1046,11 @@ function renderWaivers() {
     const p = r.p;
     const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}" title="${esc((g.second ? "Second night of a back-to-back" + (r.risk ? ` — ${Math.round(r.psit * 100)}% sit chance` : "") + ". " : "") + g.tip)}">` +
       `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}` +
-      `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span></span>`).join("");
+      `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span>` +
+      (g.bst > 0.05 ? `<span class="m pos-up" title="Injury boost that night">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
     const b2 = r.p.b2b;
     return `<tr data-id="${p.id}"><td class="dim">${i + 1}</td>` +
-      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${r.listed ? "On your list: does not play second nights" : "Sits second nights of back-to-backs"}">B2B</span>` : ""}</td>` +
+      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${r.listed ? "On your list: does not play second nights" : "Sits second nights of back-to-backs"}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.min.toFixed(0)} min</span>` : ""}</td>` +
       `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
@@ -921,9 +1122,10 @@ function seasonLine(p) {
   const adj = p.adj ? fpg(p.adj, p.abp) : null;
   const ros = fpg(p.s, p.bp);
   const pre = p.ps ? fpg(p.ps, p.pbp) : null;
-  const left = TEAMLEFT[p.tm] || 0;
+  const left = gamesLeftFor(p);              // an absentee's games start at his return
+  const bi = boostInfo(p);
   return {p, now, adj, ros, pre, gp: p.gp || 0, gap: now != null && adj != null ? adj - now : null,
-    gl: (p.av || 0) * left, tot: ros * (p.av || 0) * left};
+    gl: (p.av || 0) * left, tot: ros * (p.av || 0) * left + (bi ? bi.tot : 0), boost: bi};
 }
 // the luck items that explain a gap, from the season breakdown (default scoring)
 function luckWhy(p, sign) {
@@ -940,6 +1142,7 @@ function lucks(id) {
 }
 const keepSet = () => new Set((L.keep || []).map(normName));
 function renderInseason() {
+  renderBoostPanel("is-boosts");
   const lg = LGRES[L.id], mt = myTeam();
   const body = $("is-body");
   $("is-keepbox").hidden = IS.view !== "drop";
@@ -978,7 +1181,7 @@ function renderInseason() {
     `<td>${r.gp}</td><td class="grp">${fx(r.now)}</td><td>${fx(r.adj)}</td>` +
     `<td class="big ${sign > 0 ? (r.gap >= 2 ? "pos-up" : "") : (r.gap <= -2 ? "pos-dn" : r.gap >= 2 ? "pos-up" : "")}">${sign > 0 ? sg(r.gap) : sg(-r.gap)}</td>` +
     `<td class="l dim" style="white-space:normal;min-width:11rem">${esc(luckWhy(r.p, -sign))}</td>` +
-    `<td class="grp">${fx(r.ros)}</td><td>${fx(r.pre)}</td><td class="${r.pre != null && r.now != null ? cut(r.now - r.pre) : ""}">${r.pre != null && r.now != null ? sg(r.now - r.pre) : "-"}</td>` +
+    `<td class="grp">${fx(r.ros)}</td><td class="pos-up" title="${r.boost ? esc(boostTip(r.boost)) : ""}">${r.boost ? "+" + r.boost.fpg.toFixed(1) + " thru " + r.boost.thru.slice(5) : ""}</td><td>${fx(r.pre)}</td><td class="${r.pre != null && r.now != null ? cut(r.now - r.pre) : ""}">${r.pre != null && r.now != null ? sg(r.now - r.pre) : "-"}</td>` +
     `<td class="dim">${r.p.pre_rank ?? "-"}</td><td>${spark(lucks(r.p.id), 110, 26)}</td>`;
   const luckHead = (sign) =>
     H("gp", "GP") + H("now", "Now FP/G", "grp", "Actual FP/G this season") +
@@ -986,10 +1189,11 @@ function renderInseason() {
     H("gap", sign > 0 ? "Buy-low gap" : "Luck/G", "big", sign > 0 ? "Luck-adjusted minus actual FP/G: how far the box score is running BELOW his real level" : "Actual minus luck-adjusted FP/G: how much of his box score is luck") +
     `<th class="l">${sign > 0 ? "Ran cold on" : "Ran hot on"}</th>` +
     H("ros", "ROS FP/G", "grp", "Our rest-of-season projection (the tested in-season blend)") +
+    H("bfp", "Injury boost", "", "Extra FP/G while an injured teammate is out (see Injury boosts below), and roughly until when") +
     H("pre", "Draft-day FP/G", "", "What we projected before the season: roughly what his manager drafted him to be") +
     H("vsdraft", "Now vs draft", "", "Actual FP/G minus the draft-day projection. Early in the season managers judge players against draft cost") +
     H("pre_rank", "Pre #", "", "Preseason board rank") + "<th>Luck by game</th>";
-  all.forEach((r) => { r.vsdraft = r.pre != null && r.now != null ? r.now - r.pre : null; });
+  all.forEach((r) => { r.vsdraft = r.pre != null && r.now != null ? r.now - r.pre : null; r.bfp = r.boost ? r.boost.fpg : null; });
   const gpDone = Math.max(...Object.values(META.sched).map((g) => g.filter((x) => x[0] <= META.last_game_day).length));
 
   if (IS.view === "buy") {
@@ -1050,7 +1254,7 @@ function renderInseason() {
           : r.gain > 0 ? '<span title="Gain under 8% of his rest-of-season points: inside projection noise">close call</span>'
           : '<span class="dim">hold</span>';
         return `<tr data-id="${r.p.id}"><td class="l name">${esc(r.p.n)}${tags(r.p)}</td><td class="l dim">${esc(posOf(r.p).join(","))}</td>` +
-          `<td class="grp">${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td class="big">${fx(r.tot, 0)}</td>` +
+          `<td class="grp">${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td class="big"${r.boost ? ` title="${esc(boostTip(r.boost))}"` : ""}>${fx(r.tot, 0)}${r.boost ? `<br><span class="pos-up" style="font-size:.72rem;font-weight:500">incl. +${fx(r.boost.tot, 0)} boost</span>` : ""}</td>` +
           `<td class="l grp">${b ? `<span class="name" data-id="${b.p.id}">${esc(b.p.n)}</span> <span class="dim">${esc(b.p.tm)} · ${esc(posOf(b.p).join(","))}${lg.wv[b.p.id] ? " · WVR" : ""}</span>` : "-"}</td>` +
           `<td>${b ? fx(b.ros) : "-"}</td><td>${b ? fx(b.tot, 0) : "-"}</td>` +
           `<td class="big ${r.gain > DROP_MARGIN * r.tot && !r.kept ? "pos-dn" : ""}">${r.gain == null ? "-" : sg(r.gain, 0)}</td><td class="l">${verdict}</td></tr>`;
@@ -1216,8 +1420,10 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
   const B = META.b2b;
   const ps = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === teamId).map((id) => {
     const p = BYID[id];
-    const inj = lg.inj[id], ret = lg.ret[id];
-    const hurt = OUT_SET.includes(inj) || lg.slot[id] === 13 || longOut(p);
+    const inj = lg.inj[id];
+    const hurt = OUT_SET.includes(inj) || lg.slot[id] === 13 || isAbsent(p);
+    // same absence window as every other tab (your weeks > ESPN date > typical absence)
+    const ret = p && isAbsent(p) ? absWindow(p).ret : lg.ret[id];
     const plays = id in marks ? !!marks[id] : !hurt || !!ret;
     const elig = (lg.elig[id] && lg.elig[id].length ? lg.elig[id] : eligFromPos(p && p.pos)).filter((s) => SLOTS.includes(s));
     const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: id in marks, elig, days: [],
@@ -1240,7 +1446,7 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
           const c = posCls(p.pos), b = META.mfb;
           adj = (b.pace * (mf.pace - 1) + b.dvp * ((mf[c] || 1) - 1) + b.fgp * ((mf.fgp || 1) - 1) + b.home * (g[2] ? 0.5 : -0.5)) * scale;
         }
-        val = Math.max(0, play * (fp + adj));
+        val = Math.max(0, play * (fp + adj + boostFP(p, d)));
         avail = true;
       }
       r.days.push({d, g, avail, val, sd2: sd * sd, st: false});
@@ -1261,13 +1467,15 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     const res = assignMax(Wm);
     av.forEach((r, k) => {
       if (res.rc[k] >= 0) {
-        r.days[i].st = true; r.starts++;
+        r.days[i].st = true; r.starts++; r.days[i].slot = SLOTS[res.rc[k]];
         if (d >= today) { r.pts += r.days[i].val; r.var += r.days[i].sd2; }
       } else if (r.days[i].pick === 1) r.days[i].noslot = true;
     });
     const D = out.days[i];
     D.playing = playing.length; D.started = res.rc.filter((c) => c >= 0).length; D.open = SLOTS.length - D.started;
     D.over = av.filter((r) => r.days[i].noslot).length;
+    const used = new Set(res.rc.filter((c) => c >= 0));
+    D.openSlots = SLOTS.filter((_, j) => !used.has(j)).map((sid) => ESPN_SLOT[sid]);
     D.pts = d >= today ? av.reduce((a, r, k) => a + (res.rc[k] >= 0 ? r.days[i].val : 0), 0) : 0;
   });
   out.rem = ps.reduce((a, r) => a + r.pts, 0);
@@ -1360,12 +1568,13 @@ function renderWeek() {
     const x = r.days[i], past = D.past ? " past" : "";
     if (!x.g) return `<td class="dg${past}"></td>`;
     if (!x.avail) return `<td class="dg out${past}" title="Not playing">×</td>`;
-    if (D.past) return x.st ? `<td class="dg st past">●</td>` : `<td class="dg bn past">○</td>`;
+    if (D.past) return x.st ? `<td class="dg st past">●<span class="slt">${ESPN_SLOT[x.slot] || ""}</span></td>` : `<td class="dg bn past">○</td>`;
     const tip = x.noslot ? "You started him but every slot he can fill is taken — he won't count"
       : x.pick === 1 ? `You started him: ${fx(x.val)} projected` : x.pick === 0 ? "You benched him"
       : x.st ? `In the best lineup: ${fx(x.val)} projected. Untick to bench him` : "On the bench: the best lineup has no slot for him. Tick to start him";
     return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip)}">` +
-      `<input type="checkbox" class="gcb" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}"></td>`;
+      `<input type="checkbox" class="gcb" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
+      (x.st && x.slot != null ? `<span class="slt">${ESPN_SLOT[x.slot]}</span>` : "") + "</td>";
   };
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length, 0);
   $("wk-detail").innerHTML = `<div class="controls" style="align-items:center"><h2 style="margin:0">${esc(tname)} &mdash; week ${wk}</h2>` +
@@ -1381,7 +1590,8 @@ function renderWeek() {
       `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
-    `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}">${D.open}</td>`).join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
+    `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}" title="${esc(D.openSlots.join(", ") || "all filled")}">${D.open}` +
+      (D.open && D.open < SLOTS.length ? `<br><span class="slt" style="color:inherit">${esc(D.openSlots.join(" "))}</span>` : "") + "</td>").join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>" +
     `<p class="note">Each remaining game has a box, pre-ticked with the best possible lineup (${SLOTS.length} starter slots, positions respected). ` +
     "Untick a game to bench him that night, tick one to start him; the projection follows your lineup. Outlined boxes are your choices; a red one means every slot he can fill is already taken. " +
@@ -1632,6 +1842,7 @@ function reloadData() {
     Object.assign(WK, {mm: null, mmP: null});
     renderAll();
     refreshLeagueData();
+    loadReturns2().then(renderAll);
   });
 }
 function startRebuild(tok) {
@@ -1689,13 +1900,14 @@ function bindRefresh() {
 // ================================================================== BOOT
 function fetchData(bust) {
   const q = bust ? "?t=" + Date.now() : "";
-  return Promise.all([fetch("data/meta.json" + q).then((r) => r.json()), fetch("data/players.json" + q).then((r) => r.json()),
+  return Promise.all([fetch("data/meta.json" + q, NC).then((r) => r.json()), fetch("data/players.json" + q, NC).then((r) => r.json()),
     // refreshed hourly on game days -> always bypass the browser cache
     fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)]);
 }
 function applyData([meta, players, inj]) {
   META = meta; PLAYERS = players; STATS = meta.stats;
   OFF = inj && inj.players ? inj : {players: {}, as_of: null};
+  BC = null;
   STATS.forEach((s, i) => { SI[s] = i; });
   BYID = {};
   players.forEach((p) => { BYID[p.id] = p; });
@@ -1721,6 +1933,8 @@ fetchData(false)
     bindWeek();
     bindTrade();
     bindRefresh();
+    bindBoostPanel("wv-boosts");
+    bindBoostPanel("is-boosts");
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
     // in-page links scroll without touching the hash (the hash names the tab)
@@ -1734,6 +1948,7 @@ fetchData(false)
     renderAll();
     showTab((location.hash || "#proj").slice(1));
     refreshLeagueData();
+    loadReturns2().then(renderAll);
   })
   .catch((e) => {
     document.querySelector("main").innerHTML = '<div class="msg err">Could not load the data (' + esc(e.message) + ").</div>";

@@ -119,6 +119,7 @@ tbody tr:hover td { background: var(--band); }
 .tag.dtd { background: var(--yel-bg); color: var(--yel); }
 .tag.doubt { background: var(--org-bg); color: var(--org); }
 .tag.prob { background: var(--band); color: var(--muted); }
+.tag.boost { background: var(--good-bg); color: var(--good); }
 
 /* ---- player modal ------------------------------------------------------ */
 .scrim { position: fixed; inset: 0; background: rgba(10,10,14,.45); z-index: 50; display: flex; justify-content: flex-end; }
@@ -235,3 +236,4 @@ textarea { font: inherit; background: var(--paper); color: var(--ink); border: 1
   .lgpick select { min-width: 9rem; }
   h1 { font-size: 1.25rem; }
 }
+td.dg .slt { display: block; font-size: .6rem; font-weight: 650; letter-spacing: .02em; color: var(--muted); margin-top: .1rem; line-height: 1; }

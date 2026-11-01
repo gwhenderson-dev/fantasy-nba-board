@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?v=acf62e8e44">
 </head>
 <body>
 <header class="top">
@@ -130,6 +130,7 @@
     </div>
     <div id="is-body"></div>
     <p class="note" id="is-note"></p>
+    <div id="is-boosts"></div>
     <details class="card" id="is-keepbox" style="margin-top:1rem" hidden>
       <summary><strong>Keep list</strong> <span class="dim">&mdash; never suggested as drops</span></summary>
       <p class="note">One name per line. Saved with this league in your browser.</p>
@@ -166,6 +167,7 @@
     </div>
     <div class="tablewrap"><table id="wv-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="wv-note"></p>
+    <div id="wv-boosts"></div>
     <details class="card" id="wv-b2bbox" style="margin-top:1rem">
       <summary><strong>Back-to-back sitters</strong> <span class="dim" id="wv-b2bsum"></span></summary>
       <p class="note">Detected from the game logs (last season + this one): a second night counts as a rest sit only
@@ -226,173 +228,250 @@
   <!-- ========================================================== HOW IT WORKS -->
   <section class="panel prose" id="tab-how" hidden>
     <h1>How it works</h1>
-    <p class="lede">Everything on this site comes from one model built on NBA box scores. No outside projections are
-      mixed in: ESPN and FantasyPros rankings appear only as benchmarks to grade the model against. Every piece below was
-      tested on past seasons before it shipped, and the tests that failed are kept in the record too.</p>
+    <p class="lede">Everything on this site comes from one model built on NBA box scores. No outside projections are mixed in:
+      ESPN and FantasyPros appear only as benchmarks. This page writes out every formula the site uses, region by region,
+      with the numbers in it and the test behind each one. Every piece was tested on past seasons before it shipped, and the
+      ideas that failed stay in the record.</p>
     <nav class="toc">
-      <a href="#how-pre">Draft-day projection</a> · <a href="#how-ros">During the season</a> · <a href="#how-luck">Luck</a> ·
-      <a href="#how-tabs">What each tab does</a> · <a href="#how-good">How good is it?</a> · <a href="#how-data">Data and privacy</a> ·
-      <a href="#how-limits">Limits</a>
+      <a href="#how-score">Scoring</a> · <a href="#how-pre">Draft-day projection</a> · <a href="#how-ros">Rest of season</a> ·
+      <a href="#how-luck">Luck</a> · <a href="#how-inj">Injuries &amp; boosts</a> · <a href="#how-proj">Projections tab</a> ·
+      <a href="#how-insea">In-season tab</a> · <a href="#how-wire">Waivers tab</a> · <a href="#how-recap">Recap tab</a> ·
+      <a href="#how-week">My week tab</a> · <a href="#how-trade">Trade analyzer</a> · <a href="#how-good">How good is it?</a> ·
+      <a href="#how-data">Data</a> · <a href="#how-limits">Limits</a>
     </nav>
 
-    <h2 id="how-pre">1. The draft-day projection</h2>
-    <p>Every stat is projected separately (points, rebounds, assists, steals, blocks, threes, turnovers, makes and
-      attempts), per minute, and then multiplied by projected minutes and games. Because the site ships stat lines rather
-      than fantasy points, your browser can score them under any league&rsquo;s rules.</p>
-    <div class="formula">FP per game =
-  Σ stat per minute × minutes
-      × your points for that stat
-  + bonuses × how often he earns them
-season value = FP per game × games</div>
-    <ul class="plan">
-      <li><strong>Production per minute</strong>: a weighted average of the last three seasons, 7 / 2 / 1 (newest
-        heaviest), minutes-weighted. More recency beat the classic 5 / 4 / 3 in 11 of 12 test seasons; longer memories
-        (four or five seasons) and two-season memories both did worse.</li>
-      <li><strong>Age</strong>: players improve into their mid-20s and decline after 27; the decline is gentler for
-        players good enough to keep their role (old stars hold up, old role players don&rsquo;t). Removing the age curve
-        made drafts significantly worse.</li>
-      <li><strong>Minutes and games</strong> are projected on their own, so durability is part of the number. Minutes
-        lean 30% toward his minutes over his last 20 games (role changes late last season carry over); games come from
-        his recent availability.</li>
-      <li><strong>Team context</strong>: a crowded rotation costs a little production (a small fitted correction).</li>
-      <li><strong>Preseason form</strong>: veterans&rsquo; preseason production per minute nudges the projection
-        (it cut the error in 11 of 12 test seasons).</li>
-      <li><strong>On-court impact</strong>: last season&rsquo;s plus-minus per 36 minutes predicts next season&rsquo;s
-        production beyond the box score (it cut the error in 11 of 12 test seasons; raw plus-minus did as well as fancier
-        impact metrics).</li>
-      <li><strong>Injury news at the draft</strong>: a player listed out on opening night loses about 30 games for a
-        severe injury (surgery, Achilles, ACL, fracture) or about 12 for anything else, or the team&rsquo;s announced
-        timeline when there is one. Players returning from a lost season get a production dock that depends on how good
-        they were (stars mostly get their role back; role players often don&rsquo;t).</li>
-      <li><strong>Rookies</strong> come from a college model: college production, draft slot and the minutes open on
-        his new team, blended with his preseason form.</li>
-    </ul>
-    <p>The board is frozen at tip-off so it can be graded honestly at the end of the season; the Projections tab keeps
-      it as the &ldquo;Preseason (draft day)&rdquo; view.</p>
+    <h2 id="how-score">1. Scoring: one stat line, any league</h2>
+    <p>The site never stores fantasy points. Every projection, every game and every luck number is a <strong>stat line</strong>
+      (points, makes and attempts, threes, rebounds, offensive rebounds, assists, steals, blocks, turnovers) plus the chance of a
+      double-, triple- or quadruple-double. Your browser turns a line into fantasy points with your league&rsquo;s rules:</p>
+    <div class="formula">FP = Σ stat × your points for that stat
+   + P(double-double) × DD bonus
+   + P(triple-double) × TD bonus
+   + P(quad-double)   × QD bonus</div>
+    <p>If your league&rsquo;s bonuses don&rsquo;t stack, a triple-double earns only the TD bonus, so the formula uses
+      P(DD) − P(TD) for the double-double term. Change the rules on the League tab and every number on the site re-scores.</p>
 
-    <h2 id="how-ros">2. During the season</h2>
-    <p>After every game the projection is re-blended with what the player is actually doing. The question is how much to
-      trust a few games. It was answered on 24 past seasons (tuned on 1999&ndash;2019, then scored once on 2021&ndash;26).
-      The draft-day line counts as this much evidence:</p>
-    <div class="formula">production per minute  600 minutes
-minutes per game         5 games
-availability            20 games</div>
-    <p>That blend beat both &ldquo;never update&rdquo; and &ldquo;trust the season so far&rdquo; at all 25 test
-      checkpoints. This <strong>rest-of-season (ROS)</strong> FP/G is the projection used everywhere in-season.
-      Projected games left = his availability × his team&rsquo;s remaining games.</p>
+    <h2 id="how-pre">2. The draft-day projection</h2>
+    <p>Built once before the season and frozen at tip-off (the Projections tab&rsquo;s &ldquo;Preseason&rdquo; view). Each step
+      below changes the stat line; the order is the order the model applies them.</p>
+    <h3>Production per minute</h3>
+    <div class="formula">rate(stat) = Σ w_y × stat_y / Σ w_y × minutes_y
+w = 7, 2, 1   (last season, the one before, the one before that)</div>
+    <p>Minutes-weighted, so a season of cameo minutes barely counts. 7/2/1 beat the classic 5/4/3 in 11 of 12 test seasons;
+      four- and five-season memories and two-season memories both did worse.</p>
+    <h3>Age</h3>
+    <div class="formula">under 27:  rate × (1 + 0.016 × (27 − age))
+over 27:   rate × (1 − 0.024 × (age − 27))
+over 27 and age-free FP/G ≥ 35:
+           rate × (1 − 0.012 × (age − 27))</div>
+    <p>The gentler slope for players good enough to keep their role (old stars hold up, old role players don&rsquo;t) was
+      checked three ways: a placebo test, a bootstrap over seasons, and the error on exactly the players it touches (3.95 vs 4.80
+      FP/G without it). Removing the age curve made drafts significantly worse.</p>
+    <h3>Minutes and games</h3>
+    <div class="formula">MPG   = (Σ w × minutes + 5 × league MPG) / (Σ w × games + 5)
+then  MPG = 0.7 × MPG + 0.3 × his MPG over his last 20 games
+availability = (Σ w × games + 2 × league rate)
+             / (Σ w × seasons on a roster + 2)</div>
+    <p>The late-season blend (only for players with 20+ games who appeared in their team&rsquo;s last 15) cut the minutes error in
+      11 of 11 test seasons. The 2 in the availability formula is deliberately small so durability differences show.</p>
+    <h3>Team context and form</h3>
+    <div class="formula">crowding:  FP/G − 7.09 × (team load − league mean load)
+           load = Σ (usage% × MPG × availability) / 4800
+preseason: FP/G + min(0.13, 0.00136 × preseason min)
+                  × (preseason FP/36 − projected FP/36)
+impact:    FP/G + 0.258 × (last season plus-minus per 36 − 0.20)</div>
+    <p>Crowding corrects teams whose players were each projected in roles they held on other teams (fitted, not imposed).
+      Preseason form cut the error in 11 of 12 seasons, and impact (plus-minus) in 11 of 12; preseason is capped at ±25% and impact
+      at ×0.6 to ×1.4 of the line.</p>
+    <h3>Availability news at the draft</h3>
+    <div class="formula">out on opening night: games = (82 − lost) × projected games / 82
+  lost = the team's announced timeline, else
+         29.6 (surgery, Achilles, ACL, fracture) or 12.2 (other)
+ended last season hurt:        games − 4.84
+returned from a lost season:   production × 0.967 / 0.927 / 0.883
+                               (pre-injury FP/G 40+ / 30–40 / under 30)</div>
+    <h3>Rookies</h3>
+    <div class="formula">FP/36 from draft slot + college production (+ centre term)
+MPG   from draft slot + minutes open on his new team
+games from draft slot
+then FP/36 moves toward his preseason FP/36 by 0.21 (under 80 min) or 0.36</div>
+    <p>The college model beat ESPN&rsquo;s rookie lines in 7 of 7 test seasons on the realistic objective.</p>
 
-    <h2 id="how-luck">3. Luck</h2>
-    <p>Some of a big game carries into the next one and some doesn&rsquo;t. Every game&rsquo;s surprise (actual minus
-      expected) splits exactly into pieces, and each piece was tested for whether it predicts the next game, over 154,305
-      player-games (2016&ndash;26):</p>
-    <ul class="plan">
-      <li><strong>Carries over (real):</strong> extra <strong>minutes</strong> (about a quarter of a minutes spike
-        persists), extra <strong>shot attempts</strong>, and extra <strong>assists</strong> (passing creates
-        assists; whether teammates make the shots doesn&rsquo;t matter).</li>
-      <li><strong>Doesn&rsquo;t carry over (luck):</strong> shooting percentage (a hot night from three is slightly
-        <em>anti</em>-persistent), steals, blocks, rebounds and free-throw percentage above his own norm. A turnover
-        spike reverses (it comes back the other way).</li>
-    </ul>
-    <div class="formula">luck-adjusted =
-  his own rates × minutes played
-  with his real shots, at his own %
-  and his real assists
-luck = actual FP − luck-adjusted FP</div>
-    <p>Positive luck means the box score flatters him; negative means he played better than it looks. &ldquo;His own
-      rates&rdquo; are the draft-day projection, so a five-steal night from a one-steal player is mostly luck. The luck
-      number is built as a stat line, so it re-scores under your league too.</p>
-    <p class="note">Tested and rejected: feeding the luck-adjusted numbers into the rest-of-season update. The blend
-      already discounts luck through how slowly it trusts new games; removing luck first made it no better.</p>
+    <h2 id="how-ros">3. Rest of season: how far a few games move him</h2>
+    <p>After every game the draft-day line is blended with the season so far. Each piece of the draft-day line counts as a fixed
+      amount of evidence, tuned on 1999&ndash;2019 and scored once on 2021&ndash;26:</p>
+    <div class="formula">rate(stat) = (draft rate × 600 + season total)
+           / (600 + season minutes)
+MPG        = (5 × draft MPG + season minutes) / (5 + games)
+availability = (20 × draft availability + games played)
+             / (20 + team games so far)
+bonuses: same as rates, evidence = 600 / draft MPG games</div>
+    <p>This blend beat both &ldquo;never update&rdquo; and &ldquo;trust the season so far&rdquo; at all 25 test checkpoints. Its
+      result is the <strong>ROS FP/G</strong> used everywhere in-season, and:</p>
+    <div class="formula">ROS points = ROS FP/G × availability × games left
+           + injury boost (section 5)
+games left = his team's remaining games
+             (for a player who is out: from his return date)</div>
 
-    <h2 id="how-tabs">4. What each tab does</h2>
-    <h3>League</h3>
-    <p>Your league&rsquo;s rules: scoring, bonuses, roster slots, adds, playoff weeks. Pull them from a public ESPN league
-      or type them in; save several leagues and switch at the top. &ldquo;You are&rdquo; picks your team for the
-      in-season tabs.</p>
-    <h3>Projections</h3>
-    <p>The top 300 by total points: rest of season, the frozen draft-day board, or the season so far with luck alongside.
-      The waiver line marks how many players your league rosters (teams × roster spots).</p>
-    <h3>In-season</h3>
+    <h2 id="how-luck">4. Luck</h2>
+    <p>Every game&rsquo;s surprise (actual minus expected) splits exactly into pieces. Each piece was tested for whether it predicts
+      the next game, over 154,305 player-games (2016&ndash;26, comparing each player with himself):</p>
     <ul class="plan">
-      <li><strong>Trade targets</strong>: players on other teams whose luck-adjusted FP/G is above their actual FP/G.
-        Their managers see the box score, which is running behind the real level. Early in the season managers judge players
-        against draft cost, so &ldquo;Now vs draft&rdquo; shows who is disappointing on paper.</li>
-      <li><strong>Sell high</strong>: your players whose FP/G is inflated by luck.</li>
-      <li><strong>Drops</strong>: each of your players against the best free agent sharing a position, on rest-of-season
-        points. A swap is only called if it gains more than 8% (smaller is inside projection noise); your keep list and IR
-        slot are never suggested.</li>
-      <li><strong>Rosters</strong>: every team ranked by projected rest-of-season points, with how much luck each roster
-        has run.</li>
+      <li><strong>Carries over:</strong> extra minutes (a quarter of a minutes spike persists, 8/8 seasons), extra shot attempts
+        (8/8), extra assists (8/8; passing creates them).</li>
+      <li><strong>Luck:</strong> 2-point % (zero persistence), 3-point % (slightly <em>anti</em>-persistent), steals, blocks,
+        rebounds, free-throw %, bonuses. A turnover spike reverses.</li>
     </ul>
-    <h3>Waivers</h3>
-    <p>Free agents with a game in the window you pick:</p>
-    <ul class="plan">
-      <li><strong>Projected</strong> = ROS FP/G + a one-game <strong>matchup adjustment</strong> from four factors
-        tested on 224,300 player-games over 16 seasons: opponent pace, fantasy points the opponent allows to his position,
-        FG% the opponent allows, and home court. In head-to-head streamer choices it picked the better player more often in
-        12 of 13 seasons. It is worth about ±2&ndash;3 points at the extremes, a tiebreaker.</li>
-      <li><strong>Ceiling</strong> = a top-10% night: projection + 1.40 × his game-to-game spread, the spread shrunk
-        toward last season&rsquo;s. Of four methods tested, this was the best calibrated: in 2021&ndash;26, 10.6% of games
-        beat it (the target is 10%), and it beat a flat ratio in all 5 test seasons.</li>
-      <li><strong>Back-to-backs</strong>: who rests on second nights is read from the game logs, whatever the injury tag
-        said. A second night counts as a rest sit only if he played the night before <em>and</em> his team&rsquo;s next
-        game. Sitting habits carry over between seasons, but only partly (correlation 0.25), so each player&rsquo;s rate
-        is pulled toward the league&rsquo;s 11%. You can add players you know sit.</li>
-    </ul>
-    <h3>Recap</h3>
-    <p>Every game of a night with both box scores, starters and bench separated, and each player&rsquo;s fantasy
-      points, luck-adjusted points and luck; then your players&rsquo; night and the biggest hot and cold games.</p>
-    <h3>My week</h3>
-    <p>Every matchup this week and next. Each remaining day&rsquo;s lineup is the best possible assignment of that
-      day&rsquo;s players to your starter slots (an exact optimization using ESPN&rsquo;s position eligibility), valued
-      with the Waivers projection. Projected final = ESPN&rsquo;s live score + those lineups. Untick anyone you know is
-      sitting. Open starter slots show the days you can stream.</p>
-    <h3>Trade analyzer</h3>
-    <p>The score is your change in <strong>rest-of-season points of your best 13</strong>, chosen from your roster plus
-      the free agents you could pick up, before and after the trade. A player you get only counts for what he adds over
-      the waiver wire, a 2-for-1&rsquo;s open spot is filled by the best free agent, taking back more forces your weakest
-      player out, and nothing is credited for a pickup you could make today anyway. The box-score view shows how a manager
-      who goes by averages sees the same deal.</p>
+    <div class="formula">luck-adjusted line, per game:
+  every stat = his draft-day rate × minutes played
+  extra attempts A = actual FGA − expected FGA
+  FGA = actual;  FGM += his FG% × A
+  3PM += his threes per FGA × A
+  PTS += (2 × FG% + 3PM per FGA) × A
+  AST = actual
+  bonus chances × minutes / draft MPG
+luck = actual FP − FP(luck-adjusted line)</div>
+    <p>&ldquo;His&rdquo; rates are the draft-day projection, so a five-steal night from a one-steal player is mostly luck. Season
+      luck per game = average luck over his games. Feeding luck-adjusted numbers into the rest-of-season blend was tested and
+      changed nothing: the blend&rsquo;s slow trust already discounts luck.</p>
 
-    <h2 id="how-good">5. How good is it?</h2>
-    <p>Graded on 24 past seasons, each projected only from what was known before that season:</p>
+    <h2 id="how-inj">5. Injuries and injury boosts</h2>
+    <h3>Who is out</h3>
+    <p>ESPN&rsquo;s fantasy feed lags the league&rsquo;s report, so the <strong>official NBA injury report</strong> (published every 15
+      minutes on game days, pulled hourly) comes first:</p>
+    <div class="formula">his status = his row on the latest report that covers his team
+  (his team is on it but he isn't = cleared)
+streak = how many of his team's reports in a row list him Out
+Out, streak 1  = out for that game only (rest, a knock)
+Out, streak 2+ = out until a report clears him
+otherwise ESPN's status (OUT / IR / SUSP / DTD)</div>
+    <p>Colours: <span class="tag inj" style="margin:0">OUT</span> red, <span class="tag doubt" style="margin:0">DOUBT</span> orange,
+      <span class="tag dtd" style="margin:0">Q / DTD</span> yellow, <span class="tag prob" style="margin:0">PROB</span> grey.</p>
+    <h3>How long he is out</h3>
+    <div class="formula">return date = your weeks-out (Injury boosts panel), else
+              ESPN's expected return date, else
+              the historical mean absence for that body part
+              minus games already missed</div>
+    <h3>Who gains his minutes</h3>
+    <p>For a key absentee (out, played in his team&rsquo;s last 5, 24+ minutes a game), tested on 7,669 past absences with every
+      parameter the same in all 10 leave-one-season-out folds:</p>
+    <div class="formula">weight_i = (1 + same position group) × √max(1, 38 − his MPG)
++min_i   = 0.6 × absentee's minutes × weight_i / Σ weights
+lone backup centre: at least +4.8 min
+boost FP/G = +min × his own FP per minute
+             (only on dates before the return)</div>
+    <p>The top predicted beneficiary gained +3.3 minutes against +3.7 predicted. Starters near their minutes cap gain little;
+      bench players with room gain most. Boosts feed every rest-of-season number: Waivers, Drops, Sell high, My week, trades,
+      Projections.</p>
+    <p class="note">Usage (owner&rsquo;s question, tested 2026-11-01): when the absentee is a high-usage player, same-position
+      teammates&rsquo; per-minute production also rises by about +0.6 FP per 30 minutes (positive in 9 of 10 seasons). It is
+      small and did not clear the bar set before the test, so it is <strong>not</strong> in the boost yet.</p>
+
+    <h2 id="how-proj">6. Projections tab</h2>
+    <div class="formula">Total (rest of season) = ROS points (section 3)
+Total (preseason)      = draft-day FP/G × projected games
+Total (so far)         = actual FP/G × games played
+waiver line            = teams × roster spots (13 here)</div>
+
+    <h2 id="how-insea">7. In-season tab</h2>
+    <div class="formula">buy-low gap = luck-adjusted FP/G − actual FP/G
+  listed if: other team, 3+ games, gap > 0,
+             max(actual, luck-adjusted) ≥ 20
+sell high   = actual FP/G − luck-adjusted FP/G (your players)
+now vs draft = actual FP/G − draft-day FP/G</div>
+    <p>Early in the season managers judge players against what they drafted them to be; the best buy-lows pair a big gap with a
+      disappointing start. &ldquo;Ran cold on&rdquo; lists the two luck pieces behind the gap, per game.</p>
+    <div class="formula">Drops: gain = best free agent's ROS points
+             − your player's ROS points
+  (free agent must share an ESPN position)
+  drop candidate if gain > 8% of your player's ROS points
+  never: keep list, IR slot</div>
+    <p>Rosters ranks teams by Σ ROS points; &ldquo;luck so far&rdquo; = Σ (actual − luck-adjusted) points of the current roster.</p>
+
+    <h2 id="how-wire">8. Waivers tab</h2>
+    <div class="formula">per game = play × (ROS FP/G + matchup + boost)
+Projected = Σ per game over the window</div>
+    <p><strong>Matchup</strong>, from 224,300 player-games over 16 seasons (each factor is the opponent&rsquo;s season-to-date value
+      divided by the league&rsquo;s):</p>
+    <div class="formula">matchup = 22.0 × (opponent pace − 1)
+        + 6.4 × (FP the opponent allows to his position − 1)
+        + 16.6 × (FG% the opponent allows − 1)
+        ± 0.54 (home / away)</div>
+    <p>In same-night streamer choices it picked the better player more often in 12 of 13 seasons; worth about ±2&ndash;3 points at the
+      extremes.</p>
+    <div class="formula">Ceiling = best game of
+          ROS FP/G + matchup + boost + 1.40 × SD
+SD² = (n × his SD this season² + 20 × prior²) / (n + 20)
+prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
+    <p>Of four methods tested, this was the best calibrated: in 2021&ndash;26, 10.6% of games beat it (target 10%).</p>
+    <div class="formula">back-to-backs:
+  rest sit = played the night before AND the team's next game,
+             missed the second night
+  P(sit) = (sits + 8 × 0.11) / (second nights + 8)
+  play on a second night = 1 − max(0, P(sit) − 0.076)</div>
+    <p>Sitting habits carry over between seasons only partly (correlation 0.25), so each rate is pulled toward the league&rsquo;s 11%;
+      0.076 is the rest rate on ordinary nights. Players on your &ldquo;won&rsquo;t play back-to-backs&rdquo; list get P(sit) = 1.</p>
+
+    <h2 id="how-recap">9. Recap tab</h2>
+    <p>For each game: both box scores (starters and bench as ESPN lists them), each player&rsquo;s FP under your league, his
+      luck-adjusted FP (section 4) and luck = FP − luck-adjusted. Team luck = Σ luck of players with a draft-day line (two-way
+      call-ups have no luck number).</p>
+
+    <h2 id="how-week">10. My week tab</h2>
+    <div class="formula">each remaining day:
+  value_i = play × (ROS FP/G + matchup + boost)
+  lineup = the assignment of players to slots
+           (PG SG SF PF C G F UTIL×3) that maximises Σ value,
+           each player only in slots ESPN says he is eligible for
+  your ticks: forced start = placed first if a slot fits,
+              untick = benched
+projected final = live ESPN score + Σ remaining lineups
+win chance = Φ( (A − B) / √(Σ SD² of every start left) )</div>
+    <p>The assignment is exact (the Hungarian algorithm), so positions are filled properly, not just ten bodies; each start shows
+      the slot it fills, and the open-slots row names the open positions. The win chance treats games as independent and is untested
+      as a probability.</p>
+
+    <h2 id="how-trade">11. Trade analyzer</h2>
+    <div class="formula">V(roster) = Σ ROS points of its best 13 players,
+            chosen from the roster + free agents
+            (keep list always in, IR slot outside)
+score = V(after) − V(before)        for your side
+box-score view = Σ actual FP/G × games left (in) − (out)
+playoff view   = same as score with ROS FP/G × playoff games
+roughly even if |score| < 3% of what you send</div>
+    <p>Because free agents are in both rosters&rsquo; baselines, a player you get only counts for what he adds over the waiver
+      wire, a 2-for-1&rsquo;s open spot is filled by the best free agent, and nothing is credited for a pickup you could make today
+      anyway.</p>
+
+    <h2 id="how-good">12. How good is it?</h2>
     <ul class="plan">
-      <li>It beats simply ranking by last season&rsquo;s totals in 22 of 24 seasons and by last season&rsquo;s per-game
-        average in 20 of 24.</li>
-      <li>Stat by stat against ESPN&rsquo;s own preseason projections (7 seasons, top 200 players), it has the smaller
-        error on most stats (rebounds, steals, blocks, threes, games played among them). ESPN is better on the stars and
-        slightly better on minutes.</li>
-      <li>Human experts are still a little ahead on draft rankings: the FantasyPros consensus captures about 1 point more
-        of a perfect draft&rsquo;s value per season, mostly by knowing injury and role news earlier. ESPN&rsquo;s published
-        rankings are about even with the model.</li>
-      <li>In-season, the draft-day prior stops mattering after about five games: from then on the blend is as accurate
-        whichever preseason projection it started from, and it beats a frozen preseason projection by a growing margin.</li>
+      <li>Draft rankings: beats last season&rsquo;s totals in 22 of 24 seasons and last season&rsquo;s per-game in 20 of 24.</li>
+      <li>Stat by stat against ESPN&rsquo;s preseason projections (7 seasons, top 200): smaller error on most stats (rebounds,
+        steals, blocks, threes, games); ESPN is better on stars and slightly better on minutes.</li>
+      <li>The FantasyPros expert consensus is still about 1 point ahead per season on draft value, mostly from earlier injury and
+        role news; ESPN&rsquo;s published rankings are about even.</li>
+      <li>In-season, the draft-day prior stops mattering after about five games.</li>
     </ul>
 
-    <h2 id="how-data">6. Data and privacy</h2>
-    <p>Box scores come from ESPN&rsquo;s public fantasy feed and game summaries (scores, starters, did-not-play reasons),
-      with NBA game logs back to 1996&ndash;97 for the history the tests run on. The site rebuilds every morning around
-      6 am Pacific. Your league&rsquo;s rosters, injuries, waivers and live scores are read straight from ESPN by your
-      browser when you open a tab. Leagues, your team, keep lists and checkboxes are saved in this browser only; nothing
-      is sent anywhere. Private ESPN leagues can&rsquo;t be read.</p>
+    <h2 id="how-data">13. Data and privacy</h2>
+    <p>Box scores: ESPN&rsquo;s public fantasy feed and game summaries; history: NBA game logs back to 1996&ndash;97; injuries: the
+      official NBA report. The site rebuilds around 6 am Pacific and the injury report hourly on game days; the Refresh button
+      re-reads everything. Your league&rsquo;s rosters, injuries, waivers and live scores are read straight from ESPN by your
+      browser. Leagues, your team, keep lists, ticks and marks are saved in this browser only.</p>
 
-    <h2 id="how-limits">7. Limits, stated plainly</h2>
+    <h2 id="how-limits">14. Limits</h2>
     <ul class="plan">
-      <li>The model reads box scores, not news. A role change, injury or trade shows up after it happens, not before.</li>
-      <li>Early in the season every number rests on a handful of games; small gaps are noise.</li>
-      <li>The matchup adjustment and ceiling spread were measured under this site&rsquo;s default scoring; under very
-        different scoring they are scaled, so treat them as approximate.</li>
-      <li>The My week win chance is rough: it treats games as independent and has not been tested against real matchup
-        results.</li>
-      <li>The trade analyzer and drops compare rest-of-season points without enforcing positions; in an 8-team league
-        with utility slots that rarely matters, and My week has the exact daily lineup math.</li>
+      <li>Box scores lag news: a role change shows up after it happens. Use the Injury boosts panel to mark news early.</li>
+      <li>Early in the season small samples swing; small gaps are noise.</li>
+      <li>Matchup and ceiling sizes were measured under this site&rsquo;s default scoring and are scaled under yours.</li>
+      <li>The win chance is rough; trades and drops compare season points without enforcing positions (My week does).</li>
     </ul>
-    <p class="note">The previous version of this site, with the full season-by-season backtests against ESPN and
-      FantasyPros, is still at <a href="../">the original board</a>.</p>
+    <p class="note">The previous version of this site, with the full season-by-season backtests, is at
+      <a href="../">the original board</a>.</p>
   </section>
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js"></script>
+<script src="app.js?v=96b8ec5bb5"></script>
 </body>
 </html>
