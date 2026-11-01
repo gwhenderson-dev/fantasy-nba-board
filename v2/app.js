@@ -424,16 +424,22 @@ function computeBoosts() {
       if (tot <= 0) return;
       const cm = mates.filter((p) => posGroups(p.pos).C);
       const lone = center && cm.length === 1 ? cm[0].id : null;
-      abs[k.id] = {p: k, min: mK, win: absWindow(k), mates: []};
+      // usage bump: teammates' per-minute FP rises with the absentee's usage
+      const U = META.usage, ks = k.s || [];
+      const uK = k.mpg > 0 ? ((ks[SI.FGA] || 0) + 0.44 * (ks[SI.FTA] || 0) + (ks[SI.TOV] || 0)) / k.mpg : 0;
+      abs[k.id] = {p: k, min: mK, uK, win: absWindow(k), mates: []};
       mates.forEach((p, i) => {
         let d = P.s * mK * ws[i] / tot;
         if (p.id === lone) d = Math.max(d, P.lone_c);
-        const o = by[p.id] = by[p.id] || {parts: [], lone: false};
-        o.parts.push({k: k.id, d});
+        const g = posGroups(p.pos), same = Object.keys(kg).some((x) => g[x]) ? 1 : 0;
+        const rb = U ? Math.max(0, U.c0 + U.c_use * (uK / U.uk_ref - 1) + U.c_same * same) : 0;
+        const o = by[p.id] = by[p.id] || {parts: [], lone: false, sc: null};
+        if (o.sc == null) { const fd = fpgUnder(META.league, p.s, p.bp); o.sc = fd > 0 ? fpg(p.s, p.bp) / fd : 1; }
+        o.parts.push({k: k.id, d, rb});
         if (p.id === lone) o.lone = true;
-        abs[k.id].mates.push({p, d});
+        abs[k.id].mates.push({p, d, rb, fp: d * perMin(p) + rb * o.sc * ((p.mpg || 0) + d)});
       });
-      abs[k.id].mates.sort((a, b2) => b2.d - a.d);
+      abs[k.id].mates.sort((a, b2) => b2.fp - a.fp);
     });
   });
   return (BC = {by, abs});
@@ -445,7 +451,13 @@ function boostMin(p, d) {
   return o.parts.reduce((a, pt) => a + (d < B.abs[pt.k].win.ret ? pt.d : 0), 0);
 }
 const perMin = (p) => (p.mpg > 0 ? fpg(p.s, p.bp) / p.mpg : 0);
-const boostFP = (p, d) => boostMin(p, d) * perMin(p);
+function boostFP(p, d) {
+  const B = computeBoosts(), o = B.by[p.id];
+  if (!o) return 0;
+  let dm = 0, rb = 0;
+  o.parts.forEach((pt) => { if (d < B.abs[pt.k].win.ret) { dm += pt.d; rb += pt.rb; } });
+  return dm * perMin(p) + rb * o.sc * ((p.mpg || 0) + dm);
+}
 // remaining team games he is expected to play (an absentee's start at his return)
 function gamesLeftFor(p) {
   const last = META.last_game_day || "";
@@ -465,10 +477,11 @@ function boostInfo(p) {
   });
   o.parts.forEach((pt) => { const r = B.abs[pt.k].win.ret; if (r > thru) thru = r; });
   const names = o.parts.map((pt) => B.abs[pt.k].p.n);
-  const now = o.parts.reduce((a, pt) => a + pt.d, 0);
-  return {tot: tot * (p.av || 0), games: n, min: now, fpg: now * perMin(p), thru, names, lone: o.lone};
+  const now = o.parts.reduce((a, pt) => a + pt.d, 0), rb = o.parts.reduce((a, pt) => a + pt.rb, 0);
+  const use = rb * o.sc * ((p.mpg || 0) + now);
+  return {tot: tot * (p.av || 0), games: n, min: now, use, fpg: now * perMin(p) + use, thru, names, lone: o.lone};
 }
-const boostTip = (b) => `+${b.min.toFixed(1)} min (+${b.fpg.toFixed(1)} FP/G) while ${b.names.join(", ")} ${b.names.length > 1 ? "are" : "is"} out` +
+const boostTip = (b) => `+${b.min.toFixed(1)} min and +${b.use.toFixed(1)} FP/G from usage (+${b.fpg.toFixed(1)} FP/G in all) while ${b.names.join(", ")} ${b.names.length > 1 ? "are" : "is"} out` +
   ` — ${b.games} games, through about ${b.thru.slice(5)}${b.lone ? "; lone backup centre" : ""}`;
 
 const BUI = {open: {"wv-boosts": true, "is-boosts": true}};
@@ -480,9 +493,9 @@ function renderBoostPanel(cid) {
   const wks = outWeeks(), mo = manualOut();
   const rows = ab.map((a) => {
     const p = a.p;
-    const top = a.mates.slice(0, 4).map((m) => `<span class="name" data-id="${m.p.id}">${esc(m.p.n)}</span> <span class="pos-up">+${m.d.toFixed(1)}</span>`).join(", ");
+    const top = a.mates.slice(0, 4).map((m) => `<span class="name" data-id="${m.p.id}">${esc(m.p.n)}</span> <span class="pos-up" title="+${m.d.toFixed(1)} min, +${(m.fp - m.d * perMin(m.p)).toFixed(1)} FP/G from usage (under your scoring)">+${m.fp.toFixed(1)}</span>`).join(", ");
     return `<tr><td class="l"><span class="name" data-id="${p.id}">${esc(p.n)}</span>${tags(p)}${mo.includes(p.id) && !outNow(p) ? ' <span class="dim">(marked by you)</span>' : ""}</td>` +
-      `<td class="l dim">${esc(p.tm)}</td><td>${a.min.toFixed(0)}</td>` +
+      `<td class="l dim">${esc(p.tm)}</td><td>${a.min.toFixed(0)}</td><td class="${a.uK > 0.6 ? "pos-up" : "dim"}">${a.uK.toFixed(2)}</td>` +
       `<td class="l">${a.win.ret.slice(5)} <span class="dim" style="font-size:.76rem">${esc(a.win.src)}</span></td>` +
       `<td><input type="number" min="0" max="30" step="1" data-wk="${p.id}" value="${wks[p.id] ?? ""}" placeholder="wks" style="width:4.2rem" aria-label="Weeks ${esc(p.n)} is out"></td>` +
       `<td class="l" style="white-space:normal;min-width:14rem">${top || '<span class="dim">no healthy teammates with a role</span>'}</td></tr>`;
@@ -491,10 +504,11 @@ function renderBoostPanel(cid) {
   el.innerHTML = `<details class="card"${BUI.open[cid] ? " open" : ""} data-bp="${cid}" style="margin:1rem 0">` +
     `<summary><strong>Injury boosts</strong> <span class="dim">&mdash; ${ab.length} rotation player${ab.length === 1 ? "" : "s"} out, their minutes go to teammates</span></summary>` +
     `<p class="note">When a player who has been playing 24+ minutes is out, about 60% of his minutes go to healthy teammates, more to the same position and to players with more room to grow (tested on 7,669 past absences: the top beneficiary gained +3.3 minutes against +3.7 predicted; a lone backup centre gains at least +4.8). ` +
+    `If he was a high-usage player, teammates&rsquo; per-minute production also rises, more at his position (top-usage absentees: +0.46 FP per 30 minutes, same position +0.62, 9 of 10 seasons; small, added on your call). ` +
     `Each teammate keeps his own per-minute production, and the boost runs until the return date. That date is your weeks-out if you type one, else ESPN&rsquo;s expected return, else the typical absence for that injury. ` +
     `The injured player&rsquo;s own games before that date are taken off his rest-of-season value. Boosts feed every projection on the site.</p>` +
-    (rows ? '<div class="tablewrap" style="max-height:26rem"><table><thead><tr><th class="l">Out</th><th class="l">Tm</th><th title="Minutes he had been playing">Min</th>' +
-      '<th class="l">Back about</th><th title="Override: weeks he will be out">Weeks out</th><th class="l">Biggest gains (+minutes per game)</th></tr></thead><tbody>' + rows + "</tbody></table></div>"
+    (rows ? '<div class="tablewrap" style="max-height:26rem"><table><thead><tr><th class="l">Out</th><th class="l">Tm</th><th title="Minutes he had been playing">Min</th><th title="His usage per minute (shots + 0.44 free-throw trips + turnovers) against a typical key player&rsquo;s 0.53">Usage</th>' +
+      '<th class="l">Back about</th><th title="Override: weeks he will be out">Weeks out</th><th class="l">Biggest gains (+FP per game: minutes + usage)</th></tr></thead><tbody>' + rows + "</tbody></table></div>"
       : '<p class="note">No rotation players are out right now.</p>') +
     `<div class="controls" style="margin-top:.7rem"><div class="ctl"><label for="${cid}-add">Mark a player out (news ESPN hasn&rsquo;t caught up with)</label>` +
     `<input id="${cid}-add" list="${cid}-dl" type="search" placeholder="player name" autocomplete="off" style="min-width:14rem"></div>` +

@@ -363,9 +363,17 @@ boost FP/G = +min × his own FP per minute
     <p>The top predicted beneficiary gained +3.3 minutes against +3.7 predicted. Starters near their minutes cap gain little;
       bench players with room gain most. Boosts feed every rest-of-season number: Waivers, Drops, Sell high, My week, trades,
       Projections.</p>
-    <p class="note">Usage (owner&rsquo;s question, tested 2026-11-01): when the absentee is a high-usage player, same-position
-      teammates&rsquo; per-minute production also rises by about +0.6 FP per 30 minutes (positive in 9 of 10 seasons). It is
-      small and did not clear the bar set before the test, so it is <strong>not</strong> in the boost yet.</p>
+    <h3>Usage: per-minute production also rises</h3>
+    <p>When the absentee was a high-usage player, teammates also produce more per minute, most at his position. Tested on the
+      same absences (63,096 teammate-games): top-usage-third absentees lifted teammates by +0.46 FP per 30 minutes, same position
+      +0.62, positive in 9 of 10 seasons, and adding it improved game predictions in all 10. It is small and missed the bar set
+      before the test, so it was added on the owner&rsquo;s call.</p>
+    <div class="formula">absentee usage uK = (FGA + 0.44 × FTA + TOV) per minute
+usage bump (FP/min) = −0.0012 + 0.0419 × (uK / 0.53 − 1)
+                      + 0.0050 × same position group
+                      (never below 0)
+boost FP/G = +min × his FP per minute
+           + usage bump × (his minutes + extra minutes)</div>
 
     <h2 id="how-proj">6. Projections tab</h2>
     <div class="formula">Total (rest of season) = ROS points (section 3)
@@ -472,6 +480,6 @@ roughly even if |score| < 3% of what you send</div>
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=96b8ec5bb5"></script>
+<script src="app.js?v=70d14b093f"></script>
 </body>
 </html>
