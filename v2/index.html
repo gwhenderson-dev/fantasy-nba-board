@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fantasy NBA Model</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">Fantasy NBA Model<small id="asof"></small></div>
+    <label class="lgpick">League <select id="lgsel" aria-label="Active league"></select></label>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="league">League</button>
+    <button class="tab" role="tab" data-tab="proj">Projections</button>
+    <button class="tab" role="tab" data-tab="insea">In-season<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="wire">Waivers<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="recap">Recap<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="week">My week<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="trade">Trade analyzer<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="how">How it works</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ================================================================ LEAGUE -->
+  <section class="panel" id="tab-league" hidden>
+    <h1>Your league</h1>
+    <p class="lede">Every number on this site is scored under the league selected at the top. Pull a
+      public ESPN league to fill its rules automatically, or type them in. Leagues are saved in this
+      browser only &mdash; nothing is sent anywhere.</p>
+    <div class="controls">
+      <div class="ctl"><label for="lg-espn">ESPN league id</label>
+        <input id="lg-espn" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 242568268"></div>
+      <div class="ctl"><label>&nbsp;</label><button class="btn" id="lg-pull">Pull rules from ESPN</button></div>
+      <div class="ctl"><label>&nbsp;</label><button class="btn" id="lg-new">+ Add another league</button></div>
+    </div>
+    <div id="lg-msg"></div>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">Basics</h3>
+        <div class="fields">
+          <div class="ctl" style="grid-column:span 2"><label for="lg-name">League name</label><input id="lg-name" type="text"></div>
+          <div class="ctl"><label for="lg-teams">Teams</label><input id="lg-teams" type="number" min="2" max="30"></div>
+          <div class="ctl"><label for="lg-adds">Adds / week</label><input id="lg-adds" type="number" min="0" max="50"></div>
+          <div class="ctl"><label for="lg-po1">Playoffs from wk</label><input id="lg-po1" type="number" min="1" max="30"></div>
+          <div class="ctl"><label for="lg-po2">through wk</label><input id="lg-po2" type="number" min="1" max="30"></div>
+        </div>
+        <h3>Roster slots</h3>
+        <div class="fields" id="lg-slots"></div>
+        <p class="note" id="lg-roster-note"></p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Scoring (points per stat)</h3>
+        <div class="fields" id="lg-scoring"></div>
+        <h3>Bonuses</h3>
+        <div class="fields" id="lg-bonus"></div>
+        <label style="display:flex;gap:.45rem;align-items:center;margin-top:.7rem;font-size:.86rem">
+          <input type="checkbox" id="lg-cum"> Bonuses stack (a triple-double also earns the double-double bonus)</label>
+        <p class="note" id="lg-unmod"></p>
+      </div>
+    </div>
+    <div class="controls" style="margin-top:1rem">
+      <button class="btn primary" id="lg-save">Save league</button>
+      <button class="btn danger" id="lg-del">Delete this league</button>
+      <span class="count" id="lg-state"></span>
+    </div>
+  </section>
+
+  <!-- =========================================================== PROJECTIONS -->
+  <section class="panel" id="tab-proj" hidden>
+    <h1>Player projections</h1>
+    <p class="lede" id="pj-lede"></p>
+    <div class="controls">
+      <div class="ctl"><span class="lbl">View</span><div class="chips" id="pj-view">
+        <button class="chip" data-v="ros" aria-pressed="true">Rest of season</button>
+        <button class="chip" data-v="pre" aria-pressed="false">Preseason (draft day)</button>
+        <button class="chip" data-v="sofar" aria-pressed="false">Season so far</button>
+      </div></div>
+      <div class="ctl"><span class="lbl">Position</span><div class="chips" id="pj-pos">
+        <button class="chip" data-p="" aria-pressed="true">All</button>
+        <button class="chip" data-p="PG" aria-pressed="false">PG</button>
+        <button class="chip" data-p="SG" aria-pressed="false">SG</button>
+        <button class="chip" data-p="SF" aria-pressed="false">SF</button>
+        <button class="chip" data-p="PF" aria-pressed="false">PF</button>
+        <button class="chip" data-p="C" aria-pressed="false">C</button>
+      </div></div>
+      <div class="ctl"><label for="pj-q">Search</label><input id="pj-q" type="search" placeholder="player or team" autocomplete="off"></div>
+      <span class="count" id="pj-count"></span>
+    </div>
+    <div class="tablewrap"><table id="pj-table"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="pj-note"></p>
+  </section>
+
+  <!-- ========================================================= COMING NEXT -->
+  <section class="panel" id="tab-insea" hidden>
+    <h1>In-season analysis</h1>
+    <p class="lede">Coming next. Load your league and this tab reads every roster, then sorts the league into three lists:</p>
+    <ul class="plan">
+      <li><strong>Trade targets (buy low)</strong> &mdash; players on other teams whose luck-adjusted FP/G is above their current FP/G. Their managers judge them by the box score; the box score is running behind the real level.</li>
+      <li><strong>Sell high</strong> &mdash; your players whose points are inflated by luck (hot shooting, steal and block spikes).</li>
+      <li><strong>Drops</strong> &mdash; your players worth fewer points to your lineup than the best available free agent at a position they can fill.</li>
+    </ul>
+  </section>
+  <section class="panel" id="tab-wire" hidden>
+    <h1>Waivers &amp; streaming</h1>
+    <p class="lede">Coming next. One- and two-day pickups among your league&rsquo;s available players: current FP/G,
+      luck-adjusted FP/G, a projection <em>and</em> a ceiling (for when you need a moonshot), tonight&rsquo;s matchup
+      adjustment (pace, defense by position, FG% allowed, home court), and back-to-back awareness &mdash; players who
+      sit the second night are detected from the game logs whatever their injury tag says.</p>
+  </section>
+  <section class="panel" id="tab-recap" hidden>
+    <h1>Daily recap</h1>
+    <p class="lede">Coming next. Pick a day: every game as a box with logos and the final score. Click one for both
+      box scores &mdash; starters and bench separated &mdash; with fantasy points and luck-adjusted fantasy points per player.</p>
+  </section>
+  <section class="panel" id="tab-week" hidden>
+    <h1>My week</h1>
+    <p class="lede">Coming next. The current matchup week forecast for every team in your league, with a checkbox per
+      player to mark anyone you know is sitting, so the projection reflects reality.</p>
+  </section>
+  <section class="panel" id="tab-trade" hidden>
+    <h1>Trade analyzer</h1>
+    <p class="lede">Coming next. Put players on each side and get a single numerical score built from projected value,
+      actual production and games remaining &mdash; including what a 2-for-1 frees up on your roster.</p>
+  </section>
+
+  <!-- ========================================================== HOW IT WORKS -->
+  <section class="panel prose" id="tab-how" hidden>
+    <h1>How it works</h1>
+    <p>Everything here comes from one model built on NBA box scores &mdash; no outside projections are mixed in.
+      ESPN and FantasyPros rankings appear only as benchmarks.</p>
+    <h2>The preseason projection</h2>
+    <p>Each player&rsquo;s per-minute production is a weighted average of his last three seasons (7 / 2 / 1, newest
+      heaviest), adjusted for age, for how crowded his team&rsquo;s rotation is, and for his preseason form. Minutes and
+      games played are projected separately, so durability is part of the number. Every stat is projected on its own
+      (points, rebounds, steals&hellip;), which is why any scoring system can be applied in your browser.</p>
+    <h2>During the season</h2>
+    <p>The projection updates game by game: the preseason line is blended with what the player is actually doing,
+      with the amount of trust tested on 24 past seasons (production after about 600 minutes, minutes after about five
+      games, availability after about twenty).</p>
+    <h2>Luck</h2>
+    <p>Some of a hot game persists and some doesn&rsquo;t. Tested over 154,305 player-games: extra <strong>minutes</strong>,
+      extra <strong>shot attempts</strong> and extra <strong>assists</strong> carry into the next game; shooting
+      percentage, steals, blocks and rebounds above a player&rsquo;s own norm do not. So each game splits into:</p>
+    <div class="formula">luck-adjusted FP = his own per-minute rates &times; the minutes he played
+                    + his real shot attempts at his own shooting %
+                    + his real assists
+luck = actual FP &minus; luck-adjusted FP</div>
+    <p>A positive luck number means the box score flatters him; negative means he played better than it looks.</p>
+    <p class="note">The full research log &mdash; every test, including the many ideas that failed &mdash; lives in
+      the project notes. The previous version of this site, with the backtests against ESPN and FantasyPros, is still
+      at <a href="../">the original board</a>.</p>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
+<script src="app.js"></script>
+</body>
+</html>
