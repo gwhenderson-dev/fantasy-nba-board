@@ -20,7 +20,7 @@
     <button class="tab" role="tab" data-tab="wire">Waivers</button>
     <button class="tab" role="tab" data-tab="recap">Recap</button>
     <button class="tab" role="tab" data-tab="week">My week</button>
-    <button class="tab" role="tab" data-tab="trade">Trade analyzer<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="trade">Trade analyzer</button>
     <button class="tab" role="tab" data-tab="how">How it works</button>
   </nav>
 </header>
@@ -188,8 +188,21 @@
   </section>
   <section class="panel" id="tab-trade" hidden>
     <h1>Trade analyzer</h1>
-    <p class="lede">Coming next. Put players on each side and get a single numerical score built from projected value,
-      actual production and games remaining &mdash; including what a 2-for-1 frees up on your roster.</p>
+    <p class="lede" id="tr-lede"></p>
+    <div id="tr-score"></div>
+    <div class="grid2" style="margin-top:1rem">
+      <div class="card">
+        <div class="ctl"><label for="tr-a">Your side</label><select id="tr-a"></select></div>
+        <p class="note" style="margin:.4rem 0">Tick the players you send.</p>
+        <div id="tr-ra"></div>
+      </div>
+      <div class="card">
+        <div class="ctl"><label for="tr-b">Trading with</label><select id="tr-b"></select></div>
+        <p class="note" style="margin:.4rem 0">Tick the players you get.</p>
+        <div id="tr-rb"></div>
+      </div>
+    </div>
+    <p class="note" id="tr-note"></p>
   </section>
 
   <!-- ========================================================== HOW IT WORKS -->

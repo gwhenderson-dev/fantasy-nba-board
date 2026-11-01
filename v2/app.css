@@ -172,6 +172,17 @@ tr.mine td.fan { color: var(--accent); font-weight: 650; }
 .tag.wvr { background: var(--band); color: var(--muted); }
 details.card summary { cursor: pointer; }
 .card.mycard { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* ---- trade analyzer ----------------------------------------------------- */
+.trow { display: grid; grid-template-columns: auto 1fr auto auto; gap: .2rem .6rem; align-items: center; font-size: .86rem; padding: .22rem 0; border-bottom: 1px solid var(--rule); }
+.trow:last-child { border-bottom: 0; }
+.trow.on { background: var(--accent-bg); }
+.trow .sub { color: var(--muted); font-size: .76rem; }
+.trow .v { font-variant-numeric: tabular-nums; text-align: right; }
+.tscore { display: flex; flex-wrap: wrap; gap: .6rem 2rem; align-items: baseline; }
+.tscore .big { font-size: 2.2rem; font-weight: 760; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tscore .lbl2 { font-size: .8rem; color: var(--muted); }
+table.tbrk td, table.tbrk th { white-space: normal; }
+
 /* ---- my week ------------------------------------------------------------ */
 .mcard { cursor: pointer; }
 .mcard.sel { outline: 2px solid var(--accent); outline-offset: 1px; }

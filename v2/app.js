@@ -71,6 +71,7 @@ function setActive(key) {
   STORE.active = key;
   writeStore();
   Object.assign(WK, {mm: null, mmP: null, team: null, week: null});
+  Object.assign(TR, {a: null, b: null}); TR.give.clear(); TR.get.clear();
   L = clone(STORE.list[key]);
   DRAFT = clone(L);
   fillLeaguePicker();
@@ -1354,6 +1355,166 @@ function bindWeek() {
   });
 }
 
+// ========================================================= TRADE ANALYZER
+// Score = net rest-of-season points (ROS FP/G x projected games left) for
+// your side, after the roster-spot effect of an uneven trade.
+const TR = {a: null, b: null, give: new Set(), get: new Set()};
+const TR_EVEN = 0.03;      // within 3% of what you send = roughly even
+function playoffGames(tm) {
+  const pw = L.playoff_weeks;
+  if (!pw) return 0;
+  const ws = META.weeks.filter((w) => w[0] >= pw[0] && w[0] <= pw[1]);
+  if (!ws.length) return 0;
+  const s = ws[0][1], e = ws[ws.length - 1][2], last = META.last_game_day || "";
+  return (META.sched[tm] || []).filter((g) => g[0] >= s && g[0] <= e && g[0] > last).length;
+}
+function tradeVal(r) {
+  const p = r.p;
+  return Object.assign(r, {box: (r.now != null ? r.now : r.ros) * r.gl,
+    po: r.ros * (p.av || 0) * playoffGames(p.tm)});
+}
+// A roster's worth = its best `rostered(L)` players chosen from the roster
+// PLUS the free-agent pool (keep-list players always stay), so pickups the
+// team could make anyway are in the baseline and a trade is only credited
+// for value over what waivers already offer. IR-slot players sit outside.
+function bestRoster(ids, irIds, fa, k, keep) {
+  const n = rostered(L);
+  const pool = ids.filter((id) => !irIds.has(id)).map((id) => ({id, v: VAL[id][k], own: true}))
+    .concat(fa.map((id) => ({id, v: VAL[id][k], own: false})));
+  const forced = pool.filter((x) => x.own && keep && keep.has(normName(BYID[x.id].n)));
+  const rest = pool.filter((x) => !forced.includes(x)).sort((a, b) => b.v - a.v);
+  const chosen = forced.concat(rest).slice(0, Math.max(n, forced.length));
+  return {sum: chosen.reduce((a, x) => a + x.v, 0), set: new Set(chosen.map((x) => x.id))};
+}
+let VAL = {};
+function tradeSide(lg, tid, out, inn, keep) {
+  const fa = PLAYERS.filter((p) => lg.owner[p.id] == null && !OUT_SET.includes(p.inj)).map((p) => p.id);
+  const ids = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === tid && BYID[id]);
+  const ir = new Set(ids.filter((id) => lg.slot[id] === 13));
+  const outIds = new Set(out.map((r) => r.p.id));
+  const after = ids.filter((id) => !outIds.has(id)).concat(inn.map((r) => r.p.id));
+  const res = {};
+  ["tot", "po"].forEach((k) => {
+    const b = bestRoster(ids, ir, fa, k, keep), a = bestRoster(after, ir, fa, k, keep);
+    res[k] = {net: a.sum - b.sum, before: b.set, after: a.set};
+  });
+  // box-score view = how a manager eyeballs it: the plain sums, no waiver
+  // pool (a waiver pool valued on tiny-sample FP/G is all hot starts)
+  const inIds = inn.map((r) => r.p.id), outL = [...outIds];
+  res.box = {net: inIds.reduce((a, id) => a + VAL[id].box, 0) - outL.reduce((a, id) => a + VAL[id].box, 0),
+    before: new Set(outL), after: new Set(inIds)};
+  return res;
+}
+function renderTrade() {
+  const lg = LGRES[L.id];
+  if (!lg) {
+    $("tr-score").innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
+      ? '<p class="note">Loading your league from ESPN&hellip;</p>'
+      : '<div class="msg info">The trade analyzer reads rosters from a public ESPN league. Pull one on the League tab.</div>';
+    $("tr-ra").innerHTML = $("tr-rb").innerHTML = "";
+    return;
+  }
+  const mt = myTeam();
+  if (TR.a == null || !lg.byId[TR.a]) TR.a = mt != null ? mt : lg.teams[0].id;
+  if (TR.b == null || !lg.byId[TR.b] || TR.b === TR.a) TR.b = lg.teams.find((t) => t.id !== TR.a).id;
+  const opt = (sel, excl) => lg.teams.filter((t) => t.id !== excl).map((t) =>
+    `<option value="${t.id}"${t.id === sel ? " selected" : ""}>${esc(t.name)}${t.id === mt ? " (you)" : ""}</option>`).join("");
+  $("tr-a").innerHTML = opt(TR.a, null);
+  $("tr-b").innerHTML = opt(TR.b, TR.a);
+  const roster = (tid) => Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === tid && BYID[id])
+    .map((id) => tradeVal(seasonLine(BYID[id]))).sort((x, y) => y.tot - x.tot);
+  const RA = roster(TR.a), RB = roster(TR.b);
+  const list = (rows, set, side) => rows.map((r) => `<label class="trow${set.has(r.p.id) ? " on" : ""}">` +
+    `<input type="checkbox" data-side="${side}" data-pid="${r.p.id}"${set.has(r.p.id) ? " checked" : ""}>` +
+    `<span><span class="name" data-id="${r.p.id}">${esc(r.p.n)}</span>${tags(r.p)}${lg.slot[r.p.id] === 13 ? ' <span class="sub">IR</span>' : ""}<br>` +
+    `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")} · now ${fx(r.now)} · luck-adj ${fx(r.adj)}</span></span>` +
+    `<span class="v">${fx(r.ros)}<br><span class="sub">ROS FP/G</span></span><span class="v">${fx(r.tot, 0)}<br><span class="sub">${fx(r.gl, 0)} gm</span></span></label>`).join("");
+  $("tr-ra").innerHTML = list(RA, TR.give, "a");
+  $("tr-rb").innerHTML = list(RB, TR.get, "b");
+  const out = RA.filter((r) => TR.give.has(r.p.id)), inn = RB.filter((r) => TR.get.has(r.p.id));
+  $("tr-lede").innerHTML = `Tick players on both sides. The score is <strong>your net rest-of-season points</strong> under <strong>${esc(L.name)}</strong>: ` +
+    `each player&rsquo;s projected FP/G × projected games left (his availability × his team&rsquo;s remaining games), so injuries, durability and schedule all count. ` +
+    `Both rosters are valued as their best ${rostered(L)} players <em>including the free agents available to them</em>, before and after the trade, so an uneven trade&rsquo;s roster spots count ` +
+    `(a 2-for-1 frees a spot for the best free agent; taking back more forces a drop) and nothing gets credit for a pickup you could make today anyway.`;
+  if (!out.length && !inn.length) {
+    $("tr-score").innerHTML = '<div class="card"><p class="note" style="margin:0">Pick the players you&rsquo;d send and the players you&rsquo;d get.</p></div>';
+    $("tr-note").innerHTML = "";
+    return;
+  }
+  VAL = {};
+  PLAYERS.forEach((p) => { VAL[p.id] = tradeVal(seasonLine(p)); });
+  const keep = TR.a === mt ? keepSet() : null;
+  const SA = tradeSide(lg, TR.a, out, inn, keep), SB = tradeSide(lg, TR.b, inn, out, null);
+  const mine = {tot: SA.tot.net, box: SA.box.net, po: SA.po.net};
+  const theirs = {tot: SB.tot.net, box: SB.box.net};
+  const give = out.reduce((a, r) => a + r.tot, 0) || 1;
+  // ledger: each player's contribution = in the best 13 after (+) minus before (-)
+  const ledger = (S, k) => {
+    const ids = new Set([...S[k].before, ...S[k].after]);
+    return [...ids].map((id) => ({r: VAL[id], c: (S[k].after.has(id) ? VAL[id][k] : 0) - (S[k].before.has(id) ? VAL[id][k] : 0)}))
+      .filter((x) => Math.abs(x.c) > 0.5);
+  };
+  const L3 = {tot: ledger(SA, "tot"), box: ledger(SA, "box"), po: ledger(SA, "po")};
+  const contrib = (id, k) => (L3[k].find((x) => x.r.p.id === id) || {c: 0}).c;
+  const inIds = new Set(inn.map((r) => r.p.id)), outIds = new Set(out.map((r) => r.p.id));
+  const churn = [...new Set(["tot", "box", "po"].flatMap((k) => L3[k].map((x) => x.r.p.id)))]
+    .filter((id) => !inIds.has(id) && !outIds.has(id));
+  const pct = mine.tot / give;
+  const verdict = Math.abs(pct) < TR_EVEN ? "Roughly even on projected points."
+    : pct > 0 ? (theirs.box >= 0 ? "Good for you, and by the box score it also looks fine to them: the kind of offer that gets accepted."
+                                 : "Good for you, but by the box score they lose: expect pushback.")
+    : (theirs.box < 0 ? "You lose projected points, though by the box score it looks like you&rsquo;re winning it." : "You lose projected points.");
+  const nm = (id) => esc(lg.byId[id].name);
+  const cls = (v, base) => (Math.abs(v) < TR_EVEN * base ? "" : v > 0 ? "pos-up" : "pos-dn");
+  const c0 = (v) => `<span class="${v > 0.5 ? "pos-up" : v < -0.5 ? "pos-dn" : "dim"}">${Math.abs(v) < 0.5 ? "0" : sg(v, 0)}</span>`;
+  const why = (id) => {
+    if (inIds.has(id)) return contrib(id, "tot") > 0.5 ? "you get" : "you get · doesn't beat the waiver wire";
+    if (outIds.has(id)) return contrib(id, "tot") < -0.5 ? "you send" : "you send · was below the waiver wire";
+    const own = lg.owner[id] === TR.a;
+    return own ? (contrib(id, "tot") < 0 ? "dropped to make room" : "back in your best " + rostered(L))
+      : (contrib(id, "tot") > 0 ? "free agent: fills the freed spot" : "free agent you could add today; no room after the trade");
+  };
+  const row = (id) => {
+    const r = VAL[id];
+    return `<tr><td class="l"><span class="name" data-id="${id}">${esc(r.p.n)}</span> <span class="dim">${esc(why(id))}</span></td>` +
+      `<td>${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td>${c0(contrib(id, "tot"))}</td>` +
+      `<td class="grp">${fx(r.now)}</td><td>${c0(contrib(id, "box"))}</td><td class="grp">${c0(contrib(id, "po"))}</td></tr>`;
+  };
+  $("tr-score").innerHTML = '<div class="card"><div class="tscore">' +
+    `<div><div class="lbl2">Your net rest-of-season points</div><div class="big ${cls(mine.tot, give)}">${sg(mine.tot, 0)}</div>` +
+    `<div class="lbl2">${sg(pct * 100, 1)}% of what you send</div></div>` +
+    `<div><div class="lbl2">${nm(TR.b)}&rsquo;s net</div><div class="big ${cls(theirs.tot, give)}" style="font-size:1.5rem">${sg(theirs.tot, 0)}</div>` +
+    `<div class="lbl2">by box score: ${sg(theirs.box, 0)}</div></div>` +
+    `<div><div class="lbl2">Your net, box-score view</div><div class="big" style="font-size:1.5rem">${sg(mine.box, 0)}</div><div class="lbl2">current FP/G × games left</div></div>` +
+    (L.playoff_weeks ? `<div><div class="lbl2">Your net, playoff weeks ${L.playoff_weeks[0]}–${L.playoff_weeks[1]}</div><div class="big" style="font-size:1.5rem">${sg(mine.po, 0)}</div><div class="lbl2">ROS FP/G × playoff games</div></div>` : "") +
+    `</div><p style="margin:.7rem 0 0"><strong>${verdict}</strong></p>` +
+    '<div class="tablewrap" style="max-height:none;margin-top:.8rem"><table class="tbrk"><thead><tr><th class="l">Your side of the ledger</th><th>ROS FP/G</th><th>Games left</th><th title="Change to your best-' + rostered(L) + ' rest-of-season points">ROS points</th>' +
+    '<th class="grp">Now FP/G</th><th>Box-score points</th><th class="grp">Playoff-week points</th></tr></thead><tbody>' +
+    [...inIds].map(row).join("") + [...outIds].map(row).join("") + churn.map(row).join("") +
+    `<tr class="tot"><td class="l">Net for ${nm(TR.a)}</td><td></td><td></td><td class="${cls(mine.tot, give)}">${sg(mine.tot, 0)}</td><td class="grp"></td><td>${sg(mine.box, 0)}</td><td class="grp">${sg(mine.po, 0)}</td></tr>` +
+    "</tbody></table></div>" +
+    `<p class="note">Each line is that player&rsquo;s change to your best ${rostered(L)} (your roster plus whatever the waiver wire offers): a player you get only counts for what he adds over the free agents you could pick up anyway, ` +
+    `and a player you send only costs what he was worth over them.</p></div>`;
+  $("tr-note").innerHTML = "<strong>Box-score view</strong> is the plain sum of each traded player&rsquo;s actual FP/G so far × games left, with no waiver-wire adjustment: roughly how a manager who goes by average points eyeballs the deal. " +
+    "The best trades win on projection and still look fair by box score. Players on your keep list are never the ones dropped to make room. " +
+    `With about ${Math.max(...Object.values(TEAMLEFT))} team games left, every number here is a forecast; a gap under ${Math.round(TR_EVEN * 100)}% of what you send is inside the noise.`;
+}
+function bindTrade() {
+  $("tr-a").addEventListener("change", (e) => { TR.a = +e.target.value; TR.give.clear(); TR.get.clear(); if (TR.b === TR.a) TR.b = null; renderTrade(); });
+  $("tr-b").addEventListener("change", (e) => { TR.b = +e.target.value; TR.get.clear(); renderTrade(); });
+  $("tab-trade").addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-pid]");
+    if (!cb) return;
+    const set = cb.dataset.side === "a" ? TR.give : TR.get, id = +cb.dataset.pid;
+    if (cb.checked) set.add(id); else set.delete(id);
+    renderTrade();
+  });
+  $("tab-trade").addEventListener("click", (e) => {
+    const n = e.target.closest(".name[data-id]");
+    if (n && BYID[+n.dataset.id]) { e.preventDefault(); openPlayer(+n.dataset.id); }
+  });
+}
+
 // ================================================================ ROUTING
 const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"];
 function showTab(t) {
@@ -1365,6 +1526,7 @@ function showTab(t) {
   if (t === "wire") renderWaivers();
   if (t === "insea") renderInseason();
   if (t === "week") renderWeek();
+  if (t === "trade") renderTrade();
 }
 function renderAll() {
   renderProj();
@@ -1372,6 +1534,7 @@ function renderAll() {
   if (!$("tab-wire").hidden) renderWaivers();
   if (!$("tab-insea").hidden) renderInseason();
   if (!$("tab-week").hidden) renderWeek();
+  if (!$("tab-trade").hidden) renderTrade();
 }
 
 // ================================================================== BOOT
@@ -1395,6 +1558,7 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     bindWaivers();
     bindInseason();
     bindWeek();
+    bindTrade();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
     $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closePlayer(); });
