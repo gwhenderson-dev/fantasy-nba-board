@@ -172,6 +172,24 @@ tr.mine td.fan { color: var(--accent); font-weight: 650; }
 .tag.wvr { background: var(--band); color: var(--muted); }
 details.card summary { cursor: pointer; }
 .card.mycard { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* ---- my week ------------------------------------------------------------ */
+.mcard { cursor: pointer; }
+.mcard.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mside { display: grid; grid-template-columns: 1fr auto auto; gap: .1rem .6rem; align-items: baseline; font-size: .86rem; }
+.mside .tn { font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mside .tn.mine { color: var(--accent); }
+.mside .pf { font-size: 1.15rem; font-weight: 720; font-variant-numeric: tabular-nums; text-align: right; }
+.mside .lv { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: .8rem; }
+.wbar { height: 6px; border-radius: 3px; background: var(--rule); margin: .45rem 0 .3rem; overflow: hidden; display: flex; }
+.wbar span { background: var(--accent); }
+.mfoot { display: flex; justify-content: space-between; font-size: .74rem; color: var(--muted); gap: .5rem; flex-wrap: wrap; }
+td.dg { text-align: center; padding: .3rem .25rem; font-size: .8rem; }
+td.dg.st { color: var(--good); font-weight: 700; }
+td.dg.bn { color: var(--gold); }
+td.dg.out { color: var(--warn); }
+td.dg.past, th.past { opacity: .45; }
+tr.open td { background: var(--band); font-weight: 650; }
+tr.isout td:not(:first-child) { opacity: .5; }
 .name[data-id] { cursor: pointer; }
 textarea { font: inherit; background: var(--paper); color: var(--ink); border: 1px solid var(--rule2); border-radius: 8px; padding: .45rem .55rem; }
 

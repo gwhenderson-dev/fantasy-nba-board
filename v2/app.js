@@ -70,6 +70,7 @@ function fillLeaguePicker() {
 function setActive(key) {
   STORE.active = key;
   writeStore();
+  Object.assign(WK, {mm: null, mmP: null, team: null, week: null});
   L = clone(STORE.list[key]);
   DRAFT = clone(L);
   fillLeaguePicker();
@@ -92,13 +93,22 @@ function espnLeague(lg) {
     }).then((j) => {
       const teams = (j.teams || []).map((t) => ({id: t.id, ab: t.abbrev || "",
         name: (t.name || [t.location, t.nickname].filter(Boolean).join(" ") || "Team " + t.id).trim()}));
-      const owner = {}, slot = {}, name = {};
-      (j.teams || []).forEach((t) => ((t.roster || {}).entries || []).forEach((e) => {
-        owner[e.playerId] = t.id; slot[e.playerId] = e.lineupSlotId;
-        const pl = (e.playerPoolEntry || {}).player;
-        if (pl) name[e.playerId] = pl.fullName;
-      }));
-      const d = {teams, owner, slot, name, wv: {}, byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
+      const owner = {}, slot = {}, name = {}, elig = {}, inj = {}, pro = {}, tx = {};
+      (j.teams || []).forEach((t) => {
+        tx[t.id] = ((t.transactionCounter || {}).matchupAcquisitionTotals) || {};
+        ((t.roster || {}).entries || []).forEach((e) => {
+          owner[e.playerId] = t.id; slot[e.playerId] = e.lineupSlotId;
+          const pl = (e.playerPoolEntry || {}).player;
+          if (pl) {
+            name[e.playerId] = pl.fullName;
+            elig[e.playerId] = pl.eligibleSlots || [];
+            inj[e.playerId] = pl.injuryStatus || null;
+            pro[e.playerId] = pl.proTeamId;
+          }
+        });
+      });
+      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {},
+        byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
       // second, optional call: which unrostered players are on waivers (not free agents)
       // ESPN answers 400 to this filter without a sort clause
       const flt = JSON.stringify({players: {filterStatus: {value: ["WAIVERS"]}, limit: 2000,
@@ -1087,6 +1097,263 @@ function bindInseason() {
   });
 }
 
+// ================================================================ MY WEEK
+// Each day's lineup is the exact max-weight assignment of the players who
+// play that day to the league's starter slots (Hungarian algorithm; ported
+// from the old Wire tab, where an independent scipy check reproduced it).
+const WK = {week: null, team: null, mm: null, mmP: null};
+const SLOT_ID = Object.fromEntries(Object.entries(ESPN_SLOT).map(([k, v]) => [v, +k]));
+function assignMax(Wm) {                 // rows x cols, values >= 0
+  const n = Wm.length, m = n ? Wm[0].length : 0, rc = new Array(n).fill(-1);
+  if (!n || !m) return {total: 0, rc};
+  const T = n > m, A = T ? m : n, B = T ? n : m, INF = 1e18;
+  const cost = (i, j) => -(T ? Wm[j][i] : Wm[i][j]);
+  const u = new Array(A + 1).fill(0), v = new Array(B + 1).fill(0), p = new Array(B + 1).fill(0), way = new Array(B + 1).fill(0);
+  for (let i = 1; i <= A; i++) {
+    p[0] = i;
+    let j0 = 0;
+    const minv = new Array(B + 1).fill(INF), used = new Array(B + 1).fill(false);
+    do {
+      used[j0] = true;
+      const i0 = p[j0];
+      let delta = INF, j1 = 0;
+      for (let j = 1; j <= B; j++) if (!used[j]) {
+        const cur = cost(i0 - 1, j - 1) - u[i0] - v[j];
+        if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+        if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+      }
+      for (let j = 0; j <= B; j++) { if (used[j]) { u[p[j]] += delta; v[j] -= delta; } else minv[j] -= delta; }
+      j0 = j1;
+    } while (p[j0] !== 0);
+    do { const jj = way[j0]; p[j0] = p[jj]; j0 = jj; } while (j0);
+  }
+  let total = 0;
+  for (let j = 1; j <= B; j++) if (p[j]) {
+    const a = p[j] - 1, b = j - 1, r = T ? b : a, c = T ? a : b;
+    if (Wm[r][c] > 0) { rc[r] = c; total += Wm[r][c]; }
+  }
+  return {total, rc};
+}
+function eligFromPos(pos) {              // ESPN position names -> slot ids
+  const s = new Set([11]);
+  String(pos || "").split(/[,/]/).forEach((t) => {
+    const k = {PG: 0, SG: 1, SF: 2, PF: 3, C: 4}[t.trim().toUpperCase()];
+    if (k == null) return;
+    s.add(k);
+    if (k <= 1) { s.add(5); s.add(8); }
+    if (k === 2 || k === 3) { s.add(6); s.add(8); s.add(10); }
+    if (k === 1 || k === 2) s.add(7);
+    if (k === 3 || k === 4) s.add(9);
+    if (k === 4) s.add(10);
+  });
+  return [...s];
+}
+const todayET = () => new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York"}).format(new Date());
+const outKey = (wk) => `fnba.v2.week.${L.key}.${wk}`;
+function weekMarks(wk) {
+  try { return JSON.parse(localStorage.getItem(outKey(wk)) || "{}") || {}; } catch (e) { return {}; }
+}
+function setWeekMark(wk, id, plays) {
+  const m = weekMarks(wk);
+  m[id] = plays ? 1 : 0;
+  try { localStorage.setItem(outKey(wk), JSON.stringify(m)); } catch (e) { /* storage blocked */ }
+}
+function loadMatchups(lg) {
+  if (WK.mm) return Promise.resolve(WK.mm);
+  if (!WK.mmP) WK.mmP = fetch(espnBase() + L.id + "?view=mMatchupScore").then((r) => (r.ok ? r.json() : {schedule: []}))
+    .catch(() => ({schedule: []})).then((j) => { WK.mm = j.schedule || []; return WK.mm; });
+  return WK.mmP;
+}
+function loadReturns(lg) {
+  const ids = Object.keys(lg.owner).map(Number).filter((id) =>
+    (lg.slot[id] === 13 || OUT_SET.includes(lg.inj[id])) && !(id in lg.ret));
+  if (!ids.length) return Promise.resolve();
+  ids.forEach((id) => { lg.ret[id] = null; });
+  const flt = JSON.stringify({players: {filterIds: {value: ids}, limit: ids.length + 5,
+                                        sortPercOwned: {sortPriority: 1, sortAsc: false}}});
+  return fetch(espnBase() + L.id + "?view=kona_playercard", {headers: {"x-fantasy-filter": flt}})
+    .then((r) => (r.ok ? r.json() : {players: []})).catch(() => ({players: []}))
+    .then((k) => (k.players || []).forEach((w) => {
+      const pl = w.player || {}, d = (pl.injuryDetails || {}).expectedReturnDate;
+      if (pl.id != null && d && d.length === 3)
+        lg.ret[pl.id] = `${d[0]}-${String(d[1]).padStart(2, "0")}-${String(d[2]).padStart(2, "0")}`;
+    }));
+}
+// a team's week: per player, per day -> game?, plays?, value, started?
+function teamWeek(lg, teamId, days, wk, SLOTS, today) {
+  const marks = weekMarks(wk);
+  const B = META.b2b;
+  const ps = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === teamId).map((id) => {
+    const p = BYID[id];
+    const inj = lg.inj[id], ret = lg.ret[id];
+    const hurt = OUT_SET.includes(inj) || lg.slot[id] === 13;
+    const plays = id in marks ? !!marks[id] : !hurt || !!ret;
+    const elig = (lg.elig[id] && lg.elig[id].length ? lg.elig[id] : eligFromPos(p && p.pos)).filter((s) => SLOTS.includes(s));
+    const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: id in marks, elig, days: [],
+      starts: 0, games: 0, pts: 0, var: 0};
+    const fp = p ? fpg(p.s, p.bp) : 0;
+    const fpd = p ? fpgUnder(META.league, p.s, p.bp) || fp : 1;
+    const scale = fpd > 0 ? fp / fpd : 1;
+    const sd = p ? (p.sd || 0) * scale : 0;
+    const teamDays = new Set(p ? (META.sched[p.tm] || []).map((g) => g[0]) : []);
+    const psit = p && p.b2b ? p.b2b[2] : B.base;
+    days.forEach((d) => {
+      const g = p ? (META.sched[p.tm] || []).find((x) => x[0] === d) : null;
+      let val = 0, avail = false;
+      if (g && plays && !(hurt && !(id in marks) && ret && d < ret)) {
+        const second = teamDays.has(addDays(d, -1));
+        const play = second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1;
+        const mf = META.mf[g[1]];
+        let adj = 0;
+        if (mf) {
+          const c = posCls(p.pos), b = META.mfb;
+          adj = (b.pace * (mf.pace - 1) + b.dvp * ((mf[c] || 1) - 1) + b.fgp * ((mf.fgp || 1) - 1) + b.home * (g[2] ? 0.5 : -0.5)) * scale;
+        }
+        val = Math.max(0, play * (fp + adj));
+        avail = true;
+      }
+      r.days.push({d, g, avail, val, sd2: sd * sd, st: false});
+    });
+    return r;
+  });
+  const out = {ps, days: days.map((d, i) => ({d, past: d < today, open: 0, started: 0, playing: 0, pts: 0}))};
+  days.forEach((d, i) => {
+    const av = ps.filter((r) => r.days[i].avail);
+    const Wm = av.map((r) => SLOTS.map((s) => (r.elig.includes(s) ? Math.max(r.days[i].val, 0.01) : 0)));
+    const res = assignMax(Wm);
+    av.forEach((r, k) => {
+      r.games++;
+      if (res.rc[k] >= 0) {
+        r.days[i].st = true; r.starts++;
+        if (d >= today) { r.pts += r.days[i].val; r.var += r.days[i].sd2; }
+      }
+    });
+    const D = out.days[i];
+    D.playing = av.length; D.started = res.rc.filter((c) => c >= 0).length; D.open = SLOTS.length - D.started;
+    D.pts = d >= today ? av.reduce((a, r, k) => a + (res.rc[k] >= 0 ? r.days[i].val : 0), 0) : 0;
+  });
+  out.rem = ps.reduce((a, r) => a + r.pts, 0);
+  out.var = ps.reduce((a, r) => a + r.var, 0);
+  return out;
+}
+const normCdf = (x) => {   // Abramowitz-Stegun
+  const t = 1 / (1 + 0.2316419 * Math.abs(x)), d = 0.3989423 * Math.exp(-x * x / 2);
+  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return x > 0 ? 1 - p : p;
+};
+function renderWeek() {
+  const lg = LGRES[L.id];
+  if (!lg) {
+    $("wk-cards").innerHTML = "";
+    $("wk-detail").innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
+      ? '<p class="note">Loading your league from ESPN&hellip;</p>'
+      : '<div class="msg info">My week reads rosters and matchups from a public ESPN league. Pull one on the League tab.</div>';
+    return;
+  }
+  if (!WK.mm) {
+    $("wk-detail").innerHTML = '<p class="note">Loading matchups&hellip;</p>';
+    Promise.all([loadMatchups(lg), loadReturns(lg)]).then(renderWeek);
+    return;
+  }
+  const today = todayET();
+  const weeks = META.weeks.filter((w) => w[2] >= today).slice(0, 2);
+  if (!weeks.length) { $("wk-detail").innerHTML = '<p class="note">No matchup weeks left this season.</p>'; return; }
+  if (WK.week == null || !weeks.some((w) => w[0] === WK.week)) WK.week = weeks[0][0];
+  $("wk-week").innerHTML = weeks.map(([w, s, e]) => `<option value="${w}"${w === WK.week ? " selected" : ""}>Week ${w} (${s.slice(5)} to ${e.slice(5)})${s <= today ? " · now" : ""}</option>`).join("");
+  const [wk, ws, we] = META.weeks.find((w) => w[0] === WK.week);
+  const days = [];
+  for (let d = ws; d <= we; d = addDays(d, 1)) days.push(d);
+  const SLOTS = [];
+  Object.entries(L.slots).forEach(([nm, c]) => {
+    const id = SLOT_ID[nm];
+    if (id == null || nm === "BE" || nm === "IR") return;
+    for (let q = 0; q < c; q++) SLOTS.push(id);
+  });
+  SLOTS.sort((a, b) => a - b);
+  const TW = Object.fromEntries(lg.teams.map((t) => [t.id, teamWeek(lg, t.id, days, wk, SLOTS, today)]));
+  const lim = L.adds;
+  const addsLeft = (id) => (lim == null ? null : Math.max(0, lim - ((lg.tx[id] || {})[String(wk)] || 0)));
+  const mt = myTeam();
+  if (WK.team == null || !lg.byId[WK.team]) WK.team = mt != null ? mt : lg.teams[0].id;
+  $("wk-team").innerHTML = lg.teams.map((t) => `<option value="${t.id}"${t.id === WK.team ? " selected" : ""}>${esc(t.name)}${t.id === mt ? " (you)" : ""}</option>`).join("");
+  // ---- matchup cards
+  const ms = WK.mm.filter((m) => m.matchupPeriodId === wk && m.home && m.away);
+  const live = (side) => (side.totalPointsLive != null ? side.totalPointsLive : side.totalPoints) || 0;
+  const cards = ms.map((m) => {
+    const A = m.away, H = m.home, a = TW[A.teamId], h = TW[H.teamId];
+    if (!a || !h) return "";
+    const al = live(A), hl = live(H), ap = al + a.rem, hp = hl + h.rem;
+    const sd = Math.sqrt(a.var + h.var);
+    const pa = sd > 0 ? normCdf((ap - hp) / sd) : (ap > hp ? 1 : ap < hp ? 0 : 0.5);
+    const isMine = A.teamId === mt || H.teamId === mt, sel = A.teamId === WK.team || H.teamId === WK.team;
+    const side = (s, t, l, pr, p) => `<span class="tn${s.teamId === mt ? " mine" : ""}" title="${esc(lg.byId[s.teamId].name)}">${esc(lg.byId[s.teamId].name)}</span>` +
+      `<span class="lv" title="Live score">${fx(l, 0)}</span><span class="pf" title="Projected final">${fx(pr, 0)}</span>`;
+    const st = (t) => t.days.filter((D) => !D.past).reduce((x, D) => x + D.started, 0);
+    return `<div class="card mcard${isMine ? " mycard" : ""}${sel ? " sel" : ""}" data-a="${A.teamId}" data-h="${H.teamId}">` +
+      `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span class="dim" style="font-size:.7rem">LIVE</span><span class="dim" style="font-size:.7rem">PROJ</span>` +
+      side(A, a, al, ap, pa) + side(H, h, hl, hp, 1 - pa) + "</div>" +
+      `<div class="wbar" title="Rough win chance"><span style="width:${(pa * 100).toFixed(0)}%"></span></div>` +
+      `<div class="mfoot"><span>win ${Math.round(pa * 100)}% – ${Math.round((1 - pa) * 100)}%</span>` +
+      `<span title="Starter games left this week">starts left ${st(a)} – ${st(h)}</span>` +
+      (lim != null ? `<span title="Adds left this week">adds ${addsLeft(A.teamId)} – ${addsLeft(H.teamId)}</span>` : "") + "</div></div>";
+  }).join("");
+  $("wk-cards").innerHTML = cards || '<p class="note">No matchups found for this week (a bye week, or this league&rsquo;s matchup periods don&rsquo;t follow this calendar).</p>';
+  // ---- team detail
+  const T = TW[WK.team], tname = lg.byId[WK.team].name;
+  const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
+  const rows = T.ps.slice().sort((a, b) => b.pts - a.pts || b.games - a.games);
+  const cell = (r, D, i) => {
+    const x = r.days[i], past = D.past ? " past" : "";
+    if (!x.g) return `<td class="dg${past}"></td>`;
+    if (!x.avail) return `<td class="dg out${past}" title="Not playing">×</td>`;
+    return x.st ? `<td class="dg st${past}" title="Starts: ${fx(x.val)} projected">●</td>`
+      : `<td class="dg bn${past}" title="Plays but no starter slot left">○</td>`;
+  };
+  $("wk-detail").innerHTML = `<h2>${esc(tname)} &mdash; week ${wk}</h2>` +
+    '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
+    days.map((d, i) => `<th class="${T.days[i].past ? "past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`).join("") +
+    '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th><th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
+    rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
+      `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
+      `<td class="l dim">${r.hurt ? (lg.slot[r.id] === 13 ? "IR" : esc(String(r.inj).replace("INJURY_RESERVE", "IR").replace("SUSPENSION", "SUSP"))) + (r.ret ? " · back " + r.ret.slice(5) : "") : r.inj === "DAY_TO_DAY" ? "DTD" : ""}${r.manual ? " · set by you" : ""}</td>` +
+      T.days.map((D, i) => cell(r, D, i)).join("") +
+      `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
+    `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}">${D.open}</td>`).join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
+    "</tbody></table></div>" +
+    '<p class="note">● starts &nbsp; ○ plays but every eligible slot is taken &nbsp; × not playing. Open slots are days you could stream a free agent (see the Waivers tab). ' +
+    "Untick anyone you know is sitting; ticks are saved for this week in your browser.</p>";
+  const myM = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
+  $("wk-count").textContent = `${ms.length} matchups`;
+  $("wk-lede").innerHTML = `Every matchup in week ${wk}, scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
+    `(${SLOTS.length} starter slots, filled by an exact assignment of who plays that day), at rest-of-season FP/G with the matchup and back-to-back adjustments from the Waivers tab. ` +
+    `Players out or on IR count from ESPN&rsquo;s expected return date when it has one. Click a matchup to see either team below.` +
+    (myM ? "" : "");
+  $("wk-note").innerHTML = "Win chance is rough: it treats each remaining game as independent, with each player&rsquo;s game-to-game spread (the same one behind the Waivers ceiling). " +
+    "While tonight&rsquo;s games are being played, players already in action count twice (in the live score and the projection) until the next morning&rsquo;s build. Rosters, injuries, live scores and adds are read from ESPN; projections are from this morning.";
+}
+function bindWeek() {
+  $("wk-week").addEventListener("change", (e) => { WK.week = +e.target.value; renderWeek(); });
+  $("wk-team").addEventListener("change", (e) => { WK.team = +e.target.value; renderWeek(); });
+  $("wk-cards").addEventListener("click", (e) => {
+    const c = e.target.closest(".mcard");
+    if (!c) return;
+    const a = +c.dataset.a, h = +c.dataset.h;
+    WK.team = WK.team === a ? h : WK.team === h ? a : (h === myTeam() ? h : a);
+    renderWeek();
+    $("wk-detail").scrollIntoView({behavior: "smooth", block: "start"});
+  });
+  $("wk-detail").addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-pid]");
+    if (!cb) return;
+    setWeekMark(WK.week, +cb.dataset.pid, cb.checked);
+    renderWeek();
+  });
+  $("wk-detail").addEventListener("click", (e) => {
+    const n = e.target.closest(".name[data-id]");
+    if (n && BYID[+n.dataset.id]) openPlayer(+n.dataset.id);
+  });
+}
+
 // ================================================================ ROUTING
 const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"];
 function showTab(t) {
@@ -1097,12 +1364,14 @@ function showTab(t) {
   if (t === "recap") renderRecap();
   if (t === "wire") renderWaivers();
   if (t === "insea") renderInseason();
+  if (t === "week") renderWeek();
 }
 function renderAll() {
   renderProj();
   if (!$("tab-recap").hidden) renderRecap();
   if (!$("tab-wire").hidden) renderWaivers();
   if (!$("tab-insea").hidden) renderInseason();
+  if (!$("tab-week").hidden) renderWeek();
 }
 
 // ================================================================== BOOT
@@ -1125,6 +1394,7 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     bindRecap();
     bindWaivers();
     bindInseason();
+    bindWeek();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
     $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closePlayer(); });

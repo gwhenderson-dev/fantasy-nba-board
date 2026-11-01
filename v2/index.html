@@ -19,7 +19,7 @@
     <button class="tab" role="tab" data-tab="insea">In-season</button>
     <button class="tab" role="tab" data-tab="wire">Waivers</button>
     <button class="tab" role="tab" data-tab="recap">Recap</button>
-    <button class="tab" role="tab" data-tab="week">My week<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="week">My week</button>
     <button class="tab" role="tab" data-tab="trade">Trade analyzer<span class="soon">soon</span></button>
     <button class="tab" role="tab" data-tab="how">How it works</button>
   </nav>
@@ -176,8 +176,15 @@
   </section>
   <section class="panel" id="tab-week" hidden>
     <h1>My week</h1>
-    <p class="lede">Coming next. The current matchup week forecast for every team in your league, with a checkbox per
-      player to mark anyone you know is sitting, so the projection reflects reality.</p>
+    <p class="lede" id="wk-lede"></p>
+    <div class="controls">
+      <div class="ctl"><label for="wk-week">Matchup week</label><select id="wk-week"></select></div>
+      <div class="ctl"><label for="wk-team">Team detail</label><select id="wk-team"></select></div>
+      <span class="count" id="wk-count"></span>
+    </div>
+    <div class="stand" id="wk-cards"></div>
+    <div id="wk-detail"></div>
+    <p class="note" id="wk-note"></p>
   </section>
   <section class="panel" id="tab-trade" hidden>
     <h1>Trade analyzer</h1>
