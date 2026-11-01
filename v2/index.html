@@ -16,7 +16,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="league">League</button>
     <button class="tab" role="tab" data-tab="proj">Projections</button>
-    <button class="tab" role="tab" data-tab="insea">In-season<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="insea">In-season</button>
     <button class="tab" role="tab" data-tab="wire">Waivers</button>
     <button class="tab" role="tab" data-tab="recap">Recap</button>
     <button class="tab" role="tab" data-tab="week">My week<span class="soon">soon</span></button>
@@ -99,12 +99,24 @@
   <!-- ========================================================= COMING NEXT -->
   <section class="panel" id="tab-insea" hidden>
     <h1>In-season analysis</h1>
-    <p class="lede">Coming next. Load your league and this tab reads every roster, then sorts the league into three lists:</p>
-    <ul class="plan">
-      <li><strong>Trade targets (buy low)</strong> &mdash; players on other teams whose luck-adjusted FP/G is above their current FP/G. Their managers judge them by the box score; the box score is running behind the real level.</li>
-      <li><strong>Sell high</strong> &mdash; your players whose points are inflated by luck (hot shooting, steal and block spikes).</li>
-      <li><strong>Drops</strong> &mdash; your players worth fewer points to your lineup than the best available free agent at a position they can fill.</li>
-    </ul>
+    <p class="lede" id="is-lede"></p>
+    <div class="controls">
+      <div class="ctl"><span class="lbl">View</span><div class="chips" id="is-view">
+        <button class="chip" data-v="buy" aria-pressed="true">Trade targets</button>
+        <button class="chip" data-v="sell" aria-pressed="false">Sell high</button>
+        <button class="chip" data-v="drop" aria-pressed="false">Drops</button>
+        <button class="chip" data-v="rost" aria-pressed="false">Rosters</button>
+      </div></div>
+      <div class="ctl" id="is-teamctl"><label for="is-team">From team</label><select id="is-team"></select></div>
+      <span class="count" id="is-count"></span>
+    </div>
+    <div id="is-body"></div>
+    <p class="note" id="is-note"></p>
+    <details class="card" id="is-keepbox" style="margin-top:1rem" hidden>
+      <summary><strong>Keep list</strong> <span class="dim">&mdash; never suggested as drops</span></summary>
+      <p class="note">One name per line. Saved with this league in your browser.</p>
+      <textarea id="is-keep" rows="4" style="width:100%;max-width:28rem"></textarea>
+    </details>
   </section>
   <section class="panel" id="tab-wire" hidden>
     <h1>Waivers &amp; streaming</h1>

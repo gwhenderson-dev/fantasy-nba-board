@@ -39,6 +39,7 @@ function readStore() {
   if (!s.list[s.active]) s.active = Object.keys(s.list)[0];
   const own = s.list["espn-" + META.league.id];     // saved before the team picker existed
   if (own && own.my_team == null && !own.tl) own.my_team = META.league.my_team;
+  if (own && own.keep == null) own.keep = (META.league.keep || []).slice();
   return s;
 }
 function writeStore() {
@@ -91,9 +92,13 @@ function espnLeague(lg) {
     }).then((j) => {
       const teams = (j.teams || []).map((t) => ({id: t.id, ab: t.abbrev || "",
         name: (t.name || [t.location, t.nickname].filter(Boolean).join(" ") || "Team " + t.id).trim()}));
-      const owner = {};
-      (j.teams || []).forEach((t) => ((t.roster || {}).entries || []).forEach((e) => { owner[e.playerId] = t.id; }));
-      const d = {teams, owner, wv: {}, byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
+      const owner = {}, slot = {}, name = {};
+      (j.teams || []).forEach((t) => ((t.roster || {}).entries || []).forEach((e) => {
+        owner[e.playerId] = t.id; slot[e.playerId] = e.lineupSlotId;
+        const pl = (e.playerPoolEntry || {}).player;
+        if (pl) name[e.playerId] = pl.fullName;
+      }));
+      const d = {teams, owner, slot, name, wv: {}, byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
       // second, optional call: which unrostered players are on waivers (not free agents)
       // ESPN answers 400 to this filter without a sort clause
       const flt = JSON.stringify({players: {filterStatus: {value: ["WAIVERS"]}, limit: 2000,
@@ -193,7 +198,7 @@ function pullEspn() {
     const s = j.settings || {};
     const key = "espn-" + id;
     const d = STORE.list[key] ? clone(STORE.list[key]) : clone(DRAFT);
-    if (!STORE.list[key]) { delete d.tl; delete d.my_team; }
+    if (!STORE.list[key]) { delete d.tl; delete d.my_team; d.keep = []; }
     d.key = key; d.id = id; d.platform = "espn";
     d.name = s.name || d.name || ("ESPN " + id);
     if (s.size) d.teams = s.size;
@@ -251,7 +256,7 @@ function bindLeague() {
   $("lg-new").addEventListener("click", () => {
     const d = clone(META.league);
     d.key = "custom-" + Date.now(); d.id = ""; d.name = "New league"; d.unmod = [];
-    d.platform = "custom"; delete d.my_team; delete d.tl;
+    d.platform = "custom"; delete d.my_team; delete d.tl; d.keep = [];
     DRAFT = d;
     renderLeagueForm();
     lgMsg("info", "New league started from the default rules. Pull an ESPN league id or edit the fields, then save.");
@@ -874,6 +879,214 @@ function bindWaivers() {
   });
 }
 
+// ============================================================== IN-SEASON
+const IS = {view: "buy", team: "", sort: null, dir: -1};
+const OUT_SET = ["OUT", "INJURY_RESERVE", "SUSPENSION"];
+const DROP_MARGIN = 0.08;   // a swap must gain 8%+ of the player's ROS points to be called
+// per-player season view under the ACTIVE league: now, luck-adjusted, ROS
+function seasonLine(p) {
+  const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
+  const adj = p.adj ? fpg(p.adj, p.abp) : null;
+  const ros = fpg(p.s, p.bp);
+  const pre = p.ps ? fpg(p.ps, p.pbp) : null;
+  const left = TEAMLEFT[p.tm] || 0;
+  return {p, now, adj, ros, pre, gp: p.gp || 0, gap: now != null && adj != null ? adj - now : null,
+    gl: (p.av || 0) * left, tot: ros * (p.av || 0) * left};
+}
+// the luck items that explain a gap, from the season breakdown (default scoring)
+function luckWhy(p, sign) {
+  if (!p.lb || !p.gp) return "";
+  const items = p.lb.filter(([, v]) => sign * v > 0).sort((a, b) => sign * (b[1] - a[1])).slice(0, 2);
+  const word = {"2P%": "2-pt shooting", "3P%": "3-pt shooting", "FG%": "shooting", "FT%": "FT%", "FTA": "free throws",
+    REB: "rebounds", STL: "steals", BLK: "blocks", TOV: "turnovers", bonus: "bonuses", "3PA mix": "shot mix"};
+  return items.map(([k, v]) => `${word[k] || k} ${sg(v / p.gp)}`).join(", ");
+}
+function lucks(id) {
+  const C = GAMES.C;
+  return (GAMES.byP[id] || []).slice().sort((a, b) => (a[C.d] < b[C.d] ? -1 : 1)).filter((r) => r[C.adj]).map((r) =>
+    fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]) - fpg(r[C.adj], r[C.abp]));
+}
+const keepSet = () => new Set((L.keep || []).map(normName));
+function renderInseason() {
+  const lg = LGRES[L.id], mt = myTeam();
+  const body = $("is-body");
+  $("is-keepbox").hidden = IS.view !== "drop";
+  $("is-teamctl").hidden = IS.view !== "buy" || !lg;
+  if (!lg) {
+    $("is-lede").innerHTML = "";
+    body.innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
+      ? '<p class="note">Loading your league&rsquo;s rosters from ESPN&hellip;</p>'
+      : '<div class="msg info">This tab reads rosters from a public ESPN league. Pull one on the League tab.</div>';
+    return;
+  }
+  if (!GAMES) { body.innerHTML = '<p class="note">Loading games&hellip;</p>'; loadGames().then(renderInseason); return; }
+  if (IS.view !== "rost" && IS.view !== "buy" && mt == null) {
+    body.innerHTML = '<div class="msg info">Pick your team at the top (&ldquo;You are&rdquo;).</div>';
+    return;
+  }
+  const tname = (id) => (lg.byId[id] || {}).name || "";
+  const tab = (id) => (lg.byId[id] || {}).ab || "";
+  const all = PLAYERS.map(seasonLine);
+  const mine = all.filter((r) => lg.owner[r.p.id] === mt);
+  const H = (k, lbl, cls = "", tip = "") =>
+    `<th${k ? ` data-k="${k}"` : ""} class="${cls}${IS.sort === k ? " on" + (IS.dir > 0 ? " asc" : "") : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${lbl}</th>`;
+  const sortBy = (rows, def) => {
+    const k = IS.sort || def, dir = IS.sort ? IS.dir : -1;
+    const v = (r) => (k === "n" ? r.p.n : k === "team" ? tname(lg.owner[r.p.id]) : r[k]);
+    return rows.sort((a, b) => {
+      const x = v(a), y = v(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return typeof x === "string" ? dir * x.localeCompare(y) : dir * (x - y);
+    });
+  };
+  const cut = (v, t = 3) => (v == null ? "" : v >= t ? "pos-up" : v <= -t ? "pos-dn" : "");
+  const luckCols = (r, sign) =>
+    `<td>${r.gp}</td><td class="grp">${fx(r.now)}</td><td>${fx(r.adj)}</td>` +
+    `<td class="big ${sign > 0 ? (r.gap >= 2 ? "pos-up" : "") : (r.gap <= -2 ? "pos-dn" : r.gap >= 2 ? "pos-up" : "")}">${sign > 0 ? sg(r.gap) : sg(-r.gap)}</td>` +
+    `<td class="l dim" style="white-space:normal;min-width:11rem">${esc(luckWhy(r.p, -sign))}</td>` +
+    `<td class="grp">${fx(r.ros)}</td><td>${fx(r.pre)}</td><td class="${r.pre != null && r.now != null ? cut(r.now - r.pre) : ""}">${r.pre != null && r.now != null ? sg(r.now - r.pre) : "-"}</td>` +
+    `<td class="dim">${r.p.pre_rank ?? "-"}</td><td>${spark(lucks(r.p.id), 110, 26)}</td>`;
+  const luckHead = (sign) =>
+    H("gp", "GP") + H("now", "Now FP/G", "grp", "Actual FP/G this season") +
+    H("adj", "Luck-adj", "", "FP/G with luck removed: his own per-minute rates at the minutes he played, plus his real shot attempts and assists (the parts that carry into future games)") +
+    H("gap", sign > 0 ? "Buy-low gap" : "Luck/G", "big", sign > 0 ? "Luck-adjusted minus actual FP/G: how far the box score is running BELOW his real level" : "Actual minus luck-adjusted FP/G: how much of his box score is luck") +
+    `<th class="l">${sign > 0 ? "Ran cold on" : "Ran hot on"}</th>` +
+    H("ros", "ROS FP/G", "grp", "Our rest-of-season projection (the tested in-season blend)") +
+    H("pre", "Draft-day FP/G", "", "What we projected before the season: roughly what his manager drafted him to be") +
+    H("vsdraft", "Now vs draft", "", "Actual FP/G minus the draft-day projection. Early in the season managers judge players against draft cost") +
+    H("pre_rank", "Pre #", "", "Preseason board rank") + "<th>Luck by game</th>";
+  all.forEach((r) => { r.vsdraft = r.pre != null && r.now != null ? r.now - r.pre : null; });
+  const gpDone = Math.max(...Object.values(META.sched).map((g) => g.filter((x) => x[0] <= META.last_game_day).length));
+
+  if (IS.view === "buy") {
+    const teams = [["", "All other teams"]].concat(lg.teams.filter((t) => t.id !== mt).map((t) => [String(t.id), t.name]));
+    $("is-team").innerHTML = teams.map(([v, n]) => `<option value="${v}"${v === IS.team ? " selected" : ""}>${esc(n)}</option>`).join("");
+    let rows = all.filter((r) => {
+      const o = lg.owner[r.p.id];
+      return o != null && o !== mt && (!IS.team || String(o) === IS.team) && r.gp >= 3 && r.gap != null && r.gap > 0 &&
+        Math.max(r.now, r.adj) >= 20;
+    });
+    rows = sortBy(rows, "gap");
+    body.innerHTML = '<div class="tablewrap"><table id="is-table"><thead><tr>' + H("n", "Player", "l") +
+      H("team", "Fantasy team", "l") + '<th class="l">Tm</th>' + luckHead(1) + "</tr></thead><tbody>" +
+      rows.map((r) => `<tr data-id="${r.p.id}"><td class="l name">${esc(r.p.n)}${tags(r.p)}</td>` +
+        `<td class="l">${esc(tname(lg.owner[r.p.id]))}</td><td class="l dim">${esc(r.p.tm)}</td>${luckCols(r, 1)}</tr>`).join("") +
+      "</tbody></table></div>";
+    $("is-count").textContent = `${rows.length} players running below their real level`;
+    $("is-lede").innerHTML = `Players on other teams whose <strong>luck-adjusted</strong> FP/G is above what they are actually scoring: ` +
+      `the box score is running behind the level their minutes, shots and assists say is real, so their managers may sell low. ` +
+      `Early in the season managers still judge players against what they drafted them to be (<strong>Now vs draft</strong>); later they go by average points. ` +
+      `The best targets combine a big buy-low gap with a disappointing start. About ${gpDone} team games played so far, so small samples swing.`;
+  } else if (IS.view === "sell") {
+    let rows = mine.filter((r) => r.gp >= 1 && r.gap != null);
+    rows.forEach((r) => { r.luckg = -r.gap; });
+    rows = sortBy(rows, "luckg");
+    body.innerHTML = '<div class="tablewrap"><table id="is-table"><thead><tr>' + H("n", "Player", "l") + '<th class="l">Tm</th>' +
+      luckHead(-1).replace('data-k="gap"', 'data-k="luckg"') + "</tr></thead><tbody>" +
+      rows.map((r) => `<tr data-id="${r.p.id}"><td class="l name">${esc(r.p.n)}${tags(r.p)}</td><td class="l dim">${esc(r.p.tm)}</td>` +
+        luckCols(r, -1) + "</tr>").join("") + "</tbody></table></div>";
+    const hot = rows.filter((r) => r.luckg >= 2).length;
+    $("is-count").textContent = `${hot} of your ${rows.length} players running 2+ FP/G hot`;
+    $("is-lede").innerHTML = `Your players, most luck-inflated first. <strong>Luck/G</strong> is the part of each player&rsquo;s FP/G that ` +
+      `comes from things that don&rsquo;t carry over (hot shooting, steal and block spikes). A player well above his draft-day number ` +
+      `<em>and</em> running hot is the classic sell-high: other managers see the box score.`;
+  } else if (IS.view === "drop") {
+    const keep = keepSet();
+    $("is-keep").value = (L.keep || []).join("\n");
+    const fa = all.filter((r) => lg.owner[r.p.id] == null && !OUT_SET.includes(r.p.inj) && r.tot > 0)
+      .sort((a, b) => b.tot - a.tot);
+    const posOf = (p) => String(p.elig || p.pos || "").split(/[,/ ]+/).filter(Boolean);
+    let rows = mine.filter((r) => lg.slot[r.p.id] !== 13).map((r) => {
+      const ps = posOf(r.p);
+      const best = fa.find((f) => posOf(f.p).some((x) => ps.includes(x)));
+      const kept = keep.has(normName(r.p.n));
+      return Object.assign(r, {best, gain: best ? best.tot - r.tot : null, kept});
+    });
+    rows = sortBy(rows, "gain");
+    const irs = mine.filter((r) => lg.slot[r.p.id] === 13);
+    body.innerHTML = '<div class="tablewrap"><table id="is-table"><thead><tr>' + H("n", "Player", "l") + '<th class="l">Pos</th>' +
+      H("ros", "ROS FP/G", "grp") + H("gl", "Games left", "", "Projected games: availability x his team's games left") +
+      H("tot", "ROS points", "big", "Rest-of-season points = ROS FP/G x projected games left") +
+      '<th class="l grp">Best free agent at his positions</th><th>FA ROS FP/G</th><th>FA ROS points</th>' +
+      H("gain", "Gain if swapped", "big") + '<th class="l">Verdict</th></tr></thead><tbody>' +
+      rows.map((r) => {
+        const b = r.best;
+        const verdict = r.kept ? '<span class="dim">keep list</span>'
+          : r.gain > DROP_MARGIN * r.tot ? '<b class="pos-dn">Drop candidate</b>'
+          : r.gain > 0 ? '<span title="Gain under 8% of his rest-of-season points: inside projection noise">close call</span>'
+          : '<span class="dim">hold</span>';
+        return `<tr data-id="${r.p.id}"><td class="l name">${esc(r.p.n)}${tags(r.p)}</td><td class="l dim">${esc(posOf(r.p).join(","))}</td>` +
+          `<td class="grp">${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td class="big">${fx(r.tot, 0)}</td>` +
+          `<td class="l grp">${b ? `<span class="name" data-id="${b.p.id}">${esc(b.p.n)}</span> <span class="dim">${esc(b.p.tm)} · ${esc(posOf(b.p).join(","))}${lg.wv[b.p.id] ? " · WVR" : ""}</span>` : "-"}</td>` +
+          `<td>${b ? fx(b.ros) : "-"}</td><td>${b ? fx(b.tot, 0) : "-"}</td>` +
+          `<td class="big ${r.gain > DROP_MARGIN * r.tot && !r.kept ? "pos-dn" : ""}">${r.gain == null ? "-" : sg(r.gain, 0)}</td><td class="l">${verdict}</td></tr>`;
+      }).join("") + "</tbody></table></div>" +
+      (irs.length ? `<p class="note">On your IR slot (not counted): ${irs.map((r) => esc(r.p.n)).join(", ")}.</p>` : "") +
+      '<h3>Best available free agents (rest of season)</h3><div class="tablewrap" style="max-height:22rem"><table><thead><tr><th class="l">Player</th><th class="l">Tm</th><th class="l">Pos</th>' +
+      '<th>ROS FP/G</th><th>Games left</th><th>ROS points</th><th>Now FP/G</th><th>Luck/G</th><th>Own%</th></tr></thead><tbody>' +
+      fa.slice(0, 15).map((f) => `<tr data-id="${f.p.id}"><td class="l name">${esc(f.p.n)}${tags(f.p)}${lg.wv[f.p.id] ? '<span class="tag wvr">WVR</span>' : ""}</td>` +
+        `<td class="l dim">${esc(f.p.tm)}</td><td class="l dim">${esc(posOf(f.p).join(","))}</td><td>${fx(f.ros)}</td><td>${fx(f.gl, 0)}</td>` +
+        `<td class="big">${fx(f.tot, 0)}</td><td>${fx(f.now)}</td><td class="${f.gap == null ? "" : -f.gap >= 1 ? "pos-dn" : -f.gap <= -1 ? "pos-up" : ""}">${f.gap == null ? "-" : sg(-f.gap)}</td>` +
+        `<td class="dim">${f.p.own != null ? f.p.own.toFixed(0) : "-"}</td></tr>`).join("") + "</tbody></table></div>";
+    const n = rows.filter((r) => r.gain > DROP_MARGIN * r.tot && !r.kept).length;
+    $("is-count").textContent = `${n} drop candidate${n === 1 ? "" : "s"}`;
+    $("is-lede").innerHTML = `Each of your players against the best free agent who shares a position with him, on <strong>rest-of-season points</strong> ` +
+      `(projected FP/G × projected games left, so injuries and schedule count). In an ${L.teams}-team league almost every rostered player&rsquo;s ` +
+      `games reach your lineup, so season points are a fair stand-in for lineup points; the week-by-week lineup math is the My week tab. ` +
+      `Players on your keep list and your IR slot are never suggested.`;
+  } else {
+    const cards = lg.teams.map((t) => {
+      const rs = all.filter((r) => lg.owner[r.p.id] === t.id).sort((a, b) => b.ros - a.ros);
+      const tot = rs.reduce((a, r) => a + r.tot, 0);
+      const lk = rs.reduce((a, r) => a + (r.gap != null ? -r.gap * r.gp : 0), 0);
+      return {t, rs, tot, lk};
+    }).sort((a, b) => b.tot - a.tot);
+    body.innerHTML = '<div class="stand">' + cards.map((c, i) => `<div class="card${c.t.id === mt ? " mycard" : ""}">` +
+      `<h4>#${i + 1}<b>${esc(c.t.name)}</b>${c.t.id === mt ? ' <span class="tag rk">YOU</span>' : ""}</h4>` +
+      `<div class="srow sub"><span>ROS points ${fx(c.tot, 0)}</span><span class="v ${c.lk >= 20 ? "pos-dn" : c.lk <= -20 ? "pos-up" : ""}">luck so far ${sg(c.lk, 0)}</span></div>` +
+      c.rs.map((r) => `<div class="srow"><span class="nm" data-id="${r.p.id}">${esc(r.p.n)}</span>` +
+        `<span class="sub">${esc(r.p.tm)}${lg.slot[r.p.id] === 13 ? " · IR" : ""}${OUT_SET.includes(r.p.inj) ? " · out" : ""}</span>` +
+        `<span class="v">${fx(r.ros)} <span class="sub">${r.now != null ? "now " + fx(r.now) : ""}</span></span></div>`).join("") + "</div>").join("") + "</div>";
+    $("is-count").textContent = `${lg.teams.length} teams`;
+    $("is-lede").innerHTML = `Every roster in the league, ranked by projected <strong>rest-of-season points</strong> (each player&rsquo;s ROS FP/G × projected games left, ` +
+      `summed over the roster, before streaming). <strong>Luck so far</strong> = the current roster&rsquo;s actual minus luck-adjusted points this season: ` +
+      `positive means their box scores have flattered them. Each player shows ROS FP/G, then actual FP/G so far.`;
+  }
+  $("is-note").innerHTML = IS.view === "rost" ? "" :
+    `All fantasy points under <strong>${esc(L.name)}</strong> scoring. Luck items (&ldquo;ran cold on&rdquo;) are per game, measured under the default league scoring. ` +
+    `Rosters are read live from ESPN; projections are from this morning&rsquo;s build (games through ${esc(META.last_game_day)}).`;
+}
+function bindInseason() {
+  document.querySelectorAll("#is-view .chip").forEach((c) => c.addEventListener("click", () => {
+    IS.view = c.dataset.v; IS.sort = null;
+    document.querySelectorAll("#is-view .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+    renderInseason();
+  }));
+  $("is-team").addEventListener("change", (e) => { IS.team = e.target.value; renderInseason(); });
+  $("tab-insea").addEventListener("click", (e) => {
+    const th = e.target.closest("th[data-k]");
+    if (th) {
+      const k = th.dataset.k;
+      if (IS.sort === k) IS.dir = -IS.dir; else { IS.sort = k; IS.dir = ["n", "team", "pre_rank"].includes(k) ? 1 : -1; }
+      renderInseason();
+      return;
+    }
+    const n = e.target.closest("[data-id]");
+    if (n && BYID[+n.dataset.id]) openPlayer(+n.dataset.id);
+  });
+  $("is-keep").addEventListener("input", (e) => {
+    const lg = STORE.list[STORE.active];
+    lg.keep = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    L.keep = lg.keep;
+    if (DRAFT.key === lg.key) DRAFT.keep = lg.keep;
+    writeStore();
+    clearTimeout(bindInseason.t);
+    bindInseason.t = setTimeout(renderInseason, 400);
+  });
+}
+
 // ================================================================ ROUTING
 const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"];
 function showTab(t) {
@@ -883,11 +1096,13 @@ function showTab(t) {
   if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
   if (t === "recap") renderRecap();
   if (t === "wire") renderWaivers();
+  if (t === "insea") renderInseason();
 }
 function renderAll() {
   renderProj();
   if (!$("tab-recap").hidden) renderRecap();
   if (!$("tab-wire").hidden) renderWaivers();
+  if (!$("tab-insea").hidden) renderInseason();
 }
 
 // ================================================================== BOOT
@@ -909,6 +1124,7 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     bindProj();
     bindRecap();
     bindWaivers();
+    bindInseason();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
     $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closePlayer(); });
