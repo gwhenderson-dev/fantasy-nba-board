@@ -37,6 +37,8 @@ function readStore() {
     s = {active: d.key, list: {[d.key]: d}};
   }
   if (!s.list[s.active]) s.active = Object.keys(s.list)[0];
+  const own = s.list["espn-" + META.league.id];     // saved before the team picker existed
+  if (own && own.my_team == null && !own.tl) own.my_team = META.league.my_team;
   return s;
 }
 function writeStore() {
@@ -70,8 +72,55 @@ function setActive(key) {
   L = clone(STORE.list[key]);
   DRAFT = clone(L);
   fillLeaguePicker();
+  fillTeamPicker();
   renderLeagueForm();
   renderAll();
+  refreshLeagueData();
+}
+
+// ---- the league's teams + rosters (public ESPN leagues), fetched live once
+// per visit. Rosters are TODAY's: the recap marks who owns a player now.
+const LGDATA = {}, LGRES = {};
+const espnBase = () => `https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${parseInt(META.season.slice(0, 4), 10) + 1}/segments/0/leagues/`;
+function espnLeague(lg) {
+  if (!lg || lg.platform !== "espn" || !/^\d+$/.test(lg.id || "")) return Promise.resolve(null);
+  if (!LGDATA[lg.id]) {
+    LGDATA[lg.id] = fetch(espnBase() + lg.id + "?view=mTeam&view=mRoster").then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then((j) => {
+      const teams = (j.teams || []).map((t) => ({id: t.id, ab: t.abbrev || "",
+        name: (t.name || [t.location, t.nickname].filter(Boolean).join(" ") || "Team " + t.id).trim()}));
+      const owner = {};
+      (j.teams || []).forEach((t) => ((t.roster || {}).entries || []).forEach((e) => { owner[e.playerId] = t.id; }));
+      const d = {teams, owner, byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
+      LGRES[lg.id] = d;
+      return d;
+    }).catch(() => null);
+  }
+  return LGDATA[lg.id];
+}
+const myTeam = () => (L && L.my_team != null ? +L.my_team : null);
+function fillTeamPicker() {
+  const tl = (STORE.list[STORE.active] || {}).tl;
+  $("tmpick").hidden = !tl || !tl.length;
+  if (!tl) return;
+  const mt = myTeam();
+  $("tmsel").innerHTML = (mt == null ? '<option value="">pick your team</option>' : "") +
+    tl.map(([id, name]) => `<option value="${id}"${id === mt ? " selected" : ""}>${esc(name)}</option>`).join("");
+}
+function refreshLeagueData() {
+  const lg = STORE.list[STORE.active];
+  espnLeague(lg).then((d) => {
+    if (!d || STORE.list[STORE.active] !== lg) return;
+    lg.tl = d.teams.map((t) => [t.id, t.name, t.ab]);
+    if (lg.my_team != null && !d.byId[lg.my_team]) delete lg.my_team;
+    writeStore();
+    L.tl = lg.tl; L.my_team = lg.my_team;
+    if (DRAFT.key === lg.key) { DRAFT.tl = lg.tl; DRAFT.my_team = lg.my_team; }
+    fillTeamPicker();
+    renderAll();
+  });
 }
 
 function lgMsg(kind, html) { $("lg-msg").innerHTML = html ? `<div class="msg ${kind}">${html}</div>` : ""; }
@@ -135,6 +184,7 @@ function pullEspn() {
     const s = j.settings || {};
     const key = "espn-" + id;
     const d = STORE.list[key] ? clone(STORE.list[key]) : clone(DRAFT);
+    if (!STORE.list[key]) { delete d.tl; delete d.my_team; }
     d.key = key; d.id = id; d.platform = "espn";
     d.name = s.name || d.name || ("ESPN " + id);
     if (s.size) d.teams = s.size;
@@ -173,6 +223,16 @@ function pullEspn() {
 
 function bindLeague() {
   $("lgsel").addEventListener("change", (e) => setActive(e.target.value));
+  $("tmsel").addEventListener("change", (e) => {
+    const v = e.target.value === "" ? null : +e.target.value;
+    const lg = STORE.list[STORE.active];
+    if (v == null) delete lg.my_team; else lg.my_team = v;
+    writeStore();
+    L.my_team = lg.my_team;
+    if (DRAFT.key === lg.key) DRAFT.my_team = lg.my_team;
+    fillTeamPicker();
+    renderAll();
+  });
   $("lg-pull").addEventListener("click", pullEspn);
   $("lg-espn").addEventListener("keydown", (e) => { if (e.key === "Enter") pullEspn(); });
   $("tab-league").addEventListener("input", (e) => {
@@ -182,6 +242,7 @@ function bindLeague() {
   $("lg-new").addEventListener("click", () => {
     const d = clone(META.league);
     d.key = "custom-" + Date.now(); d.id = ""; d.name = "New league"; d.unmod = [];
+    d.platform = "custom"; delete d.my_team; delete d.tl;
     DRAFT = d;
     renderLeagueForm();
     lgMsg("info", "New league started from the default rules. Pull an ESPN league id or edit the fields, then save.");
@@ -344,9 +405,12 @@ function loadGames() {
   if (!GAMES_P) GAMES_P = fetch("data/games.json").then((r) => r.json()).then((j) => {
     const C = {};
     j.cols.forEach((c, i) => { C[c] = i; });
-    const byP = {};
-    j.rows.forEach((r) => { (byP[r[C.id]] = byP[r[C.id]] || []).push(r); });
-    GAMES = {C, rows: j.rows, byP};
+    const byP = {}, byG = {};
+    j.rows.forEach((r) => {
+      (byP[r[C.id]] = byP[r[C.id]] || []).push(r);
+      (byG[r[C.g]] = byG[r[C.g]] || {})[r[C.id]] = r;
+    });
+    GAMES = {C, rows: j.rows, byP, byG};
     return GAMES;
   });
   return GAMES_P;
@@ -438,6 +502,193 @@ function openPlayer(id) {
 }
 function closePlayer() { $("scrim").hidden = true; document.body.style.overflow = ""; }
 
+// ================================================================== RECAP
+let RECAP = null, RECAP_P = null;
+const RC = {day: null, g: null};
+function loadRecap() {
+  if (!RECAP_P) RECAP_P = fetch("data/recap.json").then((r) => (r.ok ? r.json() : null))
+    .then((j) => { RECAP = j; return j; }).catch(() => null);
+  return RECAP_P;
+}
+const pname = (id) => (BYID[id] ? BYID[id].n : (RECAP.nm[id] || "#" + id));
+const surname = (n) => {
+  const w = n.split(" ").filter((x) => !/^(jr\.?|sr\.?|ii|iii|iv|v)$/i.test(x));
+  return w.length > 1 ? w.slice(1).join(" ") : n;
+};
+// double/triple/quad-double flags from a box line (for ESPN fallback rows)
+function multi(box) {
+  const n = ["PTS", "REB", "AST", "STL", "BLK"].filter((k) => (box[SI[k]] || 0) >= 10).length;
+  return [+(n >= 2), +(n >= 3), +(n >= 4)];
+}
+// {team: [player rows in ESPN order]} for one game, scored under the active league
+function gameLines(gid) {
+  const C = GAMES.C, byG = GAMES.byG[gid] || {}, out = {};
+  (RECAP.box[gid] || []).forEach(([id, tm, st, dnp, pm]) => {
+    const r = byG[id], f = RECAP.fb[gid + ":" + id];
+    const row = {id, tm, st: !!st, dnp, pm, min: null, box: null, fp: null, adj: null, lk: null, fg3a: null};
+    if (r) {
+      row.box = STATS.map((k) => r[C[k]]); row.min = r[C.min]; row.fg3a = r[C.FG3A];
+      row.fp = fpg(row.box, [r[C.dd], r[C.td], r[C.qd]]);
+      row.adj = r[C.adj] ? fpg(r[C.adj], r[C.abp]) : null;
+      row.sh = r[C.sh];
+    } else if (f && dnp == null) {
+      row.min = f[0]; row.box = f.slice(1, 1 + STATS.length); row.fg3a = f[1 + STATS.length];
+      row.fp = fpg(row.box, multi(row.box));
+    }
+    if (row.fp != null && row.adj != null) row.lk = row.fp - row.adj;
+    (out[tm] = out[tm] || []).push(row);
+  });
+  return out;
+}
+const lkCls = (v, t = 3) => (v == null ? "" : v >= t ? "pos-dn" : v <= -t ? "pos-up" : "");
+
+function renderRecap() {
+  if (!RECAP || !GAMES) {
+    $("rc-games").innerHTML = '<p class="note">Loading games&hellip;</p>';
+    Promise.all([loadRecap(), loadGames()]).then(([rc]) => {
+      if (rc) renderRecap();
+      else $("rc-games").innerHTML = '<div class="msg err">The recap data is not built yet.</div>';
+    });
+    return;
+  }
+  const days = [...new Set(RECAP.games.map((g) => g[1]))].sort().reverse();
+  if (!days.length) { $("rc-games").innerHTML = '<p class="note">No finished games yet.</p>'; return; }
+  if (!RC.day || !days.includes(RC.day)) RC.day = days[0];
+  const di = days.indexOf(RC.day);
+  const dlabel = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"});
+  $("rc-day").innerHTML = days.map((d) => `<option value="${d}"${d === RC.day ? " selected" : ""}>${dlabel(d)}</option>`).join("");
+  $("rc-prev").disabled = di >= days.length - 1;
+  $("rc-next").disabled = di <= 0;
+
+  const lg = LGRES[L.id], mt = myTeam();
+  const fan = (id) => (lg && lg.owner[id] != null ? lg.byId[lg.owner[id]] : null);
+  const games = RECAP.games.filter((g) => g[1] === RC.day);
+  if (RC.g && !games.some((g) => g[0] === RC.g)) RC.g = null;
+  const lines = {}, all = [];
+  games.forEach((g) => {
+    lines[g[0]] = gameLines(g[0]);
+    Object.values(lines[g[0]]).forEach((rows) => rows.forEach((r) => { if (r.fp != null) all.push(r); }));
+  });
+  $("rc-count").textContent = `${games.length} game${games.length === 1 ? "" : "s"} · ${all.length} players`;
+  $("rc-lede").innerHTML = `Every game of the night, scored under <strong>${esc(L.name)}</strong>. Click a game for both box scores. ` +
+    `<strong>Luck</strong> = fantasy points minus luck-adjusted points (his own per-minute rates at the minutes he played, plus his real shots and assists): ` +
+    `<span class="pos-dn">orange</span> means the box score flatters him, <span class="pos-up">green</span> means he played better than it looks.`;
+
+  // ---- standouts
+  const srow = (r, v, own = true) => `<div class="srow"><span class="nm" data-id="${r.id}">${esc(pname(r.id))}</span>` +
+    `<span class="sub">${esc(r.tm)}${own && fan(r.id) ? " · " + esc(fan(r.id).ab) : ""}</span><span class="v">${v}</span></div>`;
+  const byFp = all.slice().sort((a, b) => b.fp - a.fp).slice(0, 5);
+  const wl = all.filter((r) => r.lk != null);
+  const hot = wl.slice().sort((a, b) => b.lk - a.lk).filter((r) => r.lk > 0).slice(0, 5);
+  const cold = wl.slice().sort((a, b) => a.lk - b.lk).filter((r) => r.lk < 0).slice(0, 5);
+  let cards = "";
+  if (mt != null && lg) {
+    const mine = all.filter((r) => lg.owner[r.id] === mt).sort((a, b) => b.fp - a.fp);
+    const tot = mine.reduce((a, r) => a + r.fp, 0), tl = mine.reduce((a, r) => a + (r.lk || 0), 0);
+    cards += `<div class="card"><h4>Your team<b>${esc(lg.byId[mt].name)}</b></h4>` +
+      (mine.length ? mine.map((r) => srow(r, `${fx(r.fp)} <span class="${lkCls(r.lk)}">(${sg(r.lk)})</span>`, false)).join("") +
+        `<div class="srow" style="border-top:1px solid var(--rule);margin-top:.2rem;padding-top:.25rem"><b>${mine.length} played</b>` +
+        `<span class="v"><b>${fx(tot)}</b> <span class="${lkCls(tl, 8)}">(${sg(tl)} luck)</span></span></div>`
+        : '<p class="note" style="margin:0">None of your players played.</p>') +
+      `<p class="note" style="margin:.3rem 0 0;font-size:.74rem">Everyone on your roster today, started or benched.</p></div>`;
+  }
+  cards += `<div class="card"><h4>Top fantasy scores</h4>${byFp.map((r) => srow(r, fx(r.fp))).join("")}</div>` +
+    `<div class="card"><h4>Ran hot (box score flatters)</h4>${hot.map((r) => srow(r, `<span class="pos-dn">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)).join("") || '<p class="note">-</p>'}</div>` +
+    `<div class="card"><h4>Ran cold (better than it looks)</h4>${cold.map((r) => srow(r, `<span class="pos-up">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)).join("") || '<p class="note">-</p>'}</div>`;
+  $("rc-stand").innerHTML = cards;
+
+  // ---- game cards
+  const logo = (t) => RECAP.logos[t] ? `<img src="${esc(RECAP.logos[t])}" alt="" loading="lazy">` : "";
+  $("rc-games").innerHTML = games.map((g) => {
+    const [gid, , aw, hm, ap, hp, , , status] = g;
+    const rows = Object.values(lines[gid]).flat().filter((r) => r.fp != null);
+    const top = rows.slice().sort((a, b) => b.fp - a.fp)[0];
+    const mineN = mt != null && lg ? rows.filter((r) => lg.owner[r.id] === mt).length : 0;
+    const side = (t, p, win) => `<div class="gteam${win ? " win" : ""}">${logo(t)}<span>${esc(t)}</span><span class="sc">${p ?? "-"}</span></div>`;
+    return `<button class="gcard" data-g="${gid}" aria-pressed="${gid === RC.g}">` +
+      side(aw, ap, ap > hp) + side(hm, hp, hp > ap) +
+      `<div class="gfoot"><span>${esc(status)}${mineN ? ` · <span class="mine">${mineN} yours</span>` : ""}</span>` +
+      `<span>${top ? esc(surname(pname(top.id))) + " " + fx(top.fp) : ""}</span></div></button>`;
+  }).join("");
+
+  // ---- box score of the selected game
+  if (!RC.g) {
+    $("rc-box").innerHTML = '<p class="note">Click a game for both box scores.</p>';
+    return;
+  }
+  const g = games.find((x) => x[0] === RC.g);
+  const [gid, , aw, hm, ap, hp, aq, hq, status] = g;
+  const qa = (aq || "").split(",").filter(Boolean), qh = (hq || "").split(",").filter(Boolean);
+  const qn = Math.max(qa.length, qh.length);
+  const qlbl = (i) => (i < 4 ? "Q" + (i + 1) : (i === 4 ? "OT" : "OT" + (i - 3)));
+  const qtab = qn ? `<table class="qtab"><thead><tr><th class="l"></th>${Array.from({length: qn}, (_, i) => `<th>${qlbl(i)}</th>`).join("")}<th>T</th></tr></thead><tbody>` +
+    `<tr><td class="l">${esc(aw)}</td>${qa.map((v) => `<td>${v}</td>`).join("")}<td><b>${ap}</b></td></tr>` +
+    `<tr><td class="l">${esc(hm)}</td>${qh.map((v) => `<td>${v}</td>`).join("")}<td><b>${hp}</b></td></tr></tbody></table>` : "";
+  const showFan = !!lg;
+  const ncol = 17 + (showFan ? 1 : 0);
+  const head = '<tr><th class="l">Player</th>' + (showFan ? '<th class="l" title="Fantasy team that rosters him today">Fantasy</th>' : "") +
+    '<th>MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>3PM</th><th>TOV</th><th>FG</th><th>3P</th><th>FT</th><th>+/-</th>' +
+    '<th class="grp">FP</th><th title="His own per-minute rates at the minutes he played, plus his real shot attempts and assists">Luck-adj</th><th>Luck</th></tr>';
+  const prow = (r) => {
+    const b = r.box, f = fan(r.id), mine = f && f.id === mt;
+    const v = (k) => b[SI[k]];
+    return `<tr class="${mine ? "mine" : ""}"><td class="l name" data-id="${r.id}">${esc(pname(r.id))}${BYID[r.id] ? tags(BYID[r.id]) : ""}</td>` +
+      (showFan ? `<td class="fan">${f ? esc(f.ab) : '<span class="dim">FA</span>'}</td>` : "") +
+      `<td>${r.min ?? "-"}</td><td>${v("PTS")}</td><td>${v("REB")}</td><td>${v("AST")}</td><td>${v("STL")}</td><td>${v("BLK")}</td>` +
+      `<td>${v("FG3M")}</td><td>${v("TOV")}</td><td>${v("FGM")}-${v("FGA")}</td><td>${v("FG3M")}-${r.fg3a ?? "?"}</td><td>${v("FTM")}-${v("FTA")}</td>` +
+      `<td class="dim">${r.pm == null ? "" : (r.pm > 0 ? "+" : "") + r.pm}</td>` +
+      `<td class="grp big">${fx(r.fp)}</td><td>${fx(r.adj)}</td><td class="${lkCls(r.lk)}"${r.adj == null ? ' title="No preseason line for this player (two-way / call-up), so no luck split"' : ""}>${sg(r.lk)}</td></tr>`;
+  };
+  const teamTable = (t, pts) => {
+    const rows = lines[gid][t] || [];
+    const played = rows.filter((r) => r.box), st = played.filter((r) => r.st), bn = played.filter((r) => !r.st);
+    const dnp = rows.filter((r) => !r.box);
+    const sum = (k) => played.reduce((a, r) => a + (r.box[SI[k]] || 0), 0);
+    const fpT = played.reduce((a, r) => a + r.fp, 0);
+    const adjRows = played.filter((r) => r.adj != null);
+    const adjT = adjRows.reduce((a, r) => a + r.adj, 0), lkT = adjRows.reduce((a, r) => a + r.lk, 0);
+    return `<h3 class="boxteam">${logo(t)}${esc(t)} <span class="dim" style="font-weight:500">${pts}</span></h3>` +
+      `<div class="tablewrap" style="max-height:none"><table><thead>${head}</thead><tbody>` +
+      `<tr class="sec"><td colspan="${ncol}">Starters</td></tr>` + st.map(prow).join("") +
+      `<tr class="sec"><td colspan="${ncol}">Bench</td></tr>` + (bn.map(prow).join("") || `<tr><td class="l dim" colspan="${ncol}">-</td></tr>`) +
+      `<tr class="tot"><td class="l">Team</td>${showFan ? "<td></td>" : ""}<td></td><td>${sum("PTS")}</td><td>${sum("REB")}</td><td>${sum("AST")}</td>` +
+      `<td>${sum("STL")}</td><td>${sum("BLK")}</td><td>${sum("FG3M")}</td><td>${sum("TOV")}</td><td>${sum("FGM")}-${sum("FGA")}</td><td></td>` +
+      `<td>${sum("FTM")}-${sum("FTA")}</td><td></td><td class="grp">${fx(fpT)}</td><td>${fx(adjT)}</td><td class="${lkCls(lkT, 10)}">${sg(lkT)}</td></tr>` +
+      "</tbody></table></div>" +
+      (dnp.length ? `<p class="note" style="margin:.35rem 0 0"><strong>Did not play:</strong> ` +
+        dnp.map((r) => `${esc(pname(r.id))}${r.dnp ? ` <span class="dim">(${esc(String(r.dnp).toLowerCase())})</span>` : ""}`).join(", ") + "</p>" : "");
+  };
+  $("rc-box").innerHTML =
+    `<div class="card"><div class="boxhead">` +
+      `<span class="bt${ap < hp ? " lose" : ""}">${logo(aw)}${esc(aw)} ${ap}</span><span class="dim">@</span>` +
+      `<span class="bt${hp < ap ? " lose" : ""}">${hp} ${esc(hm)}${logo(hm)}</span>` +
+      `<span class="st">${esc(status)} · ${dlabel(RC.day)}</span>${qtab}</div>` +
+      teamTable(aw, ap) + teamTable(hm, hp) +
+      `<p class="note" style="margin-top:.8rem">Starters and order as ESPN lists them. Team luck sums the players with a preseason line.` +
+      (showFan ? " Fantasy owners are today's rosters, not the rosters on the night." : "") + "</p></div>";
+}
+function bindRecap() {
+  $("rc-day").addEventListener("change", (e) => { RC.day = e.target.value; RC.g = null; renderRecap(); });
+  const step = (d) => {
+    const days = [...new Set(RECAP.games.map((g) => g[1]))].sort().reverse();
+    const i = days.indexOf(RC.day) + d;
+    if (i >= 0 && i < days.length) { RC.day = days[i]; RC.g = null; renderRecap(); }
+  };
+  $("rc-prev").addEventListener("click", () => step(1));
+  $("rc-next").addEventListener("click", () => step(-1));
+  $("rc-games").addEventListener("click", (e) => {
+    const b = e.target.closest(".gcard");
+    if (!b) return;
+    RC.g = RC.g === +b.dataset.g ? null : +b.dataset.g;
+    renderRecap();
+    if (RC.g) $("rc-box").scrollIntoView({behavior: "smooth", block: "start"});
+  });
+  $("tab-recap").addEventListener("click", (e) => {
+    const n = e.target.closest("[data-id]");
+    if (n && BYID[+n.dataset.id]) openPlayer(+n.dataset.id);
+  });
+}
+
 // ================================================================ ROUTING
 const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"];
 function showTab(t) {
@@ -445,8 +696,12 @@ function showTab(t) {
   document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
   TABS.forEach((k) => { $("tab-" + k).hidden = k !== t; });
   if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
+  if (t === "recap") renderRecap();
 }
-function renderAll() { renderProj(); }
+function renderAll() {
+  renderProj();
+  if (!$("tab-recap").hidden) renderRecap();
+}
 
 // ================================================================== BOOT
 Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.json").then((r) => r.json())])
@@ -461,14 +716,17 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     L = clone(STORE.list[STORE.active]);
     DRAFT = clone(L);
     fillLeaguePicker();
+    fillTeamPicker();
     renderLeagueForm();
     bindLeague();
     bindProj();
+    bindRecap();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closePlayer(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePlayer(); });
     renderAll();
     showTab((location.hash || "#proj").slice(1));
+    refreshLeagueData();
   })
   .catch((e) => {
     document.querySelector("main").innerHTML = '<div class="msg err">Could not load the data (' + esc(e.message) + ").</div>";
