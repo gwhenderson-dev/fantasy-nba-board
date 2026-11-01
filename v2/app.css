@@ -163,6 +163,15 @@ tr.mine td.fan { color: var(--accent); font-weight: 650; }
 .boxteam { margin: 1.1rem 0 .4rem; display: flex; align-items: center; gap: .5rem; }
 .boxteam img { width: 24px; height: 24px; object-fit: contain; }
 
+/* ---- waivers ------------------------------------------------------------ */
+.gch { display: inline-flex; align-items: baseline; gap: .25rem; font-size: .76rem; background: var(--band); border-radius: 6px; padding: .08rem .4rem; margin-right: .25rem; white-space: nowrap; }
+.gch .m { font-variant-numeric: tabular-nums; }
+.gch.b2 { outline: 1px dashed var(--gold); }
+.tag.b2b { background: var(--gold-bg); color: var(--gold); }
+.tag.wvr { background: var(--band); color: var(--muted); }
+details.card summary { cursor: pointer; }
+textarea { font: inherit; background: var(--paper); color: var(--ink); border: 1px solid var(--rule2); border-radius: 8px; padding: .45rem .55rem; }
+
 /* ---- placeholder / prose ---------------------------------------------- */
 .plan { max-width: 46rem; }
 .plan li { margin: .35rem 0; }

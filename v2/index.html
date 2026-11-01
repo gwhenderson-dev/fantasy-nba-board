@@ -17,7 +17,7 @@
     <button class="tab" role="tab" data-tab="league">League</button>
     <button class="tab" role="tab" data-tab="proj">Projections</button>
     <button class="tab" role="tab" data-tab="insea">In-season<span class="soon">soon</span></button>
-    <button class="tab" role="tab" data-tab="wire">Waivers<span class="soon">soon</span></button>
+    <button class="tab" role="tab" data-tab="wire">Waivers</button>
     <button class="tab" role="tab" data-tab="recap">Recap</button>
     <button class="tab" role="tab" data-tab="week">My week<span class="soon">soon</span></button>
     <button class="tab" role="tab" data-tab="trade">Trade analyzer<span class="soon">soon</span></button>
@@ -108,10 +108,44 @@
   </section>
   <section class="panel" id="tab-wire" hidden>
     <h1>Waivers &amp; streaming</h1>
-    <p class="lede">Coming next. One- and two-day pickups among your league&rsquo;s available players: current FP/G,
-      luck-adjusted FP/G, a projection <em>and</em> a ceiling (for when you need a moonshot), tonight&rsquo;s matchup
-      adjustment (pace, defense by position, FG% allowed, home court), and back-to-back awareness &mdash; players who
-      sit the second night are detected from the game logs whatever their injury tag says.</p>
+    <p class="lede" id="wv-lede"></p>
+    <div class="controls">
+      <div class="ctl"><span class="lbl">Window</span><div class="chips" id="wv-win">
+        <button class="chip" data-w="0" aria-pressed="true">Today</button>
+        <button class="chip" data-w="1" aria-pressed="false">Tomorrow</button>
+        <button class="chip" data-w="01" aria-pressed="false">Today + tomorrow</button>
+        <button class="chip" data-w="7" aria-pressed="false">Next 7 days</button>
+      </div></div>
+      <div class="ctl"><span class="lbl">Rank by</span><div class="chips" id="wv-rank">
+        <button class="chip" data-r="proj" aria-pressed="true">Projected</button>
+        <button class="chip" data-r="ceil" aria-pressed="false" title="A top-10% night">Ceiling (moonshot)</button>
+      </div></div>
+      <div class="ctl"><span class="lbl">Position</span><div class="chips" id="wv-pos">
+        <button class="chip" data-p="" aria-pressed="true">All</button>
+        <button class="chip" data-p="PG" aria-pressed="false">PG</button>
+        <button class="chip" data-p="SG" aria-pressed="false">SG</button>
+        <button class="chip" data-p="SF" aria-pressed="false">SF</button>
+        <button class="chip" data-p="PF" aria-pressed="false">PF</button>
+        <button class="chip" data-p="C" aria-pressed="false">C</button>
+      </div></div>
+      <div class="ctl"><span class="lbl">Players</span><div class="chips" id="wv-who">
+        <button class="chip" data-a="1" aria-pressed="true">Available</button>
+        <button class="chip" data-a="0" aria-pressed="false">Everyone</button>
+      </div></div>
+      <span class="count" id="wv-count"></span>
+    </div>
+    <div class="tablewrap"><table id="wv-table"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="wv-note"></p>
+    <details class="card" id="wv-b2bbox" style="margin-top:1rem">
+      <summary><strong>Back-to-back sitters</strong> <span class="dim" id="wv-b2bsum"></span></summary>
+      <p class="note">Detected from the game logs (last season + this one): a second night counts as a rest sit only
+        when the player played the night before <em>and</em> his team&rsquo;s next game, so injury spells don&rsquo;t count,
+        whatever the injury tag said. Players who sat a lot of second nights last season kept doing it the next season,
+        just less often (correlation 0.25), so each rate is pulled toward the league&rsquo;s 11%. Add anyone you know won&rsquo;t play
+        second nights below (one name per line); they count as certain to sit.</p>
+      <textarea id="wv-b2blist" rows="4" placeholder="e.g. Joel Embiid" style="width:100%;max-width:28rem"></textarea>
+      <div id="wv-b2btab"></div>
+    </details>
   </section>
   <section class="panel" id="tab-recap" hidden>
     <h1>Daily recap</h1>

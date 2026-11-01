@@ -93,9 +93,18 @@ function espnLeague(lg) {
         name: (t.name || [t.location, t.nickname].filter(Boolean).join(" ") || "Team " + t.id).trim()}));
       const owner = {};
       (j.teams || []).forEach((t) => ((t.roster || {}).entries || []).forEach((e) => { owner[e.playerId] = t.id; }));
-      const d = {teams, owner, byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
-      LGRES[lg.id] = d;
-      return d;
+      const d = {teams, owner, wv: {}, byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
+      // second, optional call: which unrostered players are on waivers (not free agents)
+      // ESPN answers 400 to this filter without a sort clause
+      const flt = JSON.stringify({players: {filterStatus: {value: ["WAIVERS"]}, limit: 2000,
+                                            sortPercOwned: {sortPriority: 1, sortAsc: false}}});
+      return fetch(espnBase() + lg.id + "?view=kona_player_info", {headers: {"x-fantasy-filter": flt}})
+        .then((r) => (r.ok ? r.json() : {players: []})).catch(() => ({players: []}))
+        .then((k) => {
+          (k.players || []).forEach((p) => { if (p && p.id != null && d.owner[p.id] == null) d.wv[p.id] = 1; });
+          LGRES[lg.id] = d;
+          return d;
+        });
     }).catch(() => null);
   }
   return LGDATA[lg.id];
@@ -689,6 +698,182 @@ function bindRecap() {
   });
 }
 
+// ================================================================ WAIVERS
+const WV = {win: "0", rank: "proj", pos: "", avail: true, sort: null, dir: -1};
+const B2B_KEY = "fnba.v2.b2blist";
+const addDays = (d, n) => {
+  const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+};
+const normName = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .toLowerCase().replace(/[^a-z ]/g, "").replace(/\b(jr|sr|ii|iii|iv)\b/g, "").replace(/\s+/g, " ").trim();
+function b2bList() {
+  let t = "";
+  try { t = localStorage.getItem(B2B_KEY) || ""; } catch (e) { t = ""; }
+  return t;
+}
+// fantasy points of a line under ANY league (the ceiling SD and matchup betas
+// were measured under the default league; they are scaled by the ratio)
+function fpgUnder(lg, s, bp) {
+  const keep = L; L = lg;
+  const v = fpg(s, bp);
+  L = keep;
+  return v;
+}
+const posCls = (pos) => {
+  const t = String(pos || "").split(/[,/ ]+/)[0];
+  return t === "C" ? "C" : (t === "SF" || t === "PF" || t === "F") ? "F" : "G";
+};
+function windowDays() {
+  const d0 = META.asof;
+  if (WV.win === "0") return [d0];
+  if (WV.win === "1") return [addDays(d0, 1)];
+  if (WV.win === "01") return [d0, addDays(d0, 1)];
+  return Array.from({length: 7}, (_, i) => addDays(d0, i));
+}
+function streamRows() {
+  const days = new Set(windowDays());
+  const lg = LGRES[L.id];
+  const own = new Set(b2bList().split("\n").map(normName).filter(Boolean));
+  const B = META.b2b, CZ = META.ceiling.z;
+  const out = [];
+  PLAYERS.forEach((p) => {
+    if (["OUT", "INJURY_RESERVE", "SUSPENSION"].includes(p.inj)) return;
+    const rostered = lg && lg.owner[p.id] != null;
+    if (WV.avail && rostered) return;
+    if (WV.pos && !String(p.pos || "").split(/[,/ ]+/).includes(WV.pos)) return;
+    const sch = (META.sched[p.tm] || []).filter((g) => days.has(g[0]));
+    if (!sch.length) return;
+    const fp = fpg(p.s, p.bp);
+    if (fp == null || fp <= 0) return;
+    const fpd = fpgUnder(META.league, p.s, p.bp) || fp;
+    const scale = fpd > 0 ? fp / fpd : 1;
+    const sd = (p.sd || 0) * scale;
+    const teamDays = new Set((META.sched[p.tm] || []).map((g) => g[0]));
+    const listed = own.has(normName(p.n));
+    const psit = listed ? 1 : p.b2b ? p.b2b[2] : B.base;
+    let proj = 0, ceil = null;
+    const games = sch.map(([d, opp, home]) => {
+      const second = teamDays.has(addDays(d, -1));
+      const play = second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1;
+      const mf = META.mf[opp];
+      let adj = 0, tip = "";
+      if (mf) {
+        const c = posCls(p.pos), b = META.mfb;
+        adj = (b.pace * (mf.pace - 1) + b.dvp * ((mf[c] || 1) - 1) + b.fgp * ((mf.fgp || 1) - 1) +
+               b.home * (home ? 0.5 : -0.5)) * scale;
+        tip = `${opp}: pace ${(mf.pace * 100).toFixed(0)}% of league, allows ${((mf[c] || 1) * 100).toFixed(0)}% of league FP to ${c}s, ` +
+          `opponents shoot ${((mf.fgp || 1) * 100).toFixed(0)}% of league FG% against them; ${home ? "home" : "away"} (${mf.n} games so far)`;
+      }
+      proj += play * (fp + adj);
+      if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, fp + adj + CZ * sd);
+      return {d, opp, home, second, play, adj, tip};
+    });
+    const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
+    const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
+    out.push({p, fp, games, proj, ceil, now, adjFp, luck: now != null && adjFp != null ? now - adjFp : null,
+      psit, listed, risk: listed || psit >= B.flag, ng: games.length,
+      st: rostered ? (lg.byId[lg.owner[p.id]] || {}).ab : lg ? (lg.wv[p.id] ? "WVR" : "FA") : null});
+  });
+  return out;
+}
+function renderWaivers() {
+  const rows = streamRows();
+  const key = WV.sort || (WV.rank === "ceil" ? "ceil" : "proj");
+  const val = (r) => (key === "n" ? r.p.n : key === "own" ? r.p.own : r[key]);
+  rows.sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return typeof x === "string" ? WV.dir * x.localeCompare(y) : (WV.sort ? WV.dir : -1) * (x - y);
+  });
+  const list = rows.slice(0, 120);
+  const lg = LGRES[L.id];
+  const days = windowDays();
+  const dname = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
+  const H = (k, lbl, cls = "", tip = "") =>
+    `<th${k ? ` data-k="${k}"` : ""} class="${cls}${key === k ? " on" + (WV.sort && WV.dir > 0 ? " asc" : "") : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${lbl}</th>`;
+  $("wv-table").querySelector("thead").innerHTML = "<tr>" +
+    H("", "#") + H("n", "Player", "l") + '<th class="l">Tm</th><th class="l">Pos</th>' +
+    (lg ? '<th class="l" title="FA = free agent, WVR = on waivers">Status</th>' : "") +
+    H("proj", days.length > 1 ? "Proj total" : "Proj", "grp big", "Projected fantasy points in the window: rest-of-season FP/G + each game's matchup adjustment, times the chance he plays second nights of back-to-backs") +
+    H("ceil", "Ceiling", "", "A top-10% night in the window (his best game): projection + 1.40 x his game-to-game spread, shrunk toward last season's spread. Backtest: 10.6% of games beat it") +
+    '<th class="l grp">Games (matchup adjustment)</th>' +
+    H("fp", "ROS FP/G", "grp", "Rest-of-season FP/G (the tested in-season blend)") +
+    H("now", "Now FP/G", "", "Actual FP/G this season") +
+    H("adjFp", "Luck-adj", "", "FP/G with luck removed: his own per-minute rates at the minutes he played, plus his real shot attempts and assists") +
+    H("luck", "Luck/G", "", "Actual minus luck-adjusted, per game. Positive = the box score flatters him") +
+    H("psit", "B2B sit", "grp", "Chance he sits the second night of a back-to-back (rest sits from the game logs, shrunk toward the league's 11%)") +
+    H("own", "Own%", "", "Rostered % across ESPN leagues") + "</tr>";
+  const body = list.map((r, i) => {
+    const p = r.p;
+    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}" title="${esc((g.second ? "Second night of a back-to-back" + (r.risk ? ` — ${Math.round(r.psit * 100)}% sit chance` : "") + ". " : "") + g.tip)}">` +
+      `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}` +
+      `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span></span>`).join("");
+    const b2 = r.p.b2b;
+    return `<tr data-id="${p.id}"><td class="dim">${i + 1}</td>` +
+      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${r.listed ? "On your list: does not play second nights" : "Sits second nights of back-to-backs"}">B2B</span>` : ""}</td>` +
+      `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
+      (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
+      `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
+      `<td class="l grp">${gs}</td>` +
+      `<td class="grp">${fx(r.fp)}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
+      `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
+      `<td class="grp ${r.risk ? "" : "dim"}" title="${b2 ? `Sat ${b2[0]} of ${b2[1]} second nights (last season + this)` : "No second nights on record"}">${r.listed ? "your list" : Math.round(r.psit * 100) + "%"}</td>` +
+      `<td class="dim">${p.own != null ? p.own.toFixed(0) : "-"}</td></tr>`;
+  }).join("");
+  $("wv-table").querySelector("tbody").innerHTML = body ||
+    `<tr><td class="l dim" colspan="14">No ${WV.avail ? "available " : ""}players have a game in this window.</td></tr>`;
+  const wl = WV.win === "0" ? "today" : WV.win === "1" ? "tomorrow" : WV.win === "01" ? "today and tomorrow" : "the next 7 days";
+  $("wv-count").textContent = `${list.length} of ${rows.length} with a game ${wl}`;
+  $("wv-lede").innerHTML = `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
+    (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
+      : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ")) +
+    `Players ESPN lists as out, on IR or suspended are left off. Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`;
+  $("wv-note").innerHTML = "Matchup chips: the one-game adjustment tested on 16 seasons (opponent pace, fantasy points it allows to the player's position, " +
+    "FG% it allows, home court), worth about ±2–3 points at the extremes. A dashed chip is the second night of a back-to-back. " +
+    "Injury statuses and the matchup numbers are from this morning&rsquo;s build; rosters and waivers are read live from ESPN.";
+  // ---- the sitters list
+  const sit = PLAYERS.filter((p) => p.b2b && p.b2b[2] >= META.b2b.flag).sort((a, b) => b.b2b[2] - a.b2b[2]);
+  $("wv-b2bsum").textContent = `— ${sit.length} players flagged`;
+  $("wv-b2btab").innerHTML = '<div class="tablewrap" style="max-height:24rem;margin-top:.7rem"><table><thead><tr><th class="l">Player</th><th class="l">Tm</th>' +
+    '<th title="Rest sits on second nights / second-night chances (bracketed by games played)">Sat</th><th>Sit chance</th>' + (lg ? '<th class="l">Status</th>' : "") + "</tr></thead><tbody>" +
+    sit.map((p) => `<tr data-id="${p.id}"><td class="l name">${esc(p.n)}</td><td class="l dim">${esc(p.tm)}</td><td>${p.b2b[0]} of ${p.b2b[1]}</td>` +
+      `<td>${Math.round(p.b2b[2] * 100)}%</td>${lg ? `<td class="l dim">${lg.owner[p.id] != null ? esc((lg.byId[lg.owner[p.id]] || {}).ab) : lg.wv[p.id] ? "WVR" : "FA"}</td>` : ""}</tr>`).join("") +
+    "</tbody></table></div>";
+}
+function bindWaivers() {
+  const chipset = (id, attr, fn) => document.querySelectorAll(`#${id} .chip`).forEach((c) => c.addEventListener("click", () => {
+    fn(c.dataset[attr]);
+    document.querySelectorAll(`#${id} .chip`).forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+    renderWaivers();
+  }));
+  chipset("wv-win", "w", (v) => { WV.win = v; });
+  chipset("wv-rank", "r", (v) => { WV.rank = v; WV.sort = null; });
+  chipset("wv-pos", "p", (v) => { WV.pos = v; });
+  chipset("wv-who", "a", (v) => { WV.avail = v === "1"; });
+  $("wv-table").querySelector("thead").addEventListener("click", (e) => {
+    const th = e.target.closest("th[data-k]");
+    if (!th) return;
+    const k = th.dataset.k;
+    if (WV.sort === k) WV.dir = -WV.dir;
+    else { WV.sort = k; WV.dir = k === "n" ? 1 : -1; }
+    renderWaivers();
+  });
+  $("tab-wire").addEventListener("click", (e) => {
+    if (e.target.closest("thead")) return;
+    const tr = e.target.closest("tr[data-id]");
+    if (tr && BYID[+tr.dataset.id]) openPlayer(+tr.dataset.id);
+  });
+  const ta = $("wv-b2blist");
+  ta.value = b2bList();
+  ta.addEventListener("input", () => {
+    try { localStorage.setItem(B2B_KEY, ta.value); } catch (e) { /* storage blocked */ }
+    renderWaivers();
+  });
+}
+
 // ================================================================ ROUTING
 const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"];
 function showTab(t) {
@@ -697,10 +882,12 @@ function showTab(t) {
   TABS.forEach((k) => { $("tab-" + k).hidden = k !== t; });
   if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
   if (t === "recap") renderRecap();
+  if (t === "wire") renderWaivers();
 }
 function renderAll() {
   renderProj();
   if (!$("tab-recap").hidden) renderRecap();
+  if (!$("tab-wire").hidden) renderWaivers();
 }
 
 // ================================================================== BOOT
@@ -721,7 +908,9 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     bindLeague();
     bindProj();
     bindRecap();
+    bindWaivers();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+    window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
     $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closePlayer(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePlayer(); });
     renderAll();
