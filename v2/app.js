@@ -323,9 +323,27 @@ function projRows() {
       adj, luck: sofar != null && adj != null ? sofar - adj : null};
   });
 }
+// Injury status: the OFFICIAL NBA report (data/injuries.json, refreshed hourly
+// on game days) wins over ESPN's fantasy feed, which lags it. off(p) =
+// [status, game date, consecutive Out reports]; one Out = that game only,
+// 2+ in a row = out until a report clears him.
+const OUT_SET = ["OUT", "INJURY_RESERVE", "SUSPENSION"];
+let OFF = {players: {}, as_of: null};
+const off = (p) => (p && OFF.players[p.id]) || null;
+const longOut = (p) => { const o = off(p); return !!o && o[0] === "Out" && o[2] >= 2; };
+const outNow = (p) => OUT_SET.includes(p.inj) || longOut(p);
+const outOn = (p, d) => { const o = off(p); return !!o && o[0] === "Out" && o[1] === d; };
+function offTitle(o) {
+  return `Official NBA injury report (${OFF.as_of}): ${o[0]} for ${o[1] || "his next game"}` +
+    (o[0] === "Out" && o[2] >= 2 ? ` — listed out on his team's last ${o[2]} reports` : "");
+}
 function tags(p) {
   let t = "";
-  if (p.inj === "OUT" || p.inj === "INJURY_RESERVE" || p.inj === "SUSPENSION")
+  const o = off(p);
+  if (o) {
+    const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
+    t += `<span class="tag ${o[0] === "Out" || o[0] === "Doubtful" ? "inj" : "dtd"}" title="${esc(offTitle(o))}">${lbl}</span>`;
+  } else if (p.inj === "OUT" || p.inj === "INJURY_RESERVE" || p.inj === "SUSPENSION")
     t += `<span class="tag inj" title="ESPN status">${p.inj === "INJURY_RESERVE" ? "IR" : p.inj === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
   else if (p.inj === "DAY_TO_DAY") t += '<span class="tag dtd" title="ESPN status">DTD</span>';
   if (p.rook) t += '<span class="tag rk">RK</span>';
@@ -470,7 +488,7 @@ function openPlayer(id) {
   $("drawer").innerHTML =
     `<div class="dhead"><div><h1>${esc(p.n)}${tags(p)}</h1>` +
     `<div class="dsub">${esc(p.tm)} · ${esc(p.pos || "")}${p.age ? " · age " + Math.floor(p.age) : ""}` +
-    `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}</div></div>` +
+    `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${off(p) ? " · " + esc(offTitle(off(p))) : p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}</div></div>` +
     `<button class="x" id="dclose" aria-label="Close">×</button></div>` +
     '<div class="kpis">' +
       kpi(fx(ros), "Rest-of-season FP/G") +
@@ -754,11 +772,11 @@ function streamRows() {
   const B = META.b2b, CZ = META.ceiling.z;
   const out = [];
   PLAYERS.forEach((p) => {
-    if (["OUT", "INJURY_RESERVE", "SUSPENSION"].includes(p.inj)) return;
+    if (outNow(p)) return;
     const rostered = lg && lg.owner[p.id] != null;
     if (WV.avail && rostered) return;
     if (WV.pos && !String(p.pos || "").split(/[,/ ]+/).includes(WV.pos)) return;
-    const sch = (META.sched[p.tm] || []).filter((g) => days.has(g[0]));
+    const sch = (META.sched[p.tm] || []).filter((g) => days.has(g[0]) && !outOn(p, g[0]));
     if (!sch.length) return;
     const fp = fpg(p.s, p.bp);
     if (fp == null || fp <= 0) return;
@@ -846,7 +864,9 @@ function renderWaivers() {
   $("wv-lede").innerHTML = `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
     (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
       : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ")) +
-    `Players ESPN lists as out, on IR or suspended are left off. Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`;
+    `Players out are left off, using the <strong>official NBA injury report</strong>${OFF.as_of ? ` (as of ${esc(OFF.as_of)})` : ""} first and ESPN&rsquo;s status otherwise: ` +
+    `a player listed out on his team&rsquo;s last two or more reports is dropped entirely, a one-night Out removes just that game, and Doubtful / Questionable are tagged. ` +
+    `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`;
   $("wv-note").innerHTML = "Matchup chips: the one-game adjustment tested on 16 seasons (opponent pace, fantasy points it allows to the player's position, " +
     "FG% it allows, home court), worth about ±2–3 points at the extremes. A dashed chip is the second night of a back-to-back. " +
     "Injury statuses and the matchup numbers are from this morning&rsquo;s build; rosters and waivers are read live from ESPN.";
@@ -892,7 +912,6 @@ function bindWaivers() {
 
 // ============================================================== IN-SEASON
 const IS = {view: "buy", team: "", sort: null, dir: -1};
-const OUT_SET = ["OUT", "INJURY_RESERVE", "SUSPENSION"];
 const DROP_MARGIN = 0.08;   // a swap must gain 8%+ of the player's ROS points to be called
 // per-player season view under the ACTIVE league: now, luck-adjusted, ROS
 function seasonLine(p) {
@@ -1006,7 +1025,7 @@ function renderInseason() {
   } else if (IS.view === "drop") {
     const keep = keepSet();
     $("is-keep").value = (L.keep || []).join("\n");
-    const fa = all.filter((r) => lg.owner[r.p.id] == null && !OUT_SET.includes(r.p.inj) && r.tot > 0)
+    const fa = all.filter((r) => lg.owner[r.p.id] == null && !outNow(r.p) && r.tot > 0)
       .sort((a, b) => b.tot - a.tot);
     const posOf = (p) => String(p.elig || p.pos || "").split(/[,/ ]+/).filter(Boolean);
     let rows = mine.filter((r) => lg.slot[r.p.id] !== 13).map((r) => {
@@ -1058,7 +1077,7 @@ function renderInseason() {
       `<h4>#${i + 1}<b>${esc(c.t.name)}</b>${c.t.id === mt ? ' <span class="tag rk">YOU</span>' : ""}</h4>` +
       `<div class="srow sub"><span>ROS points ${fx(c.tot, 0)}</span><span class="v ${c.lk >= 20 ? "pos-dn" : c.lk <= -20 ? "pos-up" : ""}">luck so far ${sg(c.lk, 0)}</span></div>` +
       c.rs.map((r) => `<div class="srow"><span class="nm" data-id="${r.p.id}">${esc(r.p.n)}</span>` +
-        `<span class="sub">${esc(r.p.tm)}${lg.slot[r.p.id] === 13 ? " · IR" : ""}${OUT_SET.includes(r.p.inj) ? " · out" : ""}</span>` +
+        `<span class="sub">${esc(r.p.tm)}${lg.slot[r.p.id] === 13 ? " · IR" : ""}${outNow(r.p) ? " · out" : ""}</span>` +
         `<span class="v">${fx(r.ros)} <span class="sub">${r.now != null ? "now " + fx(r.now) : ""}</span></span></div>`).join("") + "</div>").join("") + "</div>";
     $("is-count").textContent = `${lg.teams.length} teams`;
     $("is-lede").innerHTML = `Every roster in the league, ranked by projected <strong>rest-of-season points</strong> (each player&rsquo;s ROS FP/G × projected games left, ` +
@@ -1167,7 +1186,7 @@ function loadMatchups(lg) {
 }
 function loadReturns(lg) {
   const ids = Object.keys(lg.owner).map(Number).filter((id) =>
-    (lg.slot[id] === 13 || OUT_SET.includes(lg.inj[id])) && !(id in lg.ret));
+    (lg.slot[id] === 13 || OUT_SET.includes(lg.inj[id]) || longOut(BYID[id])) && !(id in lg.ret));
   if (!ids.length) return Promise.resolve();
   ids.forEach((id) => { lg.ret[id] = null; });
   const flt = JSON.stringify({players: {filterIds: {value: ids}, limit: ids.length + 5,
@@ -1187,7 +1206,7 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
   const ps = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === teamId).map((id) => {
     const p = BYID[id];
     const inj = lg.inj[id], ret = lg.ret[id];
-    const hurt = OUT_SET.includes(inj) || lg.slot[id] === 13;
+    const hurt = OUT_SET.includes(inj) || lg.slot[id] === 13 || longOut(p);
     const plays = id in marks ? !!marks[id] : !hurt || !!ret;
     const elig = (lg.elig[id] && lg.elig[id].length ? lg.elig[id] : eligFromPos(p && p.pos)).filter((s) => SLOTS.includes(s));
     const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: id in marks, elig, days: [],
@@ -1201,7 +1220,7 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     days.forEach((d) => {
       const g = p ? (META.sched[p.tm] || []).find((x) => x[0] === d) : null;
       let val = 0, avail = false;
-      if (g && plays && !(hurt && !(id in marks) && ret && d < ret)) {
+      if (g && plays && !(hurt && !(id in marks) && ret && d < ret) && !(outOn(p, d) && !(id in marks))) {
         const second = teamDays.has(addDays(d, -1));
         const play = second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1;
         const mf = META.mf[g[1]];
@@ -1316,7 +1335,9 @@ function renderWeek() {
     '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th><th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
-      `<td class="l dim">${r.hurt ? (lg.slot[r.id] === 13 ? "IR" : esc(String(r.inj).replace("INJURY_RESERVE", "IR").replace("SUSPENSION", "SUSP"))) + (r.ret ? " · back " + r.ret.slice(5) : "") : r.inj === "DAY_TO_DAY" ? "DTD" : ""}${r.manual ? " · set by you" : ""}</td>` +
+      `<td class="l dim"${off(r.p) ? ` title="${esc(offTitle(off(r.p)))}"` : ""}>${off(r.p) ? esc(off(r.p)[0]) + (off(r.p)[0] === "Out" && off(r.p)[2] < 2 ? " " + esc((off(r.p)[1] || "").slice(5)) : "") + " (NBA report)"
+        : r.hurt ? (lg.slot[r.id] === 13 ? "IR" : esc(String(r.inj).replace("INJURY_RESERVE", "IR").replace("SUSPENSION", "SUSP"))) : r.inj === "DAY_TO_DAY" ? "DTD" : ""}` +
+      `${r.ret ? " · back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</td>` +
       T.days.map((D, i) => cell(r, D, i)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
     `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}">${D.open}</td>`).join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
@@ -1388,7 +1409,7 @@ function bestRoster(ids, irIds, fa, k, keep) {
 }
 let VAL = {};
 function tradeSide(lg, tid, out, inn, keep) {
-  const fa = PLAYERS.filter((p) => lg.owner[p.id] == null && !OUT_SET.includes(p.inj)).map((p) => p.id);
+  const fa = PLAYERS.filter((p) => lg.owner[p.id] == null && !outNow(p)).map((p) => p.id);
   const ids = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === tid && BYID[id]);
   const ir = new Set(ids.filter((id) => lg.slot[id] === 13));
   const outIds = new Set(out.map((r) => r.p.id));
@@ -1538,9 +1559,12 @@ function renderAll() {
 }
 
 // ================================================================== BOOT
-Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.json").then((r) => r.json())])
-  .then(([meta, players]) => {
+Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.json").then((r) => r.json()),
+  // refreshed hourly on game days -> bypass the browser cache
+  fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
+  .then(([meta, players, inj]) => {
     META = meta; PLAYERS = players; STATS = meta.stats;
+    if (inj && inj.players) OFF = inj;
     STATS.forEach((s, i) => { SI[s] = i; });
     players.forEach((p) => { BYID[p.id] = p; });
     const last = META.last_game_day || META.asof;
