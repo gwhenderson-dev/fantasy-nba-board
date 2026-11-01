@@ -11,6 +11,7 @@ const sg = (v, nd = 1) => (v == null || isNaN(v) ? "-" : (v > 0 ? "+" : "") + v.
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 let META, PLAYERS, BYID = {}, STATS, TEAMLEFT = {}, GAMES = null, GAMES_P = null;
+let DATA_V = "";                     // cache-buster, set by the Refresh button
 const SI = {};                       // stat name -> index in a stat line
 
 // ================================================================ LEAGUES
@@ -342,7 +343,8 @@ function tags(p) {
   const o = off(p);
   if (o) {
     const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
-    t += `<span class="tag ${o[0] === "Out" || o[0] === "Doubtful" ? "inj" : "dtd"}" title="${esc(offTitle(o))}">${lbl}</span>`;
+    const cls = {Out: "inj", Doubtful: "doubt", Questionable: "dtd", Probable: "prob"}[o[0]];
+    t += `<span class="tag ${cls}" title="${esc(offTitle(o))}">${lbl}</span>`;
   } else if (p.inj === "OUT" || p.inj === "INJURY_RESERVE" || p.inj === "SUSPENSION")
     t += `<span class="tag inj" title="ESPN status">${p.inj === "INJURY_RESERVE" ? "IR" : p.inj === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
   else if (p.inj === "DAY_TO_DAY") t += '<span class="tag dtd" title="ESPN status">DTD</span>';
@@ -445,7 +447,7 @@ function bindProj() {
 // ============================================================ PLAYER PAGE
 function loadGames() {
   if (GAMES) return Promise.resolve(GAMES);
-  if (!GAMES_P) GAMES_P = fetch("data/games.json").then((r) => r.json()).then((j) => {
+  if (!GAMES_P) GAMES_P = fetch("data/games.json" + DATA_V).then((r) => r.json()).then((j) => {
     const C = {};
     j.cols.forEach((c, i) => { C[c] = i; });
     const byP = {}, byG = {};
@@ -549,7 +551,7 @@ function closePlayer() { $("scrim").hidden = true; document.body.style.overflow 
 let RECAP = null, RECAP_P = null;
 const RC = {day: null, g: null};
 function loadRecap() {
-  if (!RECAP_P) RECAP_P = fetch("data/recap.json").then((r) => (r.ok ? r.json() : null))
+  if (!RECAP_P) RECAP_P = fetch("data/recap.json" + DATA_V).then((r) => (r.ok ? r.json() : null))
     .then((j) => { RECAP = j; return j; }).catch(() => null);
   return RECAP_P;
 }
@@ -1178,6 +1180,15 @@ function setWeekMark(wk, id, plays) {
   m[id] = plays ? 1 : 0;
   try { localStorage.setItem(outKey(wk), JSON.stringify(m)); } catch (e) { /* storage blocked */ }
 }
+const luKey = (wk, tid) => `fnba.v2.lineup.${L.key}.${wk}.${tid}`;
+function lineupMarks(wk, tid) {
+  try { return JSON.parse(localStorage.getItem(luKey(wk, tid)) || "{}") || {}; } catch (e) { return {}; }
+}
+function setLineup(wk, tid, pid, d, start) {
+  const m = lineupMarks(wk, tid);
+  (m[pid] = m[pid] || {})[d] = start ? 1 : 0;
+  try { localStorage.setItem(luKey(wk, tid), JSON.stringify(m)); } catch (e) { /* storage blocked */ }
+}
 function loadMatchups(lg) {
   if (WK.mm) return Promise.resolve(WK.mm);
   if (!WK.mmP) WK.mmP = fetch(espnBase() + L.id + "?view=mMatchupScore").then((r) => (r.ok ? r.json() : {schedule: []}))
@@ -1236,25 +1247,48 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     });
     return r;
   });
-  const out = {ps, days: days.map((d, i) => ({d, past: d < today, open: 0, started: 0, playing: 0, pts: 0}))};
+  // the visitor's per-game lineup choices: 1 = start him, 0 = bench him
+  const LU = lineupMarks(wk, teamId);
+  const choice = (id, d) => (LU[id] && d in LU[id] ? LU[id][d] : null);
+  const out = {ps, days: days.map((d, i) => ({d, past: d < today, open: 0, started: 0, playing: 0, pts: 0, over: 0}))};
   days.forEach((d, i) => {
-    const av = ps.filter((r) => r.days[i].avail);
-    const Wm = av.map((r) => SLOTS.map((s) => (r.elig.includes(s) ? Math.max(r.days[i].val, 0.01) : 0)));
+    const playing = ps.filter((r) => r.days[i].avail);
+    playing.forEach((r) => { r.games++; r.days[i].pick = choice(r.id, d); });
+    const av = playing.filter((r) => r.days[i].pick !== 0);
+    // forced starters outrank everyone, so they get a slot whenever one fits
+    const Wm = av.map((r) => SLOTS.map((s) => (r.elig.includes(s)
+      ? Math.max(r.days[i].val, 0.01) + (r.days[i].pick === 1 ? 1e5 : 0) : 0)));
     const res = assignMax(Wm);
     av.forEach((r, k) => {
-      r.games++;
       if (res.rc[k] >= 0) {
         r.days[i].st = true; r.starts++;
         if (d >= today) { r.pts += r.days[i].val; r.var += r.days[i].sd2; }
-      }
+      } else if (r.days[i].pick === 1) r.days[i].noslot = true;
     });
     const D = out.days[i];
-    D.playing = av.length; D.started = res.rc.filter((c) => c >= 0).length; D.open = SLOTS.length - D.started;
+    D.playing = playing.length; D.started = res.rc.filter((c) => c >= 0).length; D.open = SLOTS.length - D.started;
+    D.over = av.filter((r) => r.days[i].noslot).length;
     D.pts = d >= today ? av.reduce((a, r, k) => a + (res.rc[k] >= 0 ? r.days[i].val : 0), 0) : 0;
   });
   out.rem = ps.reduce((a, r) => a + r.pts, 0);
   out.var = ps.reduce((a, r) => a + r.var, 0);
   return out;
+}
+// colour-coded status for a My week row: official report > IR slot > live ESPN
+function statusTag(r, lg) {
+  const o = off(r.p);
+  if (o) {
+    const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
+    const cls = {Out: "inj", Doubtful: "doubt", Questionable: "dtd", Probable: "prob"}[o[0]];
+    const when = o[0] === "Out" && o[2] < 2 && o[1] ? " " + o[1].slice(5) : "";
+    return `<span class="tag ${cls}" style="margin:0" title="${esc(offTitle(o))}">${lbl}${when}</span>`;
+  }
+  if (lg.slot[r.id] === 13) return '<span class="tag inj" style="margin:0" title="On the IR slot">IR</span>';
+  const e = r.inj;
+  if (OUT_SET.includes(e))
+    return `<span class="tag inj" style="margin:0" title="ESPN status">${e === "INJURY_RESERVE" ? "IR" : e === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
+  if (e === "DAY_TO_DAY") return '<span class="tag dtd" style="margin:0" title="ESPN status">DTD</span>';
+  return "";
 }
 const normCdf = (x) => {   // Abramowitz-Stegun
   const t = 1 / (1 + 0.2316419 * Math.abs(x)), d = 0.3989423 * Math.exp(-x * x / 2);
@@ -1326,24 +1360,33 @@ function renderWeek() {
     const x = r.days[i], past = D.past ? " past" : "";
     if (!x.g) return `<td class="dg${past}"></td>`;
     if (!x.avail) return `<td class="dg out${past}" title="Not playing">×</td>`;
-    return x.st ? `<td class="dg st${past}" title="Starts: ${fx(x.val)} projected">●</td>`
-      : `<td class="dg bn${past}" title="Plays but no starter slot left">○</td>`;
+    if (D.past) return x.st ? `<td class="dg st past">●</td>` : `<td class="dg bn past">○</td>`;
+    const tip = x.noslot ? "You started him but every slot he can fill is taken — he won't count"
+      : x.pick === 1 ? `You started him: ${fx(x.val)} projected` : x.pick === 0 ? "You benched him"
+      : x.st ? `In the best lineup: ${fx(x.val)} projected. Untick to bench him` : "On the bench: the best lineup has no slot for him. Tick to start him";
+    return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip)}">` +
+      `<input type="checkbox" class="gcb" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}"></td>`;
   };
-  $("wk-detail").innerHTML = `<h2>${esc(tname)} &mdash; week ${wk}</h2>` +
+  const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length, 0);
+  $("wk-detail").innerHTML = `<div class="controls" style="align-items:center"><h2 style="margin:0">${esc(tname)} &mdash; week ${wk}</h2>` +
+    (nPicks ? `<button class="btn" id="wk-reset">Reset my lineup choices (${nPicks})</button>` : "") + "</div>" +
     '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
-    days.map((d, i) => `<th class="${T.days[i].past ? "past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`).join("") +
+    days.map((d, i) => { const D = T.days[i];
+      return `<th class="${D.past ? "past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span>` +
+        (D.past ? "" : `<br><span class="${D.over ? "pos-dn" : D.started === SLOTS.length ? "" : "dim"}" title="${D.over ? D.over + " started player(s) don't fit a slot" : "Starters set / slots"}">${D.started}/${SLOTS.length}${D.over ? " !" : ""}</span>`) + "</th>"; }).join("") +
     '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th><th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
-      `<td class="l dim"${off(r.p) ? ` title="${esc(offTitle(off(r.p)))}"` : ""}>${off(r.p) ? esc(off(r.p)[0]) + (off(r.p)[0] === "Out" && off(r.p)[2] < 2 ? " " + esc((off(r.p)[1] || "").slice(5)) : "") + " (NBA report)"
-        : r.hurt ? (lg.slot[r.id] === 13 ? "IR" : esc(String(r.inj).replace("INJURY_RESERVE", "IR").replace("SUSPENSION", "SUSP"))) : r.inj === "DAY_TO_DAY" ? "DTD" : ""}` +
-      `${r.ret ? " · back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</td>` +
+      `<td class="l">${statusTag(r, lg)}<span class="dim" style="font-size:.76rem">` +
+      `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
     `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}">${D.open}</td>`).join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>" +
-    '<p class="note">● starts &nbsp; ○ plays but every eligible slot is taken &nbsp; × not playing. Open slots are days you could stream a free agent (see the Waivers tab). ' +
-    "Untick anyone you know is sitting; ticks are saved for this week in your browser.</p>";
+    `<p class="note">Each remaining game has a box, pre-ticked with the best possible lineup (${SLOTS.length} starter slots, positions respected). ` +
+    "Untick a game to bench him that night, tick one to start him; the projection follows your lineup. Outlined boxes are your choices; a red one means every slot he can fill is already taken. " +
+    "× = not playing. The <strong>Plays</strong> box on the left takes a player out for the whole week. Open slots are nights you could stream a free agent (see the Waivers tab). " +
+    "All choices are saved for this week in your browser.</p>";
   const myM = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
   $("wk-count").textContent = `${ms.length} matchups`;
   $("wk-lede").innerHTML = `Every matchup in week ${wk}, scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
@@ -1365,9 +1408,20 @@ function bindWeek() {
     $("wk-detail").scrollIntoView({behavior: "smooth", block: "start"});
   });
   $("wk-detail").addEventListener("change", (e) => {
+    const g = e.target.closest("input[data-lpid]");
+    if (g) {
+      setLineup(WK.week, WK.team, +g.dataset.lpid, g.dataset.d, g.checked);
+      renderWeek();
+      return;
+    }
     const cb = e.target.closest("input[data-pid]");
     if (!cb) return;
     setWeekMark(WK.week, +cb.dataset.pid, cb.checked);
+    renderWeek();
+  });
+  $("wk-detail").addEventListener("click", (e) => {
+    if (e.target.id !== "wk-reset") return;
+    try { localStorage.removeItem(luKey(WK.week, WK.team)); } catch (err) { /* storage blocked */ }
     renderWeek();
   });
   $("wk-detail").addEventListener("click", (e) => {
@@ -1558,18 +1612,101 @@ function renderAll() {
   if (!$("tab-trade").hidden) renderTrade();
 }
 
+// =============================================================== REFRESH
+// The button re-reads everything the site publishes (stats, projections,
+// the hourly official injury report) and the visitor's live ESPN league.
+// New box scores come from the cloud build; if the owner saved a GitHub
+// token (League tab), the button also starts that build and reloads the
+// data when it has published.
+const GH = {repo: "gwhenderson-dev/fantasy-nba", workflow: "refresh.yml", key: "fnba.v2.ghtoken"};
+const ghToken = () => { try { return localStorage.getItem(GH.key) || ""; } catch (e) { return ""; } };
+const refMsg = (html) => { $("refmsg").innerHTML = html; };
+const clock = () => new Date().toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"});
+function reloadData() {
+  DATA_V = "?t=" + Date.now();
+  return fetchData(true).then((d) => {
+    applyData(d);
+    GAMES = GAMES_P = null; RECAP = RECAP_P = null;
+    Object.keys(LGDATA).forEach((k) => delete LGDATA[k]);
+    Object.keys(LGRES).forEach((k) => delete LGRES[k]);
+    Object.assign(WK, {mm: null, mmP: null});
+    renderAll();
+    refreshLeagueData();
+  });
+}
+function startRebuild(tok) {
+  const api = `https://api.github.com/repos/${GH.repo}/actions/workflows/${GH.workflow}`;
+  const H = {Authorization: "Bearer " + tok, Accept: "application/vnd.github+json"};
+  const t0 = Date.now() - 5000;
+  return fetch(api + "/dispatches", {method: "POST", headers: H, body: JSON.stringify({ref: "main"})}).then((r) => {
+    if (r.status !== 204) throw new Error(r.status === 401 || r.status === 403 ? "the saved GitHub token was refused" : "GitHub answered " + r.status);
+    refMsg("Fresh stats: build started &hellip;");
+    return new Promise((resolve, reject) => {
+      let tries = 0;
+      const poll = () => fetch(api + "/runs?event=workflow_dispatch&per_page=1", {headers: H}).then((x) => x.json()).then((j) => {
+        const run = (j.workflow_runs || [])[0];
+        if (run && Date.parse(run.created_at) >= t0) {
+          if (run.status === "completed") {
+            if (run.conclusion !== "success") return reject(new Error("the build " + run.conclusion));
+            refMsg("Fresh stats: built, publishing &hellip;");
+            return setTimeout(resolve, 75000);              // GitHub Pages deploy
+          }
+          refMsg(`Fresh stats: building (${run.status}) &hellip;`);
+        }
+        if (++tries > 40) return reject(new Error("the build is taking longer than 13 minutes"));
+        setTimeout(poll, 20000);
+      }).catch(reject);
+      setTimeout(poll, 8000);
+    });
+  });
+}
+function bindRefresh() {
+  $("refresh").addEventListener("click", () => {
+    const btn = $("refresh");
+    btn.disabled = true;
+    refMsg("Refreshing &hellip;");
+    reloadData().then(() => {
+      refMsg(`Updated ${clock()}${OFF.as_of ? " · injuries " + esc(OFF.as_of.slice(11)) : ""}`);
+      const tok = ghToken();
+      if (!tok) return;
+      return startRebuild(tok).then(() => reloadData())
+        .then(() => refMsg(`Fresh stats ${clock()} · through ${esc(META.last_game_day || "")}`));
+    }).catch((e) => refMsg(`<span class="pos-dn">Refresh failed: ${esc(e.message)}</span>`))
+      .finally(() => { btn.disabled = false; });
+  });
+  const st = () => { $("own-state").textContent = ghToken() ? "Token saved: Refresh also rebuilds." : "No token saved."; };
+  $("own-save").addEventListener("click", () => {
+    const v = ($("own-tok").value || "").trim();
+    if (!v) return;
+    try { localStorage.setItem(GH.key, v); } catch (e) { /* storage blocked */ }
+    $("own-tok").value = "";
+    st();
+  });
+  $("own-clear").addEventListener("click", () => { try { localStorage.removeItem(GH.key); } catch (e) { /* */ } st(); });
+  st();
+}
+
 // ================================================================== BOOT
-Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.json").then((r) => r.json()),
-  // refreshed hourly on game days -> bypass the browser cache
-  fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
-  .then(([meta, players, inj]) => {
-    META = meta; PLAYERS = players; STATS = meta.stats;
-    if (inj && inj.players) OFF = inj;
-    STATS.forEach((s, i) => { SI[s] = i; });
-    players.forEach((p) => { BYID[p.id] = p; });
-    const last = META.last_game_day || META.asof;
-    Object.entries(META.sched).forEach(([t, g]) => { TEAMLEFT[t] = g.filter((x) => x[0] > last).length; });
-    $("asof").textContent = "through " + last;
+function fetchData(bust) {
+  const q = bust ? "?t=" + Date.now() : "";
+  return Promise.all([fetch("data/meta.json" + q).then((r) => r.json()), fetch("data/players.json" + q).then((r) => r.json()),
+    // refreshed hourly on game days -> always bypass the browser cache
+    fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)]);
+}
+function applyData([meta, players, inj]) {
+  META = meta; PLAYERS = players; STATS = meta.stats;
+  OFF = inj && inj.players ? inj : {players: {}, as_of: null};
+  STATS.forEach((s, i) => { SI[s] = i; });
+  BYID = {};
+  players.forEach((p) => { BYID[p.id] = p; });
+  const last = META.last_game_day || META.asof;
+  TEAMLEFT = {};
+  Object.entries(META.sched).forEach(([t, g]) => { TEAMLEFT[t] = g.filter((x) => x[0] > last).length; });
+  $("asof").textContent = "through " + last;
+}
+fetchData(false)
+  .then((d) => {
+    applyData(d);
     STORE = readStore();
     L = clone(STORE.list[STORE.active]);
     DRAFT = clone(L);
@@ -1583,6 +1720,7 @@ Promise.all([fetch("data/meta.json").then((r) => r.json()), fetch("data/players.
     bindInseason();
     bindWeek();
     bindTrade();
+    bindRefresh();
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
     window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
     // in-page links scroll without touching the hash (the hash names the tab)

@@ -9,7 +9,9 @@
 <body>
 <header class="top">
   <div class="top-in">
-    <div class="brand">Fantasy NBA Model<small id="asof"></small></div>
+    <div class="brand">Fantasy NBA Model<small id="asof"></small>
+      <button class="refbtn" id="refresh" title="Re-read the latest stats, projections and official injury report, and your live ESPN league">&#8635; Refresh</button>
+      <small id="refmsg"></small></div>
     <label class="lgpick">League <select id="lgsel" aria-label="Active league"></select></label>
     <label class="lgpick" id="tmpick" hidden>You are <select id="tmsel" aria-label="Your fantasy team"></select></label>
   </div>
@@ -64,6 +66,22 @@
         <p class="note" id="lg-unmod"></p>
       </div>
     </div>
+    <details class="card" id="own-box" style="margin-top:1rem">
+      <summary><strong>Site owner: pull fresh stats on demand</strong></summary>
+      <p class="note">The <strong>Refresh</strong> button at the top re-reads everything the site has published (stats,
+        projections, the official injury report, which updates hourly on game days) plus your live ESPN league. New box
+        scores arrive with the daily build around 6 am Pacific. If you own the site&rsquo;s GitHub repository, you can let
+        Refresh start that build too (about 3 minutes, then the page reloads its data): create a
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>
+        limited to the <code>fantasy-nba</code> repository with <em>Actions: read and write</em> only, and paste it here.
+        It is kept in this browser only and sent only to api.github.com.</p>
+      <div class="controls">
+        <div class="ctl"><label for="own-tok">GitHub token</label><input id="own-tok" type="password" autocomplete="off" placeholder="github_pat_…" style="min-width:16rem"></div>
+        <button class="btn" id="own-save">Save token</button>
+        <button class="btn danger" id="own-clear">Remove</button>
+        <span class="count" id="own-state"></span>
+      </div>
+    </details>
     <div class="controls" style="margin-top:1rem">
       <button class="btn primary" id="lg-save">Save league</button>
       <button class="btn danger" id="lg-del">Delete this league</button>
