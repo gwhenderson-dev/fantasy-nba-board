@@ -1698,17 +1698,19 @@ function renderWeek() {
     const sd = Math.sqrt(a.var + h.var);
     const pa = sd > 0 ? normCdf((ap - hp) / sd) : (ap > hp ? 1 : ap < hp ? 0 : 0.5);
     const isMine = A.teamId === mt || H.teamId === mt, sel = WK.pair.join() === [A.teamId, H.teamId].join();
-    const side = (s, t, l, pr, p) => `<span class="tn${s.teamId === mt ? " mine" : ""}" title="${esc(lg.byId[s.teamId].name)}">${esc(lg.byId[s.teamId].name)}</span>` +
+    const side = (s, t, l, pr, p) => `<span class="tn${s.teamId === mt ? " mine" : ""}" title="${esc(lg.byId[s.teamId].name)}"><i class="sw ${s === A ? "a" : "h"}"></i>${esc(lg.byId[s.teamId].name)}</span>` +
       `<span class="lv" title="${over ? "" : "Live score"}">${over ? "" : fx(l, 0)}</span><span class="pf" title="${over ? "Final score" : "Projected final: live score + best lineup on each remaining day"}">${fx(pr, 0)}</span>`;
     const st = (t) => t.days.filter((D) => !D.past).reduce((x, D) => x + D.started, 0);
     return `<div class="card mcard${isMine ? " minem" : ""}${sel ? " sel" : ""}" data-a="${A.teamId}" data-h="${H.teamId}">` +
       (isMine ? '<span class="yours">YOUR MATCHUP</span>' : "") +
       `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span class="dim" style="font-size:.7rem">${over ? "" : "LIVE"}</span><span class="dim" style="font-size:.7rem">${over ? "FINAL" : "PROJ"}</span>` +
       side(A, a, al, ap, pa) + side(H, h, hl, hp, 1 - pa) + "</div>" +
-      `<div class="wbar" title="Rough win chance"><span style="width:${(pa * 100).toFixed(0)}%"></span></div>` +
-      `<div class="mfoot"><span>${over ? (ap > hp ? esc(lg.byId[A.teamId].name) + " won" : hp > ap ? esc(lg.byId[H.teamId].name) + " won" : "tie") : `win ${Math.round(pa * 100)}% – ${Math.round((1 - pa) * 100)}%`}</span>` +
-      (over ? "" : `<span title="Starter games left this week">starts left ${st(a)} – ${st(h)}</span>` +
-      (lim != null ? `<span title="${esc(addsTip)}">adds ${addsLeft(A.teamId)} – ${addsLeft(H.teamId)} of ${lim}</span>` : "")) + "</div></div>";
+      (over ? `<div class="mres">${ap > hp ? esc(lg.byId[A.teamId].name) + " won" : hp > ap ? esc(lg.byId[H.teamId].name) + " won" : "Tie"} by ${fx(Math.abs(ap - hp), 0)}</div></div>` :
+      `<div class="wrow" title="Rough win chance: projected margin against the week's game-to-game spread"><b class="wa">${Math.round(pa * 100)}%</b>` +
+      `<div class="wbar"><span class="a" style="width:${(pa * 100).toFixed(0)}%"></span><span class="h"></span></div><b class="wh">${Math.round((1 - pa) * 100)}%</b></div>` +
+      `<div class="mstat"><span class="v">${st(a)}</span><span class="k" title="Starter games left this week (best legal lineup each remaining day)">starts left</span><span class="v">${st(h)}</span>` +
+      (lim != null ? `<span class="v">${addsLeft(A.teamId)}<small>/${lim}</small></span><span class="k" title="${esc(addsTip)}">adds left</span><span class="v">${addsLeft(H.teamId)}<small>/${lim}</small></span>` : "") +
+      "</div></div>");
   }).join("");
   $("wk-cards").innerHTML = cards || '<p class="note">No matchups found for this week (a bye week, or this league&rsquo;s matchup periods don&rsquo;t follow this calendar).</p>';
   // ---- detail: both teams of the chosen matchup
@@ -1734,8 +1736,7 @@ function renderWeek() {
     (nPicks ? `<button class="btn" data-reset="${tid}">Reset lineup choices (${nPicks})</button>` : "") + "</div>" +
     '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
     days.map((d, i) => { const D = T.days[i];
-      return `<th class="dcol${i % 2 ? " alt" : ""}${D.past ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span>` +
-        (D.past ? "" : `<br><span class="${D.over ? "pos-dn" : D.started === SLOTS.length ? "" : "dim"}" title="${D.over ? D.over + " started player(s) don't fit a slot" : "Starters set / slots"}">${D.started}/${SLOTS.length}${D.over ? " !" : ""}</span>`) + "</th>"; }).join("") +
+      return `<th class="dcol${i % 2 ? " alt" : ""}${D.past ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`; }).join("") +
     '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th><th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
@@ -1743,15 +1744,18 @@ function renderWeek() {
       `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i).replace('<td class="dg', `<td class="dg${i % 2 ? " alt" : ""}`)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
-    `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D, i) => `<td class="dg${i % 2 ? " alt" : ""}${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}" title="${esc(D.openSlots.join(", ") || "all filled")}">${D.open}` +
-      (D.open && D.open < SLOTS.length ? `<br><span class="slt" style="color:inherit">${esc(D.openSlots.join(" "))}</span>` : "") + "</td>").join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
+    `<tr class="open"><td></td><td class="l" colspan="2" title="Players in a starter slot each day, out of ${SLOTS.length}. The small letters are the slots still empty: nights to stream a free agent">Filled starter slots</td>` +
+    T.days.map((D, i) => `<td class="dg${i % 2 ? " alt" : ""}${D.past ? " past" : ""}${D.over ? " pos-dn" : D.open && !D.past ? " part" : ""}" title="${esc(D.over ? D.over + " started player(s) don't fit a slot" : D.open ? "Empty: " + D.openSlots.join(", ") : "All " + SLOTS.length + " filled")}">` +
+      (!D.playing ? '<span class="dim">no games</span>' : `${D.started}<small>/${SLOTS.length}</small>${D.over ? " !" : ""}` +
+      (D.open && !D.past && D.open <= 5 ? `<span class="slt">${esc(D.openSlots.join(" "))}</span>` : "")) + "</td>").join("") +
+    `<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>";
   };
   $("wk-detail").innerHTML = (over ? `<p class="note">Week ${wk} is over: scores are ESPN&rsquo;s finals. The grid below uses <em>today&rsquo;s</em> rosters, so it shows what the best lineup would have been, not what was played.</p>` : "") +
     WK.pair.map(block).join("") +
     `<p class="note">Each remaining game has a box, pre-ticked with the best possible lineup (${SLOTS.length} starter slots, positions respected). ` +
     "Untick a game to bench him that night, tick one to start him; the projection follows your lineup. Outlined boxes are your choices; a red one means every slot he can fill is already taken. " +
-    "× = not playing. The <strong>Plays</strong> box on the left takes a player out for the whole week. Open slots are nights you could stream a free agent (see the Waivers tab). " +
+    "× = not playing. The <strong>Plays</strong> box on the left takes a player out for the whole week. The bottom row counts filled starter slots each night; the letters under a short night are the empty slots, a chance to stream a free agent (see the Waivers tab). " +
     "All choices are saved for this week in your browser.</p>";
   const myM = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
   $("wk-count").textContent = `${ms.length} matchups`;
@@ -1922,21 +1926,48 @@ function renderTrade() {
       `<td>${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td>${c0(contrib(id, "tot"))}</td>` +
       `<td class="grp">${fx(r.now)}</td><td>${c0(contrib(id, "box"))}</td><td class="grp">${c0(contrib(id, "po"))}</td></tr>`;
   };
-  $("tr-score").innerHTML = '<div class="card"><div class="tscore">' +
-    `<div><div class="lbl2">Your net rest-of-season points</div><div class="big ${cls(mine.tot, give)}">${sg(mine.tot, 0)}</div>` +
+  const pcard = (r, side) => {
+    const id = r.p.id, c = contrib(id, "tot");
+    const cell = (k, v, t) => `<div title="${esc(t)}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+    return `<div class="tpc ${side}"><div class="tph"><span class="name" data-id="${id}">${esc(r.p.n)}</span>${tags(r.p)}` +
+      `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")}${lg.slot[id] === 13 ? " · on IR" : ""}</span></div>` +
+      '<div class="tpg">' +
+      cell("ROS FP/G", fx(r.ros), "Rest-of-season projected fantasy points per game") +
+      cell("Games left", fx(r.gl, 0), "Projected games left: availability × his team's remaining games") +
+      cell("ROS points", fx(r.tot, 0), "ROS FP/G × games left") +
+      cell("Now FP/G", fx(r.now), "Actual fantasy points per game so far this season") +
+      cell("Luck-adj", fx(r.adj), "This season's FP/G with shooting / steal / block luck stripped out") +
+      (L.playoff_weeks ? cell("Playoff pts", fx(r.po, 0), `ROS FP/G × his expected games in weeks ${L.playoff_weeks[0]}–${L.playoff_weeks[1]}`) : "") +
+      `</div><div class="tpf" title="What he changes in your best ${rostered(L)} (roster + free agents)">Effect on your team ${c0(c)} <span class="dim">${esc(why(id))}</span></div></div>`;
+  };
+  const sumT = (rows) => rows.reduce((a, r) => a + r.tot, 0);
+  const straight = sumT(inn) - sumT(out), spots = mine.tot - straight;
+  const col = (rows, side, title, team) => `<div class="tcol ${side}"><div class="tch"><span>${title}</span><span class="dim">${team}</span></div>` +
+    (rows.length ? rows.map((r) => pcard(r, side)).join("") : '<p class="note" style="margin:.4rem 0">Nobody yet: tick players below.</p>') +
+    `<div class="tct">${rows.length} player${rows.length === 1 ? "" : "s"} · <strong>${fx(sumT(rows), 0)}</strong> ROS points</div></div>`;
+  const pill = (k, v, t, base) => `<span class="tpill" title="${esc(t)}"><span class="k">${k}</span><b class="${base ? cls(v, base) : ""}">${sg(v, 0)}</b></span>`;
+  $("tr-score").innerHTML = '<div class="card tbanner">' +
+    `<div class="tbig"><div class="lbl2">Your net rest-of-season points</div><div class="big ${cls(mine.tot, give)}">${sg(mine.tot, 0)}</div>` +
     `<div class="lbl2">${sg(pct * 100, 1)}% of what you send</div></div>` +
-    `<div><div class="lbl2">${nm(TR.b)}&rsquo;s net</div><div class="big ${cls(theirs.tot, give)}" style="font-size:1.5rem">${sg(theirs.tot, 0)}</div>` +
-    `<div class="lbl2">by box score: ${sg(theirs.box, 0)}</div></div>` +
-    `<div><div class="lbl2">Your net, box-score view</div><div class="big" style="font-size:1.5rem">${sg(mine.box, 0)}</div><div class="lbl2">current FP/G × games left</div></div>` +
-    (L.playoff_weeks ? `<div><div class="lbl2">Your net, playoff weeks ${L.playoff_weeks[0]}–${L.playoff_weeks[1]}</div><div class="big" style="font-size:1.5rem">${sg(mine.po, 0)}</div><div class="lbl2">ROS FP/G × playoff games</div></div>` : "") +
-    `</div><p style="margin:.7rem 0 0"><strong>${verdict}</strong></p>` +
-    '<div class="tablewrap" style="max-height:none;margin-top:.8rem"><table class="tbrk"><thead><tr><th class="l">Your side of the ledger</th><th>ROS FP/G</th><th>Games left</th><th title="Change to your best-' + rostered(L) + ' rest-of-season points">ROS points</th>' +
+    `<div class="tsum"><p style="margin:0 0 .5rem"><strong>${verdict}</strong></p>` +
+    `<div class="tmath">You get <b>${fx(sumT(inn), 0)}</b> − you send <b>${fx(sumT(out), 0)}</b> = <b>${sg(straight, 0)}</b> straight up` +
+    `<span title="The free agents you could add anyway, and the drop or pickup an uneven trade forces"> · waiver wire &amp; roster spots <b>${sg(spots, 0)}</b></span> → <b class="${cls(mine.tot, give)}">${sg(mine.tot, 0)}</b></div>` +
+    '<div class="tpills">' + pill(nm(TR.b) + "’s net", theirs.tot, "Their net rest-of-season points, valued the same way", give) +
+    pill("Their box-score view", theirs.box, "Actual FP/G so far × games left: how a manager going by averages sees it for them") +
+    pill("Your box-score view", mine.box, "Actual FP/G so far × games left, for you") +
+    (L.playoff_weeks ? pill(`Your playoff weeks ${L.playoff_weeks[0]}–${L.playoff_weeks[1]}`, mine.po, "ROS FP/G × expected games in your fantasy playoff weeks") : "") +
+    "</div></div></div>" +
+    '<div class="tcols">' + col(out, "send", "You send", nm(TR.a)) + col(inn, "get", "You get", nm(TR.b)) + "</div>" +
+    (churn.some((id) => Math.abs(contrib(id, "tot")) >= 0.5) ? `<div class="card tspots"><div class="tch"><span>Roster spots</span><span class="dim">who moves in or out of your best ${rostered(L)} because of the trade</span></div>` +
+      churn.filter((id) => Math.abs(contrib(id, "tot")) >= 0.5).map((id) => `<div class="tsr"><span class="name" data-id="${id}">${esc(VAL[id].p.n)}</span> <span class="dim">${esc(why(id))} · ${fx(VAL[id].ros)} FP/G × ${fx(VAL[id].gl, 0)} gm</span>${c0(contrib(id, "tot"))}</div>`).join("") + "</div>" : "") +
+    '<details class="card tledger"><summary>Full ledger (every number behind the score)</summary>' +
+    '<div class="tablewrap" style="max-height:none;margin-top:.6rem"><table class="tbrk"><thead><tr><th class="l">Your side of the ledger</th><th>ROS FP/G</th><th>Games left</th><th title="Change to your best-' + rostered(L) + ' rest-of-season points">ROS points</th>' +
     '<th class="grp">Now FP/G</th><th>Box-score points</th><th class="grp">Playoff-week points</th></tr></thead><tbody>' +
     [...inIds].map(row).join("") + [...outIds].map(row).join("") + churn.map(row).join("") +
     `<tr class="tot"><td class="l">Net for ${nm(TR.a)}</td><td></td><td></td><td class="${cls(mine.tot, give)}">${sg(mine.tot, 0)}</td><td class="grp"></td><td>${sg(mine.box, 0)}</td><td class="grp">${sg(mine.po, 0)}</td></tr>` +
     "</tbody></table></div>" +
     `<p class="note">Each line is that player&rsquo;s change to your best ${rostered(L)} (your roster plus whatever the waiver wire offers): a player you get only counts for what he adds over the free agents you could pick up anyway, ` +
-    `and a player you send only costs what he was worth over them.</p></div>`;
+    `and a player you send only costs what he was worth over them.</p></details>`;
   $("tr-note").innerHTML = "<strong>Box-score view</strong> is the plain sum of each traded player&rsquo;s actual FP/G so far × games left, with no waiver-wire adjustment: roughly how a manager who goes by average points eyeballs the deal. " +
     "The best trades win on projection and still look fair by box score. Players on your keep list are never the ones dropped to make room. " +
     `With about ${Math.max(...Object.values(TEAMLEFT))} team games left, every number here is a forecast; a gap under ${Math.round(TR_EVEN * 100)}% of what you send is inside the noise.`;
@@ -2012,23 +2043,51 @@ function renderPastTrades() {
     const val = (tid) => sides[tid].map((pid) => {
       const p = BYID[pid];
       if (!p) return {pid, n: (lg.name[pid] || "#" + pid), then: 0, since: 0, ros: 0, missing: true};
-      const a = rosAt(p, t.d), sl = seasonLine(p);
-      return {pid, n: p.n, then: a.tot, since: sinceFP(p, t.d), ros: sl.tot, approx: a.approx};
+      const a = rosAt(p, t.d), sl = seasonLine(p), C = GAMES.C;
+      const sg_ = (GAMES.byP[pid] || []).filter((r) => r[C.d] >= t.d).length;
+      return {pid, p, n: p.n, then: a.tot, tfp: a.fp, tgl: a.av * a.left, since: sinceFP(p, t.d), sgp: sg_,
+        ros: sl.tot, rfp: sl.ros, rgl: sl.gl, approx: a.approx};
     });
     const V = Object.fromEntries(teams.map((tid) => [tid, val(tid)]));
     const sum = (tid, k) => V[tid].reduce((a, x) => a + (k === "now" ? x.since + x.ros : x[k]), 0);
     const [A, B] = teams;
     const thenEdge = B != null ? sum(A, "then") - sum(B, "then") : 0, nowEdge = B != null ? sum(A, "now") - sum(B, "now") : 0;
     const who = (e) => (Math.abs(e) < 50 ? "even" : (e > 0 ? tn(A) : tn(B)) + " by " + Math.abs(e).toFixed(0));
-    const sideHtml = (tid) => `<div><div class="lbl2"><strong>${tn(tid)}</strong> got</div>` +
-      V[tid].map((x) => `<div class="srow"><span class="nm name" data-id="${x.pid}">${esc(x.n)}</span><span class="v">` +
-        `<span class="dim" title="Rest-of-season points by the model on ${t.d}">${fx(x.then, 0)}</span> &rarr; ` +
-        `<b title="${fx(x.since, 0)} scored since + ${fx(x.ros, 0)} projected from today">${fx(x.since + x.ros, 0)}</b>${x.approx ? "*" : ""}</span></div>`).join("") +
-      `<div class="srow" style="border-top:1px solid var(--rule)"><b>Total</b><span class="v"><span class="dim">${fx(sum(tid, "then"), 0)}</span> &rarr; <b>${fx(sum(tid, "now"), 0)}</b></span></div></div>`;
+    const dshort = new Date(t.d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"});
+    const changed = (x) => {
+      const now = x.since + x.ros, d = now - x.then;
+      const games = x.sgp + x.rgl - x.tgl, rate = x.rfp - x.tfp;
+      const parts = [];
+      if (Math.abs(rate) >= 1) parts.push(`projected FP/G ${rate > 0 ? "up" : "down"} ${fx(Math.abs(rate))}`);
+      if (Math.abs(games) >= 2) parts.push(`${Math.abs(games).toFixed(0)} ${games > 0 ? "more" : "fewer"} games expected` +
+        (games < 0 && x.p && x.p.inj ? " (" + String(x.p.inj).toLowerCase().replace(/_/g, " ") + ")" : ""));
+      return Math.abs(d) < 25 ? "Tracking about where the model had him." : `${d > 0 ? "Worth more" : "Worth less"} than at the trade: ${parts.join(", ") || "small changes in rate and games"}.`;
+    };
+    const pc = (x) => {
+      if (x.missing) return `<div class="ptc"><div class="tph">${esc(x.n)} <span class="sub">no longer in the player pool</span></div></div>`;
+      const now = x.since + x.ros, d = now - x.then;
+      return `<div class="ptc"><div class="tph"><span class="name" data-id="${x.pid}">${esc(x.n)}</span>${tags(x.p)}<span class="sub">${esc(x.p.tm)} · ${esc(x.p.pos || "")}</span></div>` +
+        '<table class="ptt"><thead><tr><th></th>' +
+        `<th title="The model's rest-of-season view on ${t.d}, from games before that day only">On ${dshort}</th>` +
+        `<th title="What he has actually done for his new team since the trade">Since</th>` +
+        `<th title="Today's rest-of-season projection">From today</th></tr></thead><tbody>` +
+        `<tr><td class="l">FP/G</td><td>${fx(x.tfp)}${x.approx ? "*" : ""}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td><td>${fx(x.rfp)}</td></tr>` +
+        `<tr><td class="l">Games</td><td>${fx(x.tgl, 0)}</td><td>${x.sgp}</td><td>${fx(x.rgl, 0)}</td></tr>` +
+        `<tr class="pts"><td class="l">Points</td><td>${fx(x.then, 0)}</td><td>${fx(x.since, 0)}</td><td>${fx(x.ros, 0)}</td></tr></tbody></table>` +
+        `<div class="ptv">Value <span class="dim">${fx(x.then, 0)}</span> &rarr; <b>${fx(now, 0)}</b> <span class="${d > 25 ? "pos-up" : d < -25 ? "pos-dn" : "dim"}">(${sg(d, 0)})</span>` +
+        `<span class="dim"> = ${fx(x.since, 0)} scored since + ${fx(x.ros, 0)} to come</span></div>` +
+        `<div class="ptw">${esc(changed(x))}</div></div>`;
+    };
+    const sideHtml = (tid) => `<div class="tcol"><div class="tch"><span>${tn(tid)} got</span>` +
+      `<span class="dim">value <span title="On the trade date">${fx(sum(tid, "then"), 0)}</span> &rarr; <b title="Scored since + rest of season from today">${fx(sum(tid, "now"), 0)}</b></span></div>` +
+      V[tid].map(pc).join("") + "</div>";
+    const flip = Math.sign(nowEdge) !== Math.sign(thenEdge) && Math.abs(nowEdge) >= 50 && Math.abs(thenEdge) >= 50;
     return `<div class="card${sample ? " sample" : ""}" style="margin-bottom:.8rem"><div class="controls" style="margin-bottom:.4rem">` + (sample ? '<span class="tag rk" style="margin:0">EXAMPLE · not a real trade</span>' : "") +
-      `<strong>${new Date(t.d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})}</strong>` +
-      `<span class="count" style="margin-left:0">At the time: <b>${who(thenEdge)}</b> · Now: <b class="${Math.sign(nowEdge) !== Math.sign(thenEdge) && Math.abs(nowEdge) >= 50 ? "pos-dn" : ""}">${who(nowEdge)}</b></span></div>` +
-      `<div class="grid2">${teams.map(sideHtml).join("")}</div></div>`;
+      `<strong>${dshort}: ${teams.map(tn).join(" &#8644; ")}</strong></div>` +
+      `<div class="tverd"><span><span class="k">At the time</span><b>${who(thenEdge)}</b></span><span class="arr">&rarr;</span>` +
+      `<span><span class="k">Now</span><b class="${flip ? "pos-dn" : ""}">${who(nowEdge)}</b></span>` +
+      `<span class="dim">${flip ? "The trade has flipped since it was made." : Math.abs(nowEdge - thenEdge) < 50 ? "Playing out about as projected." : "Same winner, margin " + (Math.abs(nowEdge) > Math.abs(thenEdge) ? "wider" : "narrower") + " than projected."}</span></div>` +
+      `<div class="tcols" style="margin-top:.6rem">${teams.map(sideHtml).join("")}</div></div>`;
   };
   // the example (owner asked to keep it on the page): a made-up Oct 24 swap,
   // Jamal Murray for Anthony Edwards, valued exactly like a real trade
@@ -2038,7 +2097,7 @@ function renderPastTrades() {
     ? {id: "sample", d: "2026-10-24", items: [{playerId: 3936299, fromTeamId: A, toTeamId: B}, {playerId: 4594268, fromTeamId: B, toTeamId: A}]} : null;
   el.innerHTML = (PT.trades.length ? PT.trades.map((t) => tradeCard(t, false)).join("")
       : '<div class="card" style="margin-bottom:.8rem"><p class="note" style="margin:0">No trades have gone through in this league yet this season. When one does, it shows here like the example below.</p></div>') +
-    (sample ? tradeCard(sample, true) : "") + '<p class="note">Each player: <span class="dim">value on the trade date</span> &rarr; <b>value now</b> (points scored since the trade + rest-of-season points from today). ' +
+    (sample ? tradeCard(sample, true) : "") + '<p class="note">Each player has three columns: <strong>On the trade date</strong> (the model&rsquo;s projected FP/G × games left as it stood that day), <strong>Since</strong> (what he has actually scored for his new team) and <strong>From today</strong> (today&rsquo;s rest-of-season projection). <b>Value now</b> = points scored since + points still to come. ' +
     'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums, no roster-spot adjustment.</p>';
 }
 

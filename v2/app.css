@@ -205,6 +205,37 @@ details.card summary { cursor: pointer; }
 .tscore .big { font-size: 2.2rem; font-weight: 760; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .tscore .lbl2 { font-size: .8rem; color: var(--muted); }
 table.tbrk td, table.tbrk th { white-space: normal; }
+.tbanner { display: grid; grid-template-columns: auto 1fr; gap: .6rem 2rem; align-items: center; }
+.tbanner .big { font-size: 2.4rem; font-weight: 760; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tbanner .lbl2 { font-size: .8rem; color: var(--muted); }
+.tmath { font-size: .84rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tmath b { color: var(--ink); }
+.tpills { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.tpill { display: inline-flex; gap: .45rem; align-items: baseline; border: 1px solid var(--rule2); border-radius: 999px; padding: .2rem .7rem; font-size: .78rem; }
+.tpill .k { color: var(--muted); }
+.tpill b { font-variant-numeric: tabular-nums; }
+.tcols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+.tcol { border-radius: 12px; padding: .7rem .8rem; background: var(--band); border-top: 3px solid var(--rule2); }
+.tcol.send { border-top-color: var(--red); }
+.tcol.get { border-top-color: var(--good); }
+.tch { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; font-weight: 700; font-size: .95rem; margin-bottom: .5rem; }
+.tch .dim { font-weight: 400; font-size: .78rem; text-align: right; }
+.tpc { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: .55rem .7rem; margin-bottom: .5rem; }
+.tph { display: flex; flex-wrap: wrap; gap: .3rem .45rem; align-items: baseline; font-weight: 650; }
+.tph .sub { color: var(--muted); font-size: .76rem; font-weight: 400; margin-left: auto; }
+.tpg { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem .6rem; margin: .5rem 0 .4rem; }
+.tpg .k { display: block; font-size: .66rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tpg .v { font-weight: 650; font-variant-numeric: tabular-nums; font-size: .95rem; }
+.tpf { font-size: .8rem; border-top: 1px solid var(--rule); padding-top: .35rem; }
+.tct { font-size: .82rem; color: var(--muted); text-align: right; margin-top: .2rem; }
+.tct strong { color: var(--ink); }
+.tspots { margin-top: 1rem; }
+.tsr { display: flex; gap: .5rem; align-items: baseline; font-size: .84rem; padding: .25rem 0; border-bottom: 1px solid var(--rule); }
+.tsr:last-child { border-bottom: 0; }
+.tsr > :last-child { margin-left: auto; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tledger { margin-top: 1rem; }
+.tledger summary { cursor: pointer; font-weight: 650; font-size: .88rem; }
+@media (max-width: 760px) { .tcols, .tbanner { grid-template-columns: 1fr; } }
 
 /* ---- my week ------------------------------------------------------------ */
 .mcard { cursor: pointer; }
@@ -219,9 +250,22 @@ table.tbrk td, table.tbrk th { white-space: normal; }
 .mside .tn.mine { color: var(--accent); }
 .mside .pf { font-size: 1.15rem; font-weight: 720; font-variant-numeric: tabular-nums; text-align: right; }
 .mside .lv { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: .8rem; }
-.wbar { height: 6px; border-radius: 3px; background: var(--rule); margin: .45rem 0 .3rem; overflow: hidden; display: flex; }
-.wbar span { background: var(--accent); }
-.mfoot { display: flex; justify-content: space-between; font-size: .74rem; color: var(--muted); gap: .5rem; flex-wrap: wrap; }
+.mcard { padding-top: .9rem; padding-bottom: .9rem; }
+.mside .sw { display: inline-block; width: .55rem; height: .55rem; border-radius: 2px; margin-right: .4rem; vertical-align: .05rem; }
+.sw.a, .wbar .a { background: var(--accent); }
+.sw.h, .wbar .h { background: var(--muted); opacity: .55; }
+.wrow { display: grid; grid-template-columns: 2.6rem 1fr 2.6rem; align-items: center; gap: .45rem; margin: .7rem 0 .55rem; }
+.wrow b { font-size: .95rem; font-variant-numeric: tabular-nums; }
+.wrow .wa { color: var(--accent); }
+.wrow .wh { color: var(--muted); text-align: right; }
+.wbar { height: 12px; border-radius: 6px; background: var(--rule); overflow: hidden; display: flex; }
+.wbar .h { flex: 1; }
+.mstat { display: grid; grid-template-columns: 2.6rem 1fr 2.6rem; gap: .2rem .45rem; align-items: baseline; border-top: 1px solid var(--rule); padding-top: .45rem; }
+.mstat .v { font-weight: 650; font-variant-numeric: tabular-nums; font-size: .88rem; }
+.mstat .v:nth-child(3n) { text-align: right; }
+.mstat .v small { color: var(--muted); font-weight: 400; font-size: .72rem; }
+.mstat .k { text-align: center; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.mres { margin-top: .6rem; padding-top: .45rem; border-top: 1px solid var(--rule); font-size: .82rem; font-weight: 620; text-align: center; }
 td.dg { text-align: center; padding: .3rem .25rem; font-size: .8rem; }
 td.dg.st { color: var(--good); font-weight: 700; }
 td.dg.bn { color: var(--gold); }
@@ -308,6 +352,21 @@ table.mini .nm { cursor: pointer; font-weight: 560; }
 }
 
 /* My week: clear day columns */
-#wk-detail th.dcol, #wk-detail td.dg { border-left: 1px solid var(--rule2); }
+#wk-detail th.dcol, #wk-detail td.dg { border-left: 1px solid var(--rule2); width: 3.6rem; min-width: 3.6rem; max-width: 3.6rem; box-sizing: border-box; }
+#wk-detail tr.open td.dg small { color: var(--muted); font-weight: 400; font-size: .7rem; }
+#wk-detail tr.open td.dg.part { color: var(--gold); }
 #wk-detail th.dcol { color: var(--ink); text-align: center; border-bottom: 2px solid var(--rule2); }
 #wk-detail th.dcol.alt, #wk-detail td.dg.alt { background-image: linear-gradient(rgba(127, 127, 127, .08), rgba(127, 127, 127, .08)); }
+/* past-trade cards */
+.ptc { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: .55rem .7rem; margin-bottom: .5rem; }
+table.ptt { width: 100%; margin: .45rem 0 .35rem; font-size: .8rem; border-collapse: collapse; }
+table.ptt th { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; text-align: right; padding: .15rem .3rem; white-space: nowrap; }
+table.ptt td { text-align: right; padding: .15rem .3rem; font-variant-numeric: tabular-nums; border-top: 1px solid var(--rule); }
+table.ptt td.l { text-align: left; color: var(--muted); }
+table.ptt tr.pts td { font-weight: 700; }
+.ptv { font-size: .84rem; font-variant-numeric: tabular-nums; }
+.ptw { font-size: .78rem; color: var(--muted); margin-top: .2rem; }
+.tverd { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: baseline; font-size: .9rem; }
+.tverd .k { display: block; font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.tverd .arr { color: var(--muted); }
+.tverd > .dim { font-size: .8rem; flex-basis: 100%; }
