@@ -130,9 +130,21 @@ function espnLeague(lg) {
   return LGDATA[lg.id];
 }
 const myTeam = () => (L && L.my_team != null ? +L.my_team : null);
+// choosing a team: save it, and give that team its default keep list if it
+// has none yet (team 1 = the site owner's Lendeborg / VanVleet)
+function setMyTeam(lg, v) {
+  if (v == null) delete lg.my_team; else lg.my_team = v;
+  const kb = (META.league.keep_by_team || {})[String(v)];
+  if (v != null && kb && lg.id === META.league.id && !(lg.keep && lg.keep.length)) lg.keep = kb.slice();
+  writeStore();
+  L.my_team = lg.my_team; L.keep = lg.keep;
+  if (DRAFT.key === lg.key) { DRAFT.my_team = lg.my_team; DRAFT.keep = lg.keep; }
+}
 function fillTeamPicker() {
   const tl = (STORE.list[STORE.active] || {}).tl;
   $("tmpick").hidden = !tl || !tl.length;
+  $("pickteam").hidden = !tl || !tl.length || myTeam() != null;
+  $("tmpick").classList.toggle("need", !!tl && myTeam() == null);
   if (!tl) return;
   const mt = myTeam();
   $("tmsel").innerHTML = (mt == null ? '<option value="">pick your team</option>' : "") +
@@ -266,11 +278,9 @@ function bindLeague() {
   $("lgsel").addEventListener("change", (e) => setActive(e.target.value));
   $("tmsel").addEventListener("change", (e) => {
     const v = e.target.value === "" ? null : +e.target.value;
-    const lg = STORE.list[STORE.active];
-    if (v == null) delete lg.my_team; else lg.my_team = v;
-    writeStore();
-    L.my_team = lg.my_team;
-    if (DRAFT.key === lg.key) DRAFT.my_team = lg.my_team;
+    setMyTeam(STORE.list[STORE.active], v);
+    // views that defaulted to "someone" follow the new pick: your matchup, your trade side
+    WK.pair = null; TR.a = null; TR.b = null; TR.give.clear(); TR.get.clear();
     fillTeamPicker();
     renderAll();
   });
@@ -2366,6 +2376,15 @@ fetchData(false)
   .then((d) => {
     applyData(d);
     STORE = readStore();
+    const qTeam = new URLSearchParams(location.search).get("team");
+    if (qTeam && /^\d+$/.test(qTeam)) {
+      const key = "espn-" + META.league.id;
+      if (!STORE.list[key]) { const d = clone(META.league); d.key = key; STORE.list[key] = d; }
+      STORE.active = key;
+      L = clone(STORE.list[key]); DRAFT = clone(L);
+      setMyTeam(STORE.list[key], +qTeam);
+      history.replaceState(null, "", location.pathname + location.hash);
+    }
     L = clone(STORE.list[STORE.active]);
     DRAFT = clone(L);
     fillLeaguePicker();

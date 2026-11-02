@@ -372,3 +372,8 @@ table.ptt tr.pts td { font-weight: 700; }
 .tverd .k { display: block; font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .tverd .arr { color: var(--muted); }
 .tverd > .dim { font-size: .8rem; flex-basis: 100%; }
+/* first visit: pick your team */
+.pickteam { max-width: 1400px; margin: .5rem auto 0; padding: .55rem .9rem; border-radius: 10px; background: var(--gold-bg);
+  border: 1px solid var(--gold); font-size: .86rem; }
+.pickteam[hidden] { display: none; }
+#tmpick.need select { outline: 2px solid var(--gold); outline-offset: 1px; }
