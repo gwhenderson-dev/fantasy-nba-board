@@ -368,7 +368,10 @@ otherwise ESPN's status (OUT / IR / SUSP / DTD)</div>
     <p><strong>When the two sources disagree:</strong> if the official report covers his team&rsquo;s next game and doesn&rsquo;t list him,
       he counts as available even when ESPN&rsquo;s fantasy feed still says OUT (ESPN lags the report both ways). A healthy player with no
       minutes in any of his team&rsquo;s last 5 games is treated as out of the rotation: his games don&rsquo;t count on Waivers or My week,
-      and he can&rsquo;t inherit an injured teammate&rsquo;s minutes, until he plays (or was on the injury report in the last few days).</p>
+      and he can&rsquo;t inherit an injured teammate&rsquo;s minutes, until he plays (or was on the injury report in the last few days).
+      When the official report lists a player, it decides: Out on two reports in a row (or Out once with an ESPN return date after that
+      game) is a multi-game absence; Out once with no later date is that game only. Rest and personal days mean back next game. A name on
+      the report we can&rsquo;t match never clears anyone on that team with the same surname.</p>
     <h3>How long he is out</h3>
     <div class="formula">return date = your weeks-out (Injury boosts panel), else
               ESPN's expected return date, else
@@ -512,6 +515,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=7c42c4fb6e"></script>
+<script src="app.js?v=f458c04f52"></script>
 </body>
 </html>

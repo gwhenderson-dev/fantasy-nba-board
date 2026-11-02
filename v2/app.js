@@ -347,11 +347,24 @@ function projRows() {
 const OUT_SET = ["OUT", "INJURY_RESERVE", "SUSPENSION"];
 let OFF = {players: {}, as_of: null};
 const off = (p) => (p && OFF.players[p.id]) || null;
-const longOut = (p) => { const o = off(p); return !!o && o[0] === "Out" && o[2] >= 2; };
-// The official report covers his team's NEXT game and doesn't list him ->
+// Out on 2+ consecutive reports, or Out once while ESPN's expected return
+// date is after that game -> a multi-game absence. A single Out with no
+// later return date is that game only (rest, illness): Gobert 10-31.
+const longOut = (p) => {
+  const o = off(p);
+  return !!o && o[0] === "Out" && (o[2] >= 2 || (!!RET[p.id] && !!o[1] && RET[p.id] > o[1] && RET[p.id] > nowDay()));
+};
+// The official report covers his team's next game and doesn't list him ->
 // available, even if ESPN's fantasy feed still says OUT (Gobert, 11-02).
-const offCleared = (p) => !!p && !off(p) && !!(OFF.teams && OFF.teams[p.tm] && OFF.teams[p.tm] >= todayET());
-const espnOut = (p, inj) => OUT_SET.includes(inj === undefined ? p.inj : inj) && !offCleared(p);
+// injury_report.py withholds this when an unmatched report row on his team
+// shares his surname (it may be him under another spelling).
+const offCleared = (p) => {
+  if (!p || off(p)) return false;
+  const d = OFF.avail ? OFF.avail[p.id] : null;
+  return !!d && d >= todayET();
+};
+// When the official report lists him, it decides; ESPN only fills the gaps.
+const espnOut = (p, inj) => !off(p) && OUT_SET.includes(inj === undefined ? p.inj : inj) && !offCleared(p);
 const outNow = (p) => espnOut(p) || longOut(p);
 // Healthy but out of the rotation: no minutes in any of his team's last 5
 // games (3+ played) and not just back from the injury report. His games
@@ -365,8 +378,9 @@ function offTitle(o, p) {
   const day = o[1] ? new Date(o[1] + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"}) : "his next game";
   const what = {Out: "Out", Doubtful: "Doubtful: probably won't play", Questionable: "Questionable: game-time decision", Probable: "Probable: expected to play"}[o[0]];
   const L2 = [`Official NBA injury report · ${(OFF.as_of || "").slice(11)}`, `${what} for ${day}`];
-  if (o[0] === "Out" && o[2] >= 2) {
-    L2.push(`Listed out on his team's last ${o[2]} reports, so he counts as out until a report clears him`);
+  if (o[0] === "Out" && (o[2] >= 2 || (p && longOut(p)))) {
+    L2.push(o[2] >= 2 ? `Listed out on his team's last ${o[2]} reports, so he counts as out until a report clears him`
+      : "Listed out once so far, but ESPN expects him back only after this game");
     if (p) { const w = absWindow(p); L2.push(`Back about ${new Date(w.ret + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})} (${w.src})`); }
   } else if (o[0] === "Out") L2.push("One game only (e.g. rest): his other games still count");
   return L2.join("\n");
@@ -406,6 +420,11 @@ function absWindow(p) {
   if (RET[p.id] && RET[p.id] > today) return {ret: RET[p.id], src: "ESPN return date"};
   const fb = META.inj_fallback || {}, ty = RTYPE[p.id];
   const key = ty ? String(ty).toLowerCase().replace(/[^a-z]/g, "") : null;
+  // rest / personal days aren't injuries (and are left out of the fallback
+  // table): with no ESPN date, expect him back for his team's next game
+  const fut0 = (META.sched[p.tm] || []).map((g) => g[0]).filter((d) => d >= today);
+  if (key === "rest" || key === "personal" || key === "notinjuryrelated")
+    return {ret: fut0[0] || today, src: `${String(ty).toLowerCase()}: back next game`};
   const mean = key && fb[key] != null ? fb[key] : (fb._all || 6);
   const left = Math.max(1, Math.round(mean - (p.missed || 0)));
   const fut = (META.sched[p.tm] || []).map((g) => g[0]).filter((d) => d >= today);
@@ -413,7 +432,8 @@ function absWindow(p) {
 }
 let RET_P = null;
 function loadReturns2() {
-  const ids = PLAYERS.filter(isAbsent).map((p) => p.id).filter((id) => !(id in RET));
+  // also one-game official Outs: ESPN's return date decides if it is longer
+  const ids = PLAYERS.filter((p) => isAbsent(p) || (off(p) && off(p)[0] === "Out")).map((p) => p.id).filter((id) => !(id in RET));
   if (!ids.length) return Promise.resolve();
   ids.forEach((id) => { RET[id] = null; });
   const flt = JSON.stringify({players: {filterIds: {value: ids}, limit: ids.length + 5,
@@ -451,7 +471,11 @@ function computeBoosts() {
     const keys = roster.filter((p) => isAbsent(p) && p.fresh && Math.max(p.rec || 0, p.mpg || 0) >= P.key_min);
     if (!keys.length) return;
     const mates = roster.filter((p) => !isAbsent(p) && !benched(p) && ((p.gp || 0) >= 1 || (p.mpg || 0) >= 15) && p.mpg > 0);
+    const last = META.last_game_day || "";
     keys.forEach((k) => {
+      // no remaining team game before his return -> nothing to hand out
+      const win = absWindow(k);
+      if (!(META.sched[k.tm] || []).some((g) => g[0] > last && g[0] < win.ret)) return;
       const kg = posGroups(k.pos), center = !!kg.C && !kg.G;
       const b = center ? P.b_center : P.b_gf, mK = Math.max(k.rec || 0, k.mpg || 0);
       const ws = mates.map((p) => {
@@ -465,7 +489,7 @@ function computeBoosts() {
       // usage bump: teammates' per-minute FP rises with the absentee's usage
       const U = META.usage, ks = k.s || [];
       const uK = k.mpg > 0 ? ((ks[SI.FGA] || 0) + 0.44 * (ks[SI.FTA] || 0) + (ks[SI.TOV] || 0)) / k.mpg : 0;
-      abs[k.id] = {p: k, min: mK, uK, win: absWindow(k), mates: []};
+      abs[k.id] = {p: k, min: mK, uK, win, mates: []};
       mates.forEach((p, i) => {
         let d = P.s * mK * ws[i] / tot;
         if (p.id === lone) d = Math.max(d, P.lone_c);
