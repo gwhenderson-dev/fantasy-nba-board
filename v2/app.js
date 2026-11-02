@@ -1596,9 +1596,13 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     const hurt = (p ? espnOut(p, inj) : OUT_SET.includes(inj)) || lg.slot[id] === 13 || isAbsent(p);
     // same absence window as every other tab (your weeks > ESPN date > typical absence)
     const ret = p && isAbsent(p) ? absWindow(p).ret : lg.ret[id];
-    const plays = id in marks ? !!marks[id] : (!hurt || !!ret) && !benched(p);
+    // a Plays choice only counts when it differs from what the page would do
+    // anyway (ticking him back on = no choice), so "set by you" means something
+    const def = (!hurt || !!ret) && !benched(p);
+    const own = id in marks && (!!marks[id] !== def || (!!marks[id] && (hurt || benched(p))));
+    const plays = own ? !!marks[id] : def;
     const elig = (lg.elig[id] && lg.elig[id].length ? lg.elig[id] : eligFromPos(p && p.pos)).filter((s) => SLOTS.includes(s));
-    const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: id in marks, elig, days: [],
+    const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: own, elig, days: [],
       starts: 0, games: 0, pts: 0, var: 0};
     const fp = p ? fpg(p.s, p.bp) : 0;
     const fpd = p ? fpgUnder(META.league, p.s, p.bp) || fp : 1;
@@ -1611,9 +1615,9 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
       const g = p ? (META.sched[p.tm] || []).find((x) => x[0] === d) : null;
       let val = 0, avail = false;
       const sp = p ? statusPlay(p, d) : 1;
-      if (g && plays && !(hurt && !(id in marks) && ret && d < ret) && !(outOn(p, d) && !(id in marks)) && !(sp < 0.05 && !(id in marks))) {
+      if (g && plays && !(hurt && !own && ret && d < ret) && !(outOn(p, d) && !own) && !(sp < 0.05 && !own)) {
         const second = teamDays.has(addDays(d, -1));
-        const play = (second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1) * (id in marks ? 1 : sp);
+        const play = (second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1) * (own ? 1 : sp);
         const mf = META.mf[g[1]];
         let adj = 0;
         if (mf) {
@@ -1807,7 +1811,7 @@ function renderWeek() {
       `<input type="checkbox" class="gcb" data-tid="${tid}" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
       (x.st && x.slot != null ? `<span class="slt">${ESPN_SLOT[x.slot]}</span>` : "") + "</td>";
   };
-  const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length, 0);
+  const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length + (r.manual ? 1 : 0), 0);
   return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
     `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
     (nPicks ? `<button class="btn" data-reset="${tid}">Reset lineup choices (${nPicks})</button>` : "") + "</div>" +
@@ -1818,7 +1822,7 @@ function renderWeek() {
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
       `<td class="l">${statusTag(r, lg)}<span class="dim" style="font-size:.76rem">` +
-      `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</span></td>` +
+      `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? ` · <span title="${esc(r.plays ? "You ticked his Plays box for this week, so he counts even though the page had him out" : "You unticked his Plays box for this week, so none of his games count")}. Saved in this browser; Reset lineup choices undoes it.">set by you</span>` : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i).replace('<td class="dg', `<td class="dg${i % 2 ? " alt" : ""}`)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
     `<tr class="open"><td></td><td class="l" colspan="2" title="Players in a starter slot each day, out of ${SLOTS.length}. The small letters are the slots still empty: nights to stream a free agent">Filled starter slots</td>` +
@@ -1868,7 +1872,13 @@ function bindWeek() {
   $("wk-detail").addEventListener("click", (e) => {
     const b = e.target.closest("[data-reset]");
     if (!b) return;
-    try { localStorage.removeItem(luKey(WK.week, +b.dataset.reset)); } catch (err) { /* storage blocked */ }
+    const tid = +b.dataset.reset, lg = LGRES[L.id];
+    try {
+      localStorage.removeItem(luKey(WK.week, tid));
+      const m = weekMarks(WK.week);                 // this team's Plays choices too
+      Object.keys(m).forEach((id) => { if (lg && lg.owner[id] === tid) delete m[id]; });
+      localStorage.setItem(outKey(WK.week), JSON.stringify(m));
+    } catch (err) { /* storage blocked */ }
     renderWeek();
   });
   $("wk-detail").addEventListener("click", (e) => {
