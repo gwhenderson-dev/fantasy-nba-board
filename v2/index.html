@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=503ba4b8ed">
+<link rel="stylesheet" href="app.css?v=6c7167b1e6">
 </head>
 <body>
 <header class="top">
@@ -168,7 +168,7 @@
       </div></div>
       <span class="count" id="wv-count"></span>
     </div>
-    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><span class="tag boost">▲ +1.9 FP</span> injury boost: extra FP/G while a teammate is out (hover for why)</span><span class="lg-i"><span class="gch">vs BOS <span class="m pos-up">+2.1</span></span> matchup adjustment (green easier, red tougher)</span><span class="lg-i"><span class="gch">@ MIA <span class="m pos-up">▲1.2</span></span> injury boost that night</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span></div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><span class="tag boost">▲ +1.9 FP · Holiday out</span> injury boost: extra FP/G while the named teammates are out (hover for the working)</span><span class="lg-i"><span class="tag dnp">DNP</span> healthy but out of the rotation (no minutes in his team&rsquo;s last 5 games): his games don&rsquo;t count</span><span class="lg-i"><span class="gch">vs BOS <span class="m pos-up">+2.1</span></span> matchup adjustment (green easier, red tougher)</span><span class="lg-i"><span class="gch">@ MIA <span class="m pos-up">▲1.2</span></span> injury boost that night</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span></div>
     <div class="tablewrap"><table id="wv-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="wv-note"></p>
     <div id="wv-boosts"></div>
@@ -363,7 +363,12 @@ otherwise ESPN's status (OUT / IR / SUSP / DTD)</div>
       <span class="tag dtd" style="margin:0">Q</span> <span class="tag prob" style="margin:0">PROB</span>.
       <strong>Everything else is an outline:</strong> <span class="tag b2b" style="margin:0">B2B</span> sits back-to-backs,
       <span class="tag wvr" style="margin:0">WVR</span> on waivers, <span class="tag rk" style="margin:0">RK</span> rookie,
-      <span class="tag boost" style="margin:0">▲ +2.5 FP</span> injury boost (extra FP per game).</p>
+      <span class="tag boost" style="margin:0">▲ +2.5 FP · Edwards out</span> injury boost (extra FP per game, naming who is out),
+      <span class="tag dnp" style="margin:0">DNP</span> healthy but out of the rotation.</p>
+    <p><strong>When the two sources disagree:</strong> if the official report covers his team&rsquo;s next game and doesn&rsquo;t list him,
+      he counts as available even when ESPN&rsquo;s fantasy feed still says OUT (ESPN lags the report both ways). A healthy player with no
+      minutes in any of his team&rsquo;s last 5 games is treated as out of the rotation: his games don&rsquo;t count on Waivers or My week,
+      and he can&rsquo;t inherit an injured teammate&rsquo;s minutes, until he plays (or was on the injury report in the last few days).</p>
     <h3>How long he is out</h3>
     <div class="formula">return date = your weeks-out (Injury boosts panel), else
               ESPN's expected return date, else
@@ -507,6 +512,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=877016f927"></script>
+<script src="app.js?v=7c42c4fb6e"></script>
 </body>
 </html>

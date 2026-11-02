@@ -348,7 +348,18 @@ const OUT_SET = ["OUT", "INJURY_RESERVE", "SUSPENSION"];
 let OFF = {players: {}, as_of: null};
 const off = (p) => (p && OFF.players[p.id]) || null;
 const longOut = (p) => { const o = off(p); return !!o && o[0] === "Out" && o[2] >= 2; };
-const outNow = (p) => OUT_SET.includes(p.inj) || longOut(p);
+// The official report covers his team's NEXT game and doesn't list him ->
+// available, even if ESPN's fantasy feed still says OUT (Gobert, 11-02).
+const offCleared = (p) => !!p && !off(p) && !!(OFF.teams && OFF.teams[p.tm] && OFF.teams[p.tm] >= todayET());
+const espnOut = (p, inj) => OUT_SET.includes(inj === undefined ? p.inj : inj) && !offCleared(p);
+const outNow = (p) => espnOut(p) || longOut(p);
+// Healthy but out of the rotation: no minutes in any of his team's last 5
+// games (3+ played) and not just back from the injury report. His games
+// don't count on Waivers / My week, and he can't inherit an absentee's minutes.
+const teamPlayed = (tm) => { const l = META.last_game_day || ""; return (META.sched[tm] || []).filter((g) => g[0] <= l).length; };
+const benched = (p) => !!p && !isAbsent(p) && !p.fresh && teamPlayed(p.tm) >= 3 && !(OFF.cleared && OFF.cleared[p.id]);
+const benchTip = (p) => `Not in the rotation: no minutes in any of ${p.tm}'s last ${Math.min(5, teamPlayed(p.tm))} games while healthy` +
+  `${p.gp ? ` (${p.gp} games played this season)` : " (hasn't played this season)"}.\nHis games don't count here until he plays.`;
 const outOn = (p, d) => { const o = off(p); return !!o && o[0] === "Out" && o[1] === d; };
 function offTitle(o, p) {
   const day = o[1] ? new Date(o[1] + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"}) : "his next game";
@@ -439,7 +450,7 @@ function computeBoosts() {
   Object.entries(byTeam).forEach(([tm, roster]) => {
     const keys = roster.filter((p) => isAbsent(p) && p.fresh && Math.max(p.rec || 0, p.mpg || 0) >= P.key_min);
     if (!keys.length) return;
-    const mates = roster.filter((p) => !isAbsent(p) && ((p.gp || 0) >= 1 || (p.mpg || 0) >= 15) && p.mpg > 0);
+    const mates = roster.filter((p) => !isAbsent(p) && !benched(p) && ((p.gp || 0) >= 1 || (p.mpg || 0) >= 15) && p.mpg > 0);
     keys.forEach((k) => {
       const kg = posGroups(k.pos), center = !!kg.C && !kg.G;
       const b = center ? P.b_center : P.b_gf, mK = Math.max(k.rec || 0, k.mpg || 0);
@@ -601,9 +612,10 @@ function tags(p) {
     const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
     const cls = {Out: "inj", Doubtful: "doubt", Questionable: "dtd", Probable: "prob"}[o[0]];
     t += `<span class="tag ${cls}" title="${esc(offTitle(o, p))}">${lbl}</span>`;
-  } else if (p.inj === "OUT" || p.inj === "INJURY_RESERVE" || p.inj === "SUSPENSION")
+  } else if (espnOut(p))
     t += `<span class="tag inj" title="${esc(espnTip(p))}">${p.inj === "INJURY_RESERVE" ? "IR" : p.inj === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
-  else if (p.inj === "DAY_TO_DAY") t += `<span class="tag dtd" title="${esc(espnTip(p))}">DTD</span>`;
+  else if (p.inj === "DAY_TO_DAY" && !offCleared(p)) t += `<span class="tag dtd" title="${esc(espnTip(p))}">DTD</span>`;
+  if (benched(p)) t += `<span class="tag dnp" title="${esc(benchTip(p))}">DNP</span>`;
   if (p.rook) t += '<span class="tag rk">RK</span>';
   return t;
 }
@@ -746,7 +758,7 @@ function openPlayer(id) {
   $("drawer").innerHTML =
     `<div class="dhead"><div><h1>${esc(p.n)}${tags(p)}</h1>` +
     `<div class="dsub">${esc(p.tm)} · ${esc(p.pos || "")}${p.age ? " · age " + Math.floor(p.age) : ""}` +
-    `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${off(p) ? " · " + esc(offTitle(off(p), p).split("\n").slice(1, 2).join("")) : p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}</div></div>` +
+    `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${off(p) ? " · " + esc(offTitle(off(p), p).split("\n").slice(1, 2).join("")) : offCleared(p) && p.inj && p.inj !== "ACTIVE" ? " · official report: available (ESPN still says " + esc(p.inj) + ")" : p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}${benched(p) ? " · not in the rotation" : ""}</div></div>` +
     `<button class="x" id="dclose" aria-label="Close">×</button></div>` +
     '<div class="kpis">' +
       kpi(fx(ros), "Rest-of-season FP/G") +
@@ -1060,10 +1072,12 @@ function streamRows() {
   const own = new Set(b2bList().split("\n").map(normName).filter(Boolean));
   const B = META.b2b, CZ = META.ceiling.z;
   const out = [];
+  const skipped = [];
   PLAYERS.forEach((p) => {
     if (isAbsent(p)) return;
     const rostered = lg && lg.owner[p.id] != null;
     if (WV.avail && rostered) return;
+    if (benched(p)) { if (fpg(p.s, p.bp) > 20) skipped.push(p); return; }
     if (WV.pos && !String(p.pos || "").split(/[,/ ]+/).includes(WV.pos)) return;
     const sch = (META.sched[p.tm] || []).filter((g) => days.has(g[0]) && !outOn(p, g[0]));
     if (!sch.length) return;
@@ -1103,6 +1117,7 @@ function streamRows() {
       psit, listed, risk: listed || psit >= B.flag, ng: games.length,
       st: rostered ? (lg.byId[lg.owner[p.id]] || {}).ab : lg ? (lg.wv[p.id] ? "WVR" : "FA") : null});
   });
+  out.skipped = skipped;
   return out;
 }
 function renderWaivers() {
@@ -1148,7 +1163,7 @@ function renderWaivers() {
       (g.bst > 0.05 ? `<span class="m pos-up">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
     const b2 = r.p.b2b;
     return `<tr data-id="${p.id}"><td class="dim">${i + 1}</td>` +
-      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${esc(r.listed ? "On your list: doesn't play the 2nd night of back-to-backs, so those games count 0" : `Often rests the 2nd night of back-to-backs\nSat ${b2b0(r.p)} second nights (last season + this)\nChance he sits a 2nd night: ${Math.round(r.psit * 100)}% (league 11%)`)}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.fpg.toFixed(1)} FP</span>` : ""}</td>` +
+      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${esc(r.listed ? "On your list: doesn't play the 2nd night of back-to-backs, so those games count 0" : `Often rests the 2nd night of back-to-backs\nSat ${b2b0(r.p)} second nights (last season + this)\nChance he sits a 2nd night: ${Math.round(r.psit * 100)}% (league 11%)`)}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.fpg.toFixed(1)} FP · ${esc(r.boost.parts.map((x) => x.name.split(" ").slice(-1)[0]).join(", "))} out</span>` : ""}</td>` +
       `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
@@ -1168,7 +1183,10 @@ function renderWaivers() {
     `Players out are left off, using the <strong>official NBA injury report</strong>${OFF.as_of ? ` (as of ${esc(OFF.as_of)})` : ""} first and ESPN&rsquo;s status otherwise: ` +
     `a player listed out on his team&rsquo;s last two or more reports is dropped entirely, a one-night Out removes just that game, and Doubtful / Questionable are tagged. ` +
     `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`;
-  $("wv-note").innerHTML = "Matchup chips: the one-game adjustment tested on 16 seasons (opponent pace, fantasy points it allows to the player's position, " +
+  const sk = (rows.skipped || []).sort((a, b) => fpg(b.s, b.bp) - fpg(a.s, a.bp));
+  $("wv-note").innerHTML = (sk.length ? `<strong>Left off — not in the rotation</strong> (healthy, but no minutes in any of their team&rsquo;s last 5 games; they come back the day they play): ` +
+    sk.slice(0, 12).map((p) => `<span class="name" data-id="${p.id}">${esc(p.n)}</span> <span class="dim">${esc(p.tm)}</span>`).join(", ") + (sk.length > 12 ? ` and ${sk.length - 12} more` : "") + ".<br><br>" : "") +
+    "Matchup chips: the one-game adjustment tested on 16 seasons (opponent pace, fantasy points it allows to the player's position, " +
     "FG% it allows, home court), worth about ±2–3 points at the extremes. A dashed chip is the second night of a back-to-back. " +
     "Injury statuses and the matchup numbers are from this morning&rsquo;s build; rosters and waivers are read live from ESPN.";
   // ---- the sitters list
@@ -1519,10 +1537,10 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
   const ps = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === teamId).map((id) => {
     const p = BYID[id];
     const inj = lg.inj[id];
-    const hurt = OUT_SET.includes(inj) || lg.slot[id] === 13 || isAbsent(p);
+    const hurt = (p ? espnOut(p, inj) : OUT_SET.includes(inj)) || lg.slot[id] === 13 || isAbsent(p);
     // same absence window as every other tab (your weeks > ESPN date > typical absence)
     const ret = p && isAbsent(p) ? absWindow(p).ret : lg.ret[id];
-    const plays = id in marks ? !!marks[id] : !hurt || !!ret;
+    const plays = id in marks ? !!marks[id] : (!hurt || !!ret) && !benched(p);
     const elig = (lg.elig[id] && lg.elig[id].length ? lg.elig[id] : eligFromPos(p && p.pos)).filter((s) => SLOTS.includes(s));
     const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: id in marks, elig, days: [],
       starts: 0, games: 0, pts: 0, var: 0};
@@ -1590,7 +1608,8 @@ function statusTag(r, lg) {
     return `<span class="tag ${cls}" style="margin:0" title="${esc(offTitle(o, r.p))}">${lbl}${when}</span>`;
   }
   if (lg.slot[r.id] === 13) return '<span class="tag inj" style="margin:0" title="On the IR slot">IR</span>';
-  const e = r.inj;
+  const e = r.p && offCleared(r.p) ? "ACTIVE" : r.inj;
+  if (r.p && benched(r.p)) return `<span class="tag dnp" style="margin:0" title="${esc(benchTip(r.p))}">DNP</span>`;
   if (OUT_SET.includes(e))
     return `<span class="tag inj" style="margin:0" title="${r.p ? esc(espnTip(r.p)) : "ESPN status"}">${e === "INJURY_RESERVE" ? "IR" : e === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
   if (e === "DAY_TO_DAY") return `<span class="tag dtd" style="margin:0" title="${r.p ? esc(espnTip(r.p)) : "ESPN status"}">DTD</span>`;
@@ -2265,7 +2284,7 @@ function fetchData(bust) {
 }
 function applyData([meta, players, inj]) {
   META = meta; PLAYERS = players; STATS = meta.stats;
-  OFF = inj && inj.players ? inj : {players: {}, as_of: null};
+  OFF = inj && inj.players ? inj : {players: {}, as_of: null};   // + teams, cleared
   BC = null;
   STATS.forEach((s, i) => { SI[s] = i; });
   BYID = {};

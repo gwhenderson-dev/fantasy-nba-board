@@ -192,6 +192,7 @@ tr.mine td.fan { color: var(--accent); font-weight: 650; }
 .gch .m { font-variant-numeric: tabular-nums; }
 .gch.b2 { outline: 1px dashed var(--gold); }
 .tag.b2b { background: transparent; color: var(--gold); border-color: var(--gold); }
+.tag.dnp { background: transparent; color: var(--muted); border-color: var(--muted); border-style: dashed; }
 .tag.wvr { background: transparent; color: var(--muted); border-color: var(--rule2); }
 details.card summary { cursor: pointer; }
 .card.mycard { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
