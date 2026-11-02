@@ -857,9 +857,11 @@ function renderRecap() {
   if (!RC.day || !days.includes(RC.day)) RC.day = days[0];
   const di = days.indexOf(RC.day);
   const dlabel = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"});
-  $("rc-day").innerHTML = days.map((d) => `<option value="${d}"${d === RC.day ? " selected" : ""}>${dlabel(d)}</option>`).join("");
-  $("rc-prev").disabled = di >= days.length - 1;
-  $("rc-next").disabled = di <= 0;
+  // two linked day pickers (top of the page and above the games)
+  const dopts = days.map((d) => `<option value="${d}"${d === RC.day ? " selected" : ""}>${dlabel(d)}</option>`).join("");
+  document.querySelectorAll(".rc-daysel").forEach((el) => { el.innerHTML = dopts; });
+  document.querySelectorAll(".rc-prev").forEach((b) => { b.disabled = di >= days.length - 1; });
+  document.querySelectorAll(".rc-next").forEach((b) => { b.disabled = di <= 0; });
 
   const lg = LGRES[L.id], mt = myTeam();
   const fan = (id) => (lg && lg.owner[id] != null ? lg.byId[lg.owner[id]] : null);
@@ -890,9 +892,7 @@ function renderRecap() {
   const faPop = lg ? all.filter((r) => lg.owner[r.id] == null).sort((a, b) => b.fp - a.fp).slice(0, 6) : [];
   const minUp = all.filter((r) => BYID[r.id] && BYID[r.id].pmpg && r.min != null)
     .map((r) => Object.assign({}, r, {dm: r.min - BYID[r.id].pmpg})).filter((r) => r.dm >= 8).sort((a, b) => b.dm - a.dm).slice(0, 6);
-  const totFp = all.reduce((a, r) => a + r.fp, 0), totLk = wl.reduce((a, r) => a + r.lk, 0);
-  const kpi = (v, l, cls = "") => `<div class="kpi"><b class="${cls}">${v}</b><span>${l}</span></div>`;
-  let board = "", mineCard = "", myLine = "";
+  let board = "", mineCard = "";
   if (lg) {
     const T = lg.teams.map((t) => {
       const rs = all.filter((r) => lg.owner[r.id] === t.id);
@@ -909,8 +909,6 @@ function renderRecap() {
     if (mt != null && lg.byId[mt]) {
       const mine = all.filter((r) => lg.owner[r.id] === mt).sort((a, b) => b.fp - a.fp);
       const tot = mine.reduce((a, r) => a + r.fp, 0), tl = mine.reduce((a, r) => a + (r.lk || 0), 0);
-      const rank = T.findIndex((x) => x.t.id === mt) + 1;
-      myLine = kpi(fx(tot, 0), `your FP (${rank}${["st", "nd", "rd"][rank - 1] || "th"} of ${T.length})`) + kpi(sg(tl, 0), "your luck", lkCls(tl, 10));
       mineCard = `<div class="card"><h4>Your team<b>${esc(lg.byId[mt].name)}</b></h4>` +
         (mine.length ? mine.map((r) => srow(r, `${fx(r.fp)} <span class="${lkCls(r.lk)}">(${sg(r.lk)})</span>`, false)).join("") +
           `<div class="srow" style="border-top:1px solid var(--rule);margin-top:.2rem;padding-top:.25rem"><b>${mine.length} played</b>` +
@@ -922,8 +920,6 @@ function renderRecap() {
   const list = (title, rows, fn, empty = "-") => `<div class="card"><h4>${title}</h4>${rows.map(fn).join("") || `<p class="note" style="margin:0">${empty}</p>`}</div>`;
   $("rc-sthead").textContent = `The night in fantasy — ${dlabel(RC.day)}`;
   $("rc-stand").innerHTML =
-    `<div class="kpis nf-kpis">${kpi(games.length, "games")}${kpi(all.length, "players")}${kpi(fx(totFp, 0), "fantasy points")}` +
-    `${kpi(sg(totLk, 0), "league-wide luck", lkCls(totLk, 30))}${myLine}</div>` +
     (board || mineCard ? `<div class="nf-top">${board}${mineCard}</div>` : "") +
     '<div class="stand">' +
     list("Top fantasy scores", byFp, (r) => srow(r, fx(r.fp))) +
@@ -1004,14 +1000,14 @@ function renderRecap() {
       (showFan ? " Fantasy owners are today's rosters, not the rosters on the night." : "") + "</p></div>";
 }
 function bindRecap() {
-  $("rc-day").addEventListener("change", (e) => { RC.day = e.target.value; RC.g = null; renderRecap(); });
+  document.querySelectorAll(".rc-daysel").forEach((el) => el.addEventListener("change", (e) => { RC.day = e.target.value; RC.g = null; renderRecap(); }));
   const step = (d) => {
     const days = [...new Set(RECAP.games.map((g) => g[1]))].sort().reverse();
     const i = days.indexOf(RC.day) + d;
     if (i >= 0 && i < days.length) { RC.day = days[i]; RC.g = null; renderRecap(); }
   };
-  $("rc-prev").addEventListener("click", () => step(1));
-  $("rc-next").addEventListener("click", () => step(-1));
+  document.querySelectorAll(".rc-prev").forEach((b) => b.addEventListener("click", () => step(1)));
+  document.querySelectorAll(".rc-next").forEach((b) => b.addEventListener("click", () => step(-1)));
   $("rc-games").addEventListener("click", (e) => {
     const b = e.target.closest(".gcard");
     if (!b) return;
@@ -1738,16 +1734,16 @@ function renderWeek() {
     (nPicks ? `<button class="btn" data-reset="${tid}">Reset lineup choices (${nPicks})</button>` : "") + "</div>" +
     '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
     days.map((d, i) => { const D = T.days[i];
-      return `<th class="${D.past ? "past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span>` +
+      return `<th class="dcol${i % 2 ? " alt" : ""}${D.past ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span>` +
         (D.past ? "" : `<br><span class="${D.over ? "pos-dn" : D.started === SLOTS.length ? "" : "dim"}" title="${D.over ? D.over + " started player(s) don't fit a slot" : "Starters set / slots"}">${D.started}/${SLOTS.length}${D.over ? " !" : ""}</span>`) + "</th>"; }).join("") +
     '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th><th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
       `<td class="l">${statusTag(r, lg)}<span class="dim" style="font-size:.76rem">` +
       `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? " · set by you" : ""}</span></td>` +
-      T.days.map((D, i) => cell(r, D, i)).join("") +
+      T.days.map((D, i) => cell(r, D, i).replace('<td class="dg', `<td class="dg${i % 2 ? " alt" : ""}`)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
-    `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}" title="${esc(D.openSlots.join(", ") || "all filled")}">${D.open}` +
+    `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D, i) => `<td class="dg${i % 2 ? " alt" : ""}${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}" title="${esc(D.openSlots.join(", ") || "all filled")}">${D.open}` +
       (D.open && D.open < SLOTS.length ? `<br><span class="slt" style="color:inherit">${esc(D.openSlots.join(" "))}</span>` : "") + "</td>").join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>";
   };
@@ -2008,13 +2004,8 @@ function renderPastTrades() {
     Promise.all([loadGames(), loadPastTrades(lg)]).then(() => renderPastTrades());
     return;
   }
-  if (!PT.trades.length) {
-    el.innerHTML = '<div class="card"><p class="note" style="margin:0">No trades have gone through in this league yet this season. When one does, it shows here: ' +
-      'what each side was worth by the model on the trade date, and what it looks like now (points scored since + today&rsquo;s rest-of-season projection).</p></div>';
-    return;
-  }
   const tn = (id) => esc((lg.byId[id] || {}).name || "Team " + id);
-  el.innerHTML = PT.trades.map((t) => {
+  const tradeCard = (t, sample) => {
     const sides = {};
     t.items.forEach((i) => { (sides[i.toTeamId] = sides[i.toTeamId] || []).push(i.playerId); });
     const teams = Object.keys(sides).map(Number);
@@ -2034,10 +2025,20 @@ function renderPastTrades() {
         `<span class="dim" title="Rest-of-season points by the model on ${t.d}">${fx(x.then, 0)}</span> &rarr; ` +
         `<b title="${fx(x.since, 0)} scored since + ${fx(x.ros, 0)} projected from today">${fx(x.since + x.ros, 0)}</b>${x.approx ? "*" : ""}</span></div>`).join("") +
       `<div class="srow" style="border-top:1px solid var(--rule)"><b>Total</b><span class="v"><span class="dim">${fx(sum(tid, "then"), 0)}</span> &rarr; <b>${fx(sum(tid, "now"), 0)}</b></span></div></div>`;
-    return `<div class="card" style="margin-bottom:.8rem"><div class="controls" style="margin-bottom:.4rem"><strong>${new Date(t.d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})}</strong>` +
+    return `<div class="card${sample ? " sample" : ""}" style="margin-bottom:.8rem"><div class="controls" style="margin-bottom:.4rem">` + (sample ? '<span class="tag rk" style="margin:0">EXAMPLE · not a real trade</span>' : "") +
+      `<strong>${new Date(t.d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})}</strong>` +
       `<span class="count" style="margin-left:0">At the time: <b>${who(thenEdge)}</b> · Now: <b class="${Math.sign(nowEdge) !== Math.sign(thenEdge) && Math.abs(nowEdge) >= 50 ? "pos-dn" : ""}">${who(nowEdge)}</b></span></div>` +
       `<div class="grid2">${teams.map(sideHtml).join("")}</div></div>`;
-  }).join("") + '<p class="note">Each player: <span class="dim">value on the trade date</span> &rarr; <b>value now</b> (points scored since the trade + rest-of-season points from today). ' +
+  };
+  // the example (owner asked to keep it on the page): a made-up Oct 24 swap,
+  // Jamal Murray for Anthony Edwards, valued exactly like a real trade
+  const ids = lg.teams.map((x) => x.id);
+  const A = lg.byId[1] ? 1 : ids[0], B = lg.byId[3] && A !== 3 ? 3 : ids.find((x) => x !== A);
+  const sample = BYID[3936299] && BYID[4594268] && B != null && META.weeks.length && META.weeks[0][1] <= "2026-10-24" && "2026-10-24" <= (META.last_game_day || "")
+    ? {id: "sample", d: "2026-10-24", items: [{playerId: 3936299, fromTeamId: A, toTeamId: B}, {playerId: 4594268, fromTeamId: B, toTeamId: A}]} : null;
+  el.innerHTML = (PT.trades.length ? PT.trades.map((t) => tradeCard(t, false)).join("")
+      : '<div class="card" style="margin-bottom:.8rem"><p class="note" style="margin:0">No trades have gone through in this league yet this season. When one does, it shows here like the example below.</p></div>') +
+    (sample ? tradeCard(sample, true) : "") + '<p class="note">Each player: <span class="dim">value on the trade date</span> &rarr; <b>value now</b> (points scored since the trade + rest-of-season points from today). ' +
     'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums, no roster-spot adjustment.</p>';
 }
 

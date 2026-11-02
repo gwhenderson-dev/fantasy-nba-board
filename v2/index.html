@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=b9ac6b36ef">
+<link rel="stylesheet" href="app.css?v=96afc43e14">
 </head>
 <body>
 <header class="top">
@@ -186,13 +186,17 @@
   <section class="panel" id="tab-recap" hidden>
     <h1>Daily recap</h1>
     <p class="lede" id="rc-lede"></p>
+    <div class="controls"><div class="ctl"><label for="rc-day2">Day</label>
+      <div class="daynav"><button class="btn rc-prev" aria-label="Previous day">&lsaquo;</button>
+        <select id="rc-day2" class="rc-daysel"></select>
+        <button class="btn rc-next" aria-label="Next day">&rsaquo;</button></div></div></div>
     <h2 id="rc-sthead" style="margin-top:.4rem">The night in fantasy</h2>
     <div id="rc-stand"></div>
     <div class="controls">
       <div class="ctl"><label for="rc-day">Day</label>
-        <div class="daynav"><button class="btn" id="rc-prev" aria-label="Previous day">&lsaquo;</button>
-          <select id="rc-day"></select>
-          <button class="btn" id="rc-next" aria-label="Next day">&rsaquo;</button></div></div>
+        <div class="daynav"><button class="btn rc-prev" id="rc-prev" aria-label="Previous day">&lsaquo;</button>
+          <select id="rc-day" class="rc-daysel"></select>
+          <button class="btn rc-next" id="rc-next" aria-label="Next day">&rsaquo;</button></div></div>
       <span class="count" id="rc-count"></span>
     </div>
     <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="lgrow">Name</span> your player</span><span class="lg-i"><span class="lgrow theirs">Name</span> on another fantasy team (the Fantasy column says whose; FA = free agent)</span></div>
@@ -503,6 +507,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=6182ce6a98"></script>
+<script src="app.js?v=eae350c690"></script>
 </body>
 </html>
