@@ -180,6 +180,8 @@ table.qtab th, table.qtab td { padding: .2rem .55rem; position: static; }
 tr.sec td { background: var(--band); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; text-align: left; padding: .28rem .5rem; }
 tr.tot td { font-weight: 650; border-top: 2px solid var(--rule2); background: var(--band); }
 tr.mine td { background: var(--accent-bg); }
+tr.theirs td { background: rgba(229, 72, 77, .07); }
+tr.theirs:hover td, tr.mine:hover td { filter: brightness(.97); }
 td.fan { font-size: .74rem; color: var(--muted); text-align: left; }
 tr.mine td.fan { color: var(--accent); font-weight: 650; }
 .boxteam { margin: 1.1rem 0 .4rem; display: flex; align-items: center; gap: .5rem; }
@@ -207,6 +209,11 @@ table.tbrk td, table.tbrk th { white-space: normal; }
 /* ---- my week ------------------------------------------------------------ */
 .mcard { cursor: pointer; }
 .mcard.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* your matchup: gold border + label; the selected matchup keeps the blue outline */
+.mcard.minem { border: 2px solid var(--gold); position: relative; }
+.mcard .yours { position: absolute; top: -.6rem; left: .7rem; background: var(--gold); color: #fff; font-size: .6rem; font-weight: 750;
+  letter-spacing: .06em; padding: .08rem .45rem; border-radius: 999px; }
+.stand .mcard { margin-top: .35rem; }
 .mside { display: grid; grid-template-columns: 1fr auto auto; gap: .1rem .6rem; align-items: baseline; font-size: .86rem; }
 .mside .tn { font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mside .tn.mine { color: var(--accent); }
@@ -262,7 +269,17 @@ td.dg .slt { display: block; font-size: .6rem; font-weight: 650; letter-spacing:
 .legend .out-x { color: var(--warn); }
 .legend .slt-s { font-size: .62rem; letter-spacing: .02em; }
 .lgrow { background: var(--accent-bg); color: var(--ink); padding: .05rem .35rem; border-radius: 4px; font-weight: 600; }
+.lgrow.theirs { background: rgba(229, 72, 77, .12); }
 .lgbar { display: inline-flex; align-items: center; gap: 2px; height: 16px; }
 .lgbar i { display: inline-block; width: 4px; }
 .lgbar i.up { height: 7px; background: var(--warn); align-self: flex-start; margin-top: 1px; }
 .lgbar i.dn { height: 6px; background: var(--good); align-self: flex-end; margin-bottom: 1px; }
+
+/* ---- hover boxes ---------------------------------------------------------- */
+.tip { position: fixed; z-index: 200; max-width: min(24rem, calc(100vw - 16px)); background: var(--paper); color: var(--ink);
+  border: 1px solid var(--rule2); border-radius: 8px; padding: .5rem .65rem; font-size: .78rem; line-height: 1.45;
+  white-space: pre-wrap; box-shadow: 0 6px 22px rgba(0,0,0,.18); pointer-events: none; }
+.tip::first-line { font-weight: 650; }
+.tag[title], .tag[data-tip], .gch[title], .gch[data-tip] { cursor: help; }
+tr.open td.dg { white-space: normal; }
+tr.open td.dg .slt { max-width: 3.2rem; margin: .15rem auto 0; line-height: 1.25; }

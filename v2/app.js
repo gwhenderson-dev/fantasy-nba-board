@@ -72,7 +72,7 @@ function fillLeaguePicker() {
 function setActive(key) {
   STORE.active = key;
   writeStore();
-  Object.assign(WK, {mm: null, mmP: null, team: null, week: null});
+  Object.assign(WK, {mm: null, mmP: null, pair: null, week: null});
   Object.assign(TR, {a: null, b: null}); TR.give.clear(); TR.get.clear();
   L = clone(STORE.list[key]);
   DRAFT = clone(L);
@@ -336,9 +336,22 @@ const off = (p) => (p && OFF.players[p.id]) || null;
 const longOut = (p) => { const o = off(p); return !!o && o[0] === "Out" && o[2] >= 2; };
 const outNow = (p) => OUT_SET.includes(p.inj) || longOut(p);
 const outOn = (p, d) => { const o = off(p); return !!o && o[0] === "Out" && o[1] === d; };
-function offTitle(o) {
-  return `Official NBA injury report (${OFF.as_of}): ${o[0]} for ${o[1] || "his next game"}` +
-    (o[0] === "Out" && o[2] >= 2 ? ` — listed out on his team's last ${o[2]} reports` : "");
+function offTitle(o, p) {
+  const day = o[1] ? new Date(o[1] + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"}) : "his next game";
+  const what = {Out: "Out", Doubtful: "Doubtful: probably won't play", Questionable: "Questionable: game-time decision", Probable: "Probable: expected to play"}[o[0]];
+  const L2 = [`Official NBA injury report · ${(OFF.as_of || "").slice(11)}`, `${what} for ${day}`];
+  if (o[0] === "Out" && o[2] >= 2) {
+    L2.push(`Listed out on his team's last ${o[2]} reports, so he counts as out until a report clears him`);
+    if (p) { const w = absWindow(p); L2.push(`Back about ${new Date(w.ret + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})} (${w.src})`); }
+  } else if (o[0] === "Out") L2.push("One game only (e.g. rest): his other games still count");
+  return L2.join("\n");
+}
+function espnTip(p) {
+  const st = {OUT: "Out", INJURY_RESERVE: "Injured reserve", SUSPENSION: "Suspended", DAY_TO_DAY: "Day-to-day"}[p.inj] || p.inj;
+  const L2 = [`ESPN status: ${st}`];
+  if (p.inj !== "DAY_TO_DAY" && isAbsent(p)) { const w = absWindow(p); L2.push(`Back about ${new Date(w.ret + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})} (${w.src})`); }
+  else if (p.inj === "DAY_TO_DAY") L2.push("Not on the official report yet, or not listed for today's game");
+  return L2.join("\n");
 }
 // ========================================================= INJURY BOOSTS
 // When a rotation player is out, his minutes go to healthy teammates. Model
@@ -479,11 +492,28 @@ function boostInfo(p) {
   const names = o.parts.map((pt) => B.abs[pt.k].p.n);
   const now = o.parts.reduce((a, pt) => a + pt.d, 0), rb = o.parts.reduce((a, pt) => a + pt.rb, 0);
   const use = rb * o.sc * ((p.mpg || 0) + now);
-  return {tot: tot * (p.av || 0), games: n, min: now, use, fpg: now * perMin(p) + use, thru, names, lone: o.lone};
+  const parts = o.parts.map((pt) => {
+    const a = B.abs[pt.k];
+    return {name: a.p.n, uK: a.uK, min: pt.d, ret: a.win.ret, src: a.win.src,
+            fpMin: pt.d * perMin(p), fpUse: pt.rb * o.sc * ((p.mpg || 0) + now)};
+  });
+  return {tot: tot * (p.av || 0), games: n, min: now, use, fpg: now * perMin(p) + use, thru, names, lone: o.lone,
+          parts, perMin: perMin(p)};
 }
-const boostTip = (b) => `+${b.min.toFixed(1)} min and +${b.use.toFixed(1)} FP/G from usage (+${b.fpg.toFixed(1)} FP/G in all) while ${b.names.join(", ")} ${b.names.length > 1 ? "are" : "is"} out` +
-  ` — ${b.games} games, through about ${b.thru.slice(5)}${b.lone ? "; lone backup centre" : ""}`;
+const niceDay = (d) => (d ? new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"}) : "");
+function boostTip(b) {
+  const L2 = [`Injury boost: +${b.fpg.toFixed(1)} FP per game`];
+  b.parts.forEach((x) => {
+    L2.push(`${x.name} is out (usage ${x.uK.toFixed(2)} per min) — back about ${niceDay(x.ret)} (${x.src})`);
+    L2.push(`   +${x.min.toFixed(1)} min × his ${b.perMin.toFixed(2)} FP per min = +${x.fpMin.toFixed(1)}`);
+    if (x.fpUse > 0.05) L2.push(`   usage bump while ${x.name.split(" ").slice(-1)[0]} sits = +${x.fpUse.toFixed(1)}`);
+  });
+  if (b.lone) L2.push("Lone backup centre: at least +4.8 minutes");
+  L2.push(`${b.games} games affected ≈ +${b.tot.toFixed(0)} rest-of-season points`);
+  return L2.join("\n");
+}
 
+const b2b0 = (p) => (p.b2b ? `${p.b2b[0]} of ${p.b2b[1]}` : "0 of 0");
 const BUI = {open: {"wv-boosts": true, "is-boosts": true}};
 function renderBoostPanel(cid) {
   const el = $(cid);
@@ -556,10 +586,10 @@ function tags(p) {
   if (o) {
     const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
     const cls = {Out: "inj", Doubtful: "doubt", Questionable: "dtd", Probable: "prob"}[o[0]];
-    t += `<span class="tag ${cls}" title="${esc(offTitle(o))}">${lbl}</span>`;
+    t += `<span class="tag ${cls}" title="${esc(offTitle(o, p))}">${lbl}</span>`;
   } else if (p.inj === "OUT" || p.inj === "INJURY_RESERVE" || p.inj === "SUSPENSION")
-    t += `<span class="tag inj" title="ESPN status">${p.inj === "INJURY_RESERVE" ? "IR" : p.inj === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
-  else if (p.inj === "DAY_TO_DAY") t += '<span class="tag dtd" title="ESPN status">DTD</span>';
+    t += `<span class="tag inj" title="${esc(espnTip(p))}">${p.inj === "INJURY_RESERVE" ? "IR" : p.inj === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
+  else if (p.inj === "DAY_TO_DAY") t += `<span class="tag dtd" title="${esc(espnTip(p))}">DTD</span>`;
   if (p.rook) t += '<span class="tag rk">RK</span>';
   return t;
 }
@@ -702,7 +732,7 @@ function openPlayer(id) {
   $("drawer").innerHTML =
     `<div class="dhead"><div><h1>${esc(p.n)}${tags(p)}</h1>` +
     `<div class="dsub">${esc(p.tm)} · ${esc(p.pos || "")}${p.age ? " · age " + Math.floor(p.age) : ""}` +
-    `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${off(p) ? " · " + esc(offTitle(off(p))) : p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}</div></div>` +
+    `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${off(p) ? " · " + esc(offTitle(off(p), p).split("\n").slice(1, 2).join("")) : p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}</div></div>` +
     `<button class="x" id="dclose" aria-label="Close">×</button></div>` +
     '<div class="kpis">' +
       kpi(fx(ros), "Rest-of-season FP/G") +
@@ -894,7 +924,7 @@ function renderRecap() {
   const prow = (r) => {
     const b = r.box, f = fan(r.id), mine = f && f.id === mt;
     const v = (k) => b[SI[k]];
-    return `<tr class="${mine ? "mine" : ""}"><td class="l name" data-id="${r.id}">${esc(pname(r.id))}${BYID[r.id] ? tags(BYID[r.id]) : ""}</td>` +
+    return `<tr class="${mine ? "mine" : f ? "theirs" : ""}"><td class="l name" data-id="${r.id}">${esc(pname(r.id))}${BYID[r.id] ? tags(BYID[r.id]) : ""}</td>` +
       (showFan ? `<td class="fan">${f ? esc(f.ab) : '<span class="dim">FA</span>'}</td>` : "") +
       `<td>${r.min ?? "-"}</td><td>${v("PTS")}</td><td>${v("REB")}</td><td>${v("AST")}</td><td>${v("STL")}</td><td>${v("BLK")}</td>` +
       `<td>${v("FG3M")}</td><td>${v("TOV")}</td><td>${v("FGM")}-${v("FGA")}</td><td>${v("FG3M")}-${r.fg3a ?? "?"}</td><td>${v("FTM")}-${v("FTA")}</td>` +
@@ -1015,13 +1045,17 @@ function streamRows() {
         const c = posCls(p.pos), b = META.mfb;
         adj = (b.pace * (mf.pace - 1) + b.dvp * ((mf[c] || 1) - 1) + b.fgp * ((mf.fgp || 1) - 1) +
                b.home * (home ? 0.5 : -0.5)) * scale;
-        tip = `${opp}: pace ${(mf.pace * 100).toFixed(0)}% of league, allows ${((mf[c] || 1) * 100).toFixed(0)}% of league FP to ${c}s, ` +
-          `opponents shoot ${((mf.fgp || 1) * 100).toFixed(0)}% of league FG% against them; ${home ? "home" : "away"} (${mf.n} games so far)`;
+        const cw = {G: "guards", F: "forwards", C: "centres"}[c];
+        tip = `Matchup ${sg(adj)} FP vs an average game:\n` +
+          `   ${opp} pace: ${(mf.pace * 100).toFixed(0)}% of league\n` +
+          `   FP ${opp} allows to ${cw}: ${((mf[c] || 1) * 100).toFixed(0)}% of league\n` +
+          `   FG% ${opp} allows: ${((mf.fgp || 1) * 100).toFixed(0)}% of league\n` +
+          `   ${home ? "home (+0.5)" : "away (−0.5)"} · ${mf.n} ${opp} games so far`;
       }
       const bst = boostFP(p, d);
       proj += play * (fp + adj + bst);
       if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, fp + adj + bst + CZ * sd);
-      return {d, opp, home, second, play, adj, bst, tip};
+      return {d, opp, home, second, play, adj, bst, tip, val: play * (fp + adj + bst)};
     });
     const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
     const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
@@ -1063,13 +1097,18 @@ function renderWaivers() {
     H("own", "Own%", "", "Rostered % across ESPN leagues") + "</tr>";
   const body = list.map((r, i) => {
     const p = r.p;
-    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}" title="${esc((g.second ? "Second night of a back-to-back" + (r.risk ? ` — ${Math.round(r.psit * 100)}% sit chance` : "") + ". " : "") + g.tip)}">` +
+    const chipTip = (g) => [`${niceDay(g.d)} ${g.home ? "vs" : "@"} ${g.opp} — projected ${g.val.toFixed(1)} FP`,
+      g.tip,
+      g.bst > 0.05 ? `Injury boost that night: +${g.bst.toFixed(1)} FP (${r.boost ? r.boost.names.join(", ") : "teammate"} out)` : "",
+      g.second ? `2nd night of a back-to-back: ${Math.round(r.psit * 100)}% chance he sits` + (r.p.b2b ? ` (sat ${r.p.b2b[0]} of ${r.p.b2b[1]} second nights)` : "") +
+        `, so this game counts ${Math.round(g.play * 100)}%` : ""].filter(Boolean).join("\n");
+    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}" title="${esc(chipTip(g))}">` +
       `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}` +
       `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span>` +
-      (g.bst > 0.05 ? `<span class="m pos-up" title="Injury boost that night">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
+      (g.bst > 0.05 ? `<span class="m pos-up">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
     const b2 = r.p.b2b;
     return `<tr data-id="${p.id}"><td class="dim">${i + 1}</td>` +
-      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${r.listed ? "On your list: does not play second nights" : "Sits second nights of back-to-backs"}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.fpg.toFixed(1)} FP</span>` : ""}</td>` +
+      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${esc(r.listed ? "On your list: doesn't play the 2nd night of back-to-backs, so those games count 0" : `Often rests the 2nd night of back-to-backs\nSat ${b2b0(r.p)} second nights (last season + this)\nChance he sits a 2nd night: ${Math.round(r.psit * 100)}% (league 11%)`)}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.fpg.toFixed(1)} FP</span>` : ""}</td>` +
       `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
@@ -1346,7 +1385,7 @@ function bindInseason() {
 // Each day's lineup is the exact max-weight assignment of the players who
 // play that day to the league's starter slots (Hungarian algorithm; ported
 // from the old Wire tab, where an independent scipy check reproduced it).
-const WK = {week: null, team: null, mm: null, mmP: null};
+const WK = {week: null, pair: null, mm: null, mmP: null};
 const SLOT_ID = Object.fromEntries(Object.entries(ESPN_SLOT).map(([k, v]) => [v, +k]));
 function assignMax(Wm) {                 // rows x cols, values >= 0
   const n = Wm.length, m = n ? Wm[0].length : 0, rc = new Array(n).fill(-1);
@@ -1508,13 +1547,13 @@ function statusTag(r, lg) {
     const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
     const cls = {Out: "inj", Doubtful: "doubt", Questionable: "dtd", Probable: "prob"}[o[0]];
     const when = o[0] === "Out" && o[2] < 2 && o[1] ? " " + o[1].slice(5) : "";
-    return `<span class="tag ${cls}" style="margin:0" title="${esc(offTitle(o))}">${lbl}${when}</span>`;
+    return `<span class="tag ${cls}" style="margin:0" title="${esc(offTitle(o, r.p))}">${lbl}${when}</span>`;
   }
   if (lg.slot[r.id] === 13) return '<span class="tag inj" style="margin:0" title="On the IR slot">IR</span>';
   const e = r.inj;
   if (OUT_SET.includes(e))
-    return `<span class="tag inj" style="margin:0" title="ESPN status">${e === "INJURY_RESERVE" ? "IR" : e === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
-  if (e === "DAY_TO_DAY") return '<span class="tag dtd" style="margin:0" title="ESPN status">DTD</span>';
+    return `<span class="tag inj" style="margin:0" title="${r.p ? esc(espnTip(r.p)) : "ESPN status"}">${e === "INJURY_RESERVE" ? "IR" : e === "SUSPENSION" ? "SUSP" : "OUT"}</span>`;
+  if (e === "DAY_TO_DAY") return `<span class="tag dtd" style="margin:0" title="${r.p ? esc(espnTip(r.p)) : "ESPN status"}">DTD</span>`;
   return "";
 }
 const normCdf = (x) => {   // Abramowitz-Stegun
@@ -1537,10 +1576,14 @@ function renderWeek() {
     return;
   }
   const today = todayET();
-  const weeks = META.weeks.filter((w) => w[2] >= today).slice(0, 2);
-  if (!weeks.length) { $("wk-detail").innerHTML = '<p class="note">No matchup weeks left this season.</p>'; return; }
-  if (WK.week == null || !weeks.some((w) => w[0] === WK.week)) WK.week = weeks[0][0];
-  $("wk-week").innerHTML = weeks.map(([w, s, e]) => `<option value="${w}"${w === WK.week ? " selected" : ""}>Week ${w} (${s.slice(5)} to ${e.slice(5)})${s <= today ? " · now" : ""}</option>`).join("");
+  const weeks = META.weeks;
+  if (!weeks.length) { $("wk-detail").innerHTML = '<p class="note">No matchup weeks in this build.</p>'; return; }
+  if (WK.week == null || !weeks.some((w) => w[0] === WK.week)) {
+    const cur = weeks.find((w) => w[1] <= today && today <= w[2]) || weeks.find((w) => w[2] >= today) || weeks[weeks.length - 1];
+    WK.week = cur[0];
+  }
+  const wstate = (w) => (w[2] < today ? "final" : w[1] <= today ? "now" : "upcoming");
+  $("wk-week").innerHTML = weeks.map((w) => `<option value="${w[0]}"${w[0] === WK.week ? " selected" : ""}>Week ${w[0]} (${w[1].slice(5)} to ${w[2].slice(5)}) · ${wstate(w)}</option>`).join("");
   const [wk, ws, we] = META.weeks.find((w) => w[0] === WK.week);
   const days = [];
   for (let d = ws; d <= we; d = addDays(d, 1)) days.push(d);
@@ -1552,13 +1595,23 @@ function renderWeek() {
   });
   SLOTS.sort((a, b) => a - b);
   const TW = Object.fromEntries(lg.teams.map((t) => [t.id, teamWeek(lg, t.id, days, wk, SLOTS, today)]));
+  const liveOf = (tid) => { const m = (WK.mm || []).find((x) => x.matchupPeriodId === wk && x.home && x.away && (x.home.teamId === tid || x.away.teamId === tid));
+    if (!m) return 0; const sd = m.home.teamId === tid ? m.home : m.away; return (sd.totalPointsLive != null ? sd.totalPointsLive : sd.totalPoints) || 0; };
+  Object.entries(TW).forEach(([tid, T]) => { T.final = liveOf(+tid) + T.rem; });
   const lim = L.adds;
   const addsLeft = (id) => (lim == null ? null : Math.max(0, lim - ((lg.tx[id] || {})[String(wk)] || 0)));
   const mt = myTeam();
-  if (WK.team == null || !lg.byId[WK.team]) WK.team = mt != null ? mt : lg.teams[0].id;
-  $("wk-team").innerHTML = lg.teams.map((t) => `<option value="${t.id}"${t.id === WK.team ? " selected" : ""}>${esc(t.name)}${t.id === mt ? " (you)" : ""}</option>`).join("");
-  // ---- matchup cards
+  const over = we < today;
+  // ---- matchups this week; the detail shows BOTH teams of the chosen one
   const ms = WK.mm.filter((m) => m.matchupPeriodId === wk && m.home && m.away);
+  const pairOf = (m) => [m.away.teamId, m.home.teamId];
+  if (!WK.pair || !ms.some((m) => pairOf(m).join() === WK.pair.join())) {
+    const mine = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
+    WK.pair = mine ? pairOf(mine) : ms.length ? pairOf(ms[0]) : [mt != null ? mt : lg.teams[0].id];
+  }
+  $("wk-team").innerHTML = ms.length ? ms.map((m) => { const pr = pairOf(m);
+    return `<option value="${pr.join(",")}"${pr.join() === WK.pair.join() ? " selected" : ""}>${esc(lg.byId[pr[0]].name)} vs ${esc(lg.byId[pr[1]].name)}${pr.includes(mt) ? " (yours)" : ""}</option>`; }).join("")
+    : lg.teams.map((t) => `<option value="${t.id}"${t.id === WK.pair[0] ? " selected" : ""}>${esc(t.name)}</option>`).join("");
   const live = (side) => (side.totalPointsLive != null ? side.totalPointsLive : side.totalPoints) || 0;
   const cards = ms.map((m) => {
     const A = m.away, H = m.home, a = TW[A.teamId], h = TW[H.teamId];
@@ -1566,22 +1619,24 @@ function renderWeek() {
     const al = live(A), hl = live(H), ap = al + a.rem, hp = hl + h.rem;
     const sd = Math.sqrt(a.var + h.var);
     const pa = sd > 0 ? normCdf((ap - hp) / sd) : (ap > hp ? 1 : ap < hp ? 0 : 0.5);
-    const isMine = A.teamId === mt || H.teamId === mt, sel = A.teamId === WK.team || H.teamId === WK.team;
+    const isMine = A.teamId === mt || H.teamId === mt, sel = WK.pair.join() === [A.teamId, H.teamId].join();
     const side = (s, t, l, pr, p) => `<span class="tn${s.teamId === mt ? " mine" : ""}" title="${esc(lg.byId[s.teamId].name)}">${esc(lg.byId[s.teamId].name)}</span>` +
-      `<span class="lv" title="Live score">${fx(l, 0)}</span><span class="pf" title="Projected final">${fx(pr, 0)}</span>`;
+      `<span class="lv" title="${over ? "" : "Live score"}">${over ? "" : fx(l, 0)}</span><span class="pf" title="${over ? "Final score" : "Projected final: live score + best lineup on each remaining day"}">${fx(pr, 0)}</span>`;
     const st = (t) => t.days.filter((D) => !D.past).reduce((x, D) => x + D.started, 0);
-    return `<div class="card mcard${isMine ? " mycard" : ""}${sel ? " sel" : ""}" data-a="${A.teamId}" data-h="${H.teamId}">` +
-      `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span class="dim" style="font-size:.7rem">LIVE</span><span class="dim" style="font-size:.7rem">PROJ</span>` +
+    return `<div class="card mcard${isMine ? " minem" : ""}${sel ? " sel" : ""}" data-a="${A.teamId}" data-h="${H.teamId}">` +
+      (isMine ? '<span class="yours">YOUR MATCHUP</span>' : "") +
+      `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span class="dim" style="font-size:.7rem">${over ? "" : "LIVE"}</span><span class="dim" style="font-size:.7rem">${over ? "FINAL" : "PROJ"}</span>` +
       side(A, a, al, ap, pa) + side(H, h, hl, hp, 1 - pa) + "</div>" +
       `<div class="wbar" title="Rough win chance"><span style="width:${(pa * 100).toFixed(0)}%"></span></div>` +
-      `<div class="mfoot"><span>win ${Math.round(pa * 100)}% – ${Math.round((1 - pa) * 100)}%</span>` +
-      `<span title="Starter games left this week">starts left ${st(a)} – ${st(h)}</span>` +
-      (lim != null ? `<span title="Adds left this week">adds ${addsLeft(A.teamId)} – ${addsLeft(H.teamId)}</span>` : "") + "</div></div>";
+      `<div class="mfoot"><span>${over ? (ap > hp ? esc(lg.byId[A.teamId].name) + " won" : hp > ap ? esc(lg.byId[H.teamId].name) + " won" : "tie") : `win ${Math.round(pa * 100)}% – ${Math.round((1 - pa) * 100)}%`}</span>` +
+      (over ? "" : `<span title="Starter games left this week">starts left ${st(a)} – ${st(h)}</span>` +
+      (lim != null ? `<span title="Adds left this week">adds ${addsLeft(A.teamId)} – ${addsLeft(H.teamId)}</span>` : "")) + "</div></div>";
   }).join("");
   $("wk-cards").innerHTML = cards || '<p class="note">No matchups found for this week (a bye week, or this league&rsquo;s matchup periods don&rsquo;t follow this calendar).</p>';
-  // ---- team detail
-  const T = TW[WK.team], tname = lg.byId[WK.team].name;
+  // ---- detail: both teams of the chosen matchup
   const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
+  const block = (tid) => {
+  const T = TW[tid], tname = lg.byId[tid].name;
   const rows = T.ps.slice().sort((a, b) => b.pts - a.pts || b.games - a.games);
   const cell = (r, D, i) => {
     const x = r.days[i], past = D.past ? " past" : "";
@@ -1592,12 +1647,13 @@ function renderWeek() {
       : x.pick === 1 ? `You started him: ${fx(x.val)} projected` : x.pick === 0 ? "You benched him"
       : x.st ? `In the best lineup: ${fx(x.val)} projected. Untick to bench him` : "On the bench: the best lineup has no slot for him. Tick to start him";
     return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip)}">` +
-      `<input type="checkbox" class="gcb" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
+      `<input type="checkbox" class="gcb" data-tid="${tid}" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
       (x.st && x.slot != null ? `<span class="slt">${ESPN_SLOT[x.slot]}</span>` : "") + "</td>";
   };
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length, 0);
-  $("wk-detail").innerHTML = `<div class="controls" style="align-items:center"><h2 style="margin:0">${esc(tname)} &mdash; week ${wk}</h2>` +
-    (nPicks ? `<button class="btn" id="wk-reset">Reset my lineup choices (${nPicks})</button>` : "") + "</div>" +
+  return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
+    `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
+    (nPicks ? `<button class="btn" data-reset="${tid}">Reset lineup choices (${nPicks})</button>` : "") + "</div>" +
     '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
     days.map((d, i) => { const D = T.days[i];
       return `<th class="${D.past ? "past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span>` +
@@ -1611,7 +1667,10 @@ function renderWeek() {
       `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
     `<tr class="open"><td></td><td class="l" colspan="2">Open starter slots</td>${T.days.map((D) => `<td class="dg${D.past ? " past" : ""} ${D.open ? "pos-dn" : ""}" title="${esc(D.openSlots.join(", ") || "all filled")}">${D.open}` +
       (D.open && D.open < SLOTS.length ? `<br><span class="slt" style="color:inherit">${esc(D.openSlots.join(" "))}</span>` : "") + "</td>").join("")}<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
-    "</tbody></table></div>" +
+    "</tbody></table></div>";
+  };
+  $("wk-detail").innerHTML = (over ? `<p class="note">Week ${wk} is over: scores are ESPN&rsquo;s finals. The grid below uses <em>today&rsquo;s</em> rosters, so it shows what the best lineup would have been, not what was played.</p>` : "") +
+    WK.pair.map(block).join("") +
     `<p class="note">Each remaining game has a box, pre-ticked with the best possible lineup (${SLOTS.length} starter slots, positions respected). ` +
     "Untick a game to bench him that night, tick one to start him; the projection follows your lineup. Outlined boxes are your choices; a red one means every slot he can fill is already taken. " +
     "× = not playing. The <strong>Plays</strong> box on the left takes a player out for the whole week. Open slots are nights you could stream a free agent (see the Waivers tab). " +
@@ -1620,26 +1679,25 @@ function renderWeek() {
   $("wk-count").textContent = `${ms.length} matchups`;
   $("wk-lede").innerHTML = `Every matchup in week ${wk}, scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
     `(${SLOTS.length} starter slots, filled by an exact assignment of who plays that day), at rest-of-season FP/G with the matchup and back-to-back adjustments from the Waivers tab. ` +
-    `Players out or on IR count from ESPN&rsquo;s expected return date when it has one. Click a matchup to see either team below.` +
+    `Players out or on IR count from ESPN&rsquo;s expected return date when it has one. Click a matchup to see both teams below. Pick any week, past or future.` +
     (myM ? "" : "");
   $("wk-note").innerHTML = "Win chance is rough: it treats each remaining game as independent, with each player&rsquo;s game-to-game spread (the same one behind the Waivers ceiling). " +
     "While tonight&rsquo;s games are being played, players already in action count twice (in the live score and the projection) until the next morning&rsquo;s build. Rosters, injuries, live scores and adds are read from ESPN; projections are from this morning.";
 }
 function bindWeek() {
   $("wk-week").addEventListener("change", (e) => { WK.week = +e.target.value; renderWeek(); });
-  $("wk-team").addEventListener("change", (e) => { WK.team = +e.target.value; renderWeek(); });
+  $("wk-team").addEventListener("change", (e) => { WK.pair = e.target.value.split(",").map(Number); renderWeek(); });
   $("wk-cards").addEventListener("click", (e) => {
     const c = e.target.closest(".mcard");
     if (!c) return;
-    const a = +c.dataset.a, h = +c.dataset.h;
-    WK.team = WK.team === a ? h : WK.team === h ? a : (h === myTeam() ? h : a);
+    WK.pair = [+c.dataset.a, +c.dataset.h];
     renderWeek();
     $("wk-detail").scrollIntoView({behavior: "smooth", block: "start"});
   });
   $("wk-detail").addEventListener("change", (e) => {
     const g = e.target.closest("input[data-lpid]");
     if (g) {
-      setLineup(WK.week, WK.team, +g.dataset.lpid, g.dataset.d, g.checked);
+      setLineup(WK.week, +g.dataset.tid, +g.dataset.lpid, g.dataset.d, g.checked);
       renderWeek();
       return;
     }
@@ -1649,8 +1707,9 @@ function bindWeek() {
     renderWeek();
   });
   $("wk-detail").addEventListener("click", (e) => {
-    if (e.target.id !== "wk-reset") return;
-    try { localStorage.removeItem(luKey(WK.week, WK.team)); } catch (err) { /* storage blocked */ }
+    const b = e.target.closest("[data-reset]");
+    if (!b) return;
+    try { localStorage.removeItem(luKey(WK.week, +b.dataset.reset)); } catch (err) { /* storage blocked */ }
     renderWeek();
   });
   $("wk-detail").addEventListener("click", (e) => {
@@ -1841,6 +1900,48 @@ function renderAll() {
   if (!$("tab-trade").hidden) renderTrade();
 }
 
+// ============================================================ HOVER BOXES
+// Every element with a title gets a styled box instead of the browser's plain
+// tooltip (multi-line text, placed above or below to stay on screen). On a
+// touch screen a tap on a tag or chip shows it instead of opening the row.
+function initTips() {
+  const tip = document.createElement("div");
+  tip.className = "tip"; tip.hidden = true; tip.setAttribute("role", "tooltip");
+  document.body.appendChild(tip);
+  let cur = null;
+  const hide = () => { tip.hidden = true; cur = null; };
+  const show = (el) => {
+    if (el.hasAttribute("title")) { el.dataset.tip = el.getAttribute("title"); el.removeAttribute("title"); }
+    const t = el.dataset.tip;
+    if (!t) return;
+    cur = el;
+    tip.textContent = t;
+    tip.hidden = false;
+    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, m = 8;
+    let x = Math.min(Math.max(m, r.left + r.width / 2 - w / 2), window.innerWidth - w - m);
+    let y = r.bottom + 6;
+    if (y + h > window.innerHeight - m) y = Math.max(m, r.top - h - 6);
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  };
+  const target = (e) => e.target.closest && e.target.closest("[title],[data-tip]");
+  document.addEventListener("mouseover", (e) => {
+    const el = target(e);
+    if (!el || el.matches("input,select,textarea,option,iframe")) { if (!el) hide(); return; }
+    if (el !== cur) show(el);
+  });
+  document.addEventListener("mouseout", (e) => { if (cur && !(e.relatedTarget && cur.contains(e.relatedTarget))) hide(); });
+  document.addEventListener("scroll", hide, true);
+  if (window.matchMedia("(hover: none)").matches) {
+    document.addEventListener("click", (e) => {
+      const el = e.target.closest(".tag, .gch, [data-tip-tap]");
+      if (el && (el.hasAttribute("title") || el.dataset.tip)) {
+        e.stopPropagation(); e.preventDefault();
+        if (cur === el) hide(); else show(el);
+      } else hide();
+    }, true);
+  }
+}
+
 // =============================================================== REFRESH
 // The button re-reads everything the site publishes (stats, projections,
 // the hourly official injury report) and the visitor's live ESPN league.
@@ -1952,6 +2053,7 @@ fetchData(false)
     bindWeek();
     bindTrade();
     bindRefresh();
+    initTips();
     bindBoostPanel("wv-boosts");
     bindBoostPanel("is-boosts");
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
