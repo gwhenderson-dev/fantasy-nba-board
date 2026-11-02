@@ -42,6 +42,7 @@ function readStore() {
   const own = s.list["espn-" + META.league.id];     // saved before the team picker existed
   if (own && own.my_team == null && !own.tl) own.my_team = META.league.my_team;
   if (own && own.keep == null) own.keep = (META.league.keep || []).slice();
+  if (own && own.po_len == null) { own.po_len = META.league.po_len; own.adds_day = META.league.adds_day; }
   return s;
 }
 function writeStore() {
@@ -74,6 +75,7 @@ function setActive(key) {
   writeStore();
   Object.assign(WK, {mm: null, mmP: null, pair: null, week: null});
   Object.assign(TR, {a: null, b: null}); TR.give.clear(); TR.get.clear();
+  Object.assign(PT, {key: null, p: null, trades: null});
   L = clone(STORE.list[key]);
   DRAFT = clone(L);
   fillLeaguePicker();
@@ -160,6 +162,7 @@ function renderLeagueForm() {
   $("lg-adds").value = d.adds ?? "";
   $("lg-po1").value = (d.playoff_weeks || [])[0] ?? "";
   $("lg-po2").value = (d.playoff_weeks || [])[1] ?? "";
+  $("lg-polen").value = d.po_len ?? 1;
   const shown = ALL_SLOTS.filter((s) => BASE_SLOTS.includes(s) || (d.slots[s] || 0) > 0);
   $("lg-slots").innerHTML = shown.map((s) =>
     `<div class="ctl"><label for="sl-${s}">${s}</label><input id="sl-${s}" data-slot="${s}" type="number" min="0" max="15" value="${d.slots[s] || 0}"></div>`).join("");
@@ -189,6 +192,10 @@ function readForm(quiet) {
   d.adds = $("lg-adds").value === "" ? null : parseInt($("lg-adds").value, 10);
   const p1 = parseInt($("lg-po1").value, 10), p2 = parseInt($("lg-po2").value, 10);
   d.playoff_weeks = isNaN(p1) ? null : [p1, isNaN(p2) ? p1 : p2];
+  d.po_len = Math.max(1, parseInt($("lg-polen").value, 10) || 1);
+  // a hand-edited schedule overrides ESPN's matchup map
+  if (d.mp && JSON.stringify(d.playoff_weeks) !== JSON.stringify(DRAFT.playoff_weeks)) d.mp = null;
+  if (d.mp && d.po_len !== DRAFT.po_len) d.mp = null;
   document.querySelectorAll("#lg-slots input").forEach((el) => { d.slots[el.dataset.slot] = Math.max(0, parseInt(el.value, 10) || 0); });
   document.querySelectorAll("#lg-scoring input").forEach((el) => { d.w[el.dataset.stat] = parseFloat(el.value) || 0; });
   document.querySelectorAll("#lg-bonus input").forEach((el) => { d.b[el.dataset.bonus] = parseFloat(el.value) || 0; });
@@ -232,14 +239,21 @@ function pullEspn() {
       if (v && ESPN_SLOT[k]) slots[ESPN_SLOT[k]] = v;
     });
     if (Object.keys(slots).length) d.slots = slots;
-    let adds = (s.acquisitionSettings || {}).matchupAcquisitionLimit;
-    if (adds != null && adds > 0 && adds < 1) adds = Math.round(adds * 7);   // ESPN serves a per-day fraction
+    // adds: ESPN serves a per-SCORING-PERIOD (game day) limit, e.g. 4/7; a
+    // matchup's limit scales with its game days (6 game days -> 3 adds)
+    const acq = s.acquisitionSettings || {};
+    let adds = acq.matchupAcquisitionLimit;
+    d.adds_day = null;
+    if (adds != null && adds > 0 && (acq.matchupLimitPerScoringPeriod || adds < 1)) { d.adds_day = adds; adds = Math.round(adds * 7); }
     d.adds = adds != null && adds >= 0 ? adds : d.adds;
     const sch = s.scheduleSettings || {};
     if (sch.matchupPeriodCount && sch.playoffTeamCount) {
       const start = sch.matchupPeriodCount + 1, len = sch.playoffMatchupPeriodLength || 1;
       d.playoff_weeks = [start, start + Math.ceil(Math.log2(sch.playoffTeamCount)) * len - 1];
+      d.po_len = len;
     }
+    // matchup period -> its fantasy weeks (playoff rounds can span 2+ weeks)
+    d.mp = sch.matchupPeriods && Object.keys(sch.matchupPeriods).length ? sch.matchupPeriods : null;
     DRAFT = d;
     renderLeagueForm();
     lgMsg("ok", `Pulled <strong>${esc(d.name)}</strong>: ${d.teams} teams, ${rostered(d)} roster spots, scoring and bonuses filled in. Review, then <strong>Save league</strong>.`);
@@ -866,28 +880,58 @@ function renderRecap() {
     `<strong>Luck</strong> = fantasy points minus luck-adjusted points (his own per-minute rates at the minutes he played, plus his real shots and assists): ` +
     `<span class="pos-dn">orange</span> means the box score flatters him, <span class="pos-up">green</span> means he played better than it looks.`;
 
-  // ---- standouts
+  // ---- the night in fantasy: KPIs, league scoreboard, your team, lists
   const srow = (r, v, own = true) => `<div class="srow"><span class="nm" data-id="${r.id}">${esc(pname(r.id))}</span>` +
     `<span class="sub">${esc(r.tm)}${own && fan(r.id) ? " · " + esc(fan(r.id).ab) : ""}</span><span class="v">${v}</span></div>`;
-  const byFp = all.slice().sort((a, b) => b.fp - a.fp).slice(0, 5);
   const wl = all.filter((r) => r.lk != null);
-  const hot = wl.slice().sort((a, b) => b.lk - a.lk).filter((r) => r.lk > 0).slice(0, 5);
-  const cold = wl.slice().sort((a, b) => a.lk - b.lk).filter((r) => r.lk < 0).slice(0, 5);
-  let cards = "";
-  if (mt != null && lg) {
-    const mine = all.filter((r) => lg.owner[r.id] === mt).sort((a, b) => b.fp - a.fp);
-    const tot = mine.reduce((a, r) => a + r.fp, 0), tl = mine.reduce((a, r) => a + (r.lk || 0), 0);
-    cards += `<div class="card"><h4>Your team<b>${esc(lg.byId[mt].name)}</b></h4>` +
-      (mine.length ? mine.map((r) => srow(r, `${fx(r.fp)} <span class="${lkCls(r.lk)}">(${sg(r.lk)})</span>`, false)).join("") +
-        `<div class="srow" style="border-top:1px solid var(--rule);margin-top:.2rem;padding-top:.25rem"><b>${mine.length} played</b>` +
-        `<span class="v"><b>${fx(tot)}</b> <span class="${lkCls(tl, 8)}">(${sg(tl)} luck)</span></span></div>`
-        : '<p class="note" style="margin:0">None of your players played.</p>') +
-      `<p class="note" style="margin:.3rem 0 0;font-size:.74rem">Everyone on your roster today, started or benched.</p></div>`;
+  const byFp = all.slice().sort((a, b) => b.fp - a.fp).slice(0, 6);
+  const hot = wl.slice().sort((a, b) => b.lk - a.lk).filter((r) => r.lk > 0).slice(0, 6);
+  const cold = wl.slice().sort((a, b) => a.lk - b.lk).filter((r) => r.lk < 0).slice(0, 6);
+  const faPop = lg ? all.filter((r) => lg.owner[r.id] == null).sort((a, b) => b.fp - a.fp).slice(0, 6) : [];
+  const minUp = all.filter((r) => BYID[r.id] && BYID[r.id].pmpg && r.min != null)
+    .map((r) => Object.assign({}, r, {dm: r.min - BYID[r.id].pmpg})).filter((r) => r.dm >= 8).sort((a, b) => b.dm - a.dm).slice(0, 6);
+  const totFp = all.reduce((a, r) => a + r.fp, 0), totLk = wl.reduce((a, r) => a + r.lk, 0);
+  const kpi = (v, l, cls = "") => `<div class="kpi"><b class="${cls}">${v}</b><span>${l}</span></div>`;
+  let board = "", mineCard = "", myLine = "";
+  if (lg) {
+    const T = lg.teams.map((t) => {
+      const rs = all.filter((r) => lg.owner[r.id] === t.id);
+      return {t, n: rs.length, fp: rs.reduce((a, r) => a + r.fp, 0), lk: rs.reduce((a, r) => a + (r.lk || 0), 0),
+              top: rs.slice().sort((a, b) => b.fp - a.fp)[0]};
+    }).sort((a, b) => b.fp - a.fp);
+    const fa = all.filter((r) => lg.owner[r.id] == null);
+    board = '<div class="card nf-board"><h4>League scoreboard <span class="dim" style="font-weight:500;text-transform:none;letter-spacing:0">(today&rsquo;s rosters)</span></h4>' +
+      '<table class="mini"><thead><tr><th class="l">Fantasy team</th><th>Played</th><th>FP</th><th title="Fantasy points minus luck-adjusted points">Luck</th><th class="l">Best</th></tr></thead><tbody>' +
+      T.map((x, i) => `<tr class="${x.t.id === mt ? "mine" : ""}"><td class="l">${i + 1}. ${esc(x.t.name)}</td><td>${x.n}</td><td class="big">${fx(x.fp, 0)}</td>` +
+        `<td class="${lkCls(x.lk, 10)}">${sg(x.lk, 0)}</td><td class="l">${x.top ? `<span class="nm" data-id="${x.top.id}">${esc(surname(pname(x.top.id)))}</span> <span class="dim">${fx(x.top.fp, 0)}</span>` : ""}</td></tr>`).join("") +
+      `<tr class="dimrow"><td class="l">Free agents</td><td>${fa.length}</td><td>${fx(fa.reduce((a, r) => a + r.fp, 0), 0)}</td><td></td><td class="l">${faPop[0] ? esc(surname(pname(faPop[0].id))) + ' <span class="dim">' + fx(faPop[0].fp, 0) + "</span>" : ""}</td></tr>` +
+      "</tbody></table></div>";
+    if (mt != null && lg.byId[mt]) {
+      const mine = all.filter((r) => lg.owner[r.id] === mt).sort((a, b) => b.fp - a.fp);
+      const tot = mine.reduce((a, r) => a + r.fp, 0), tl = mine.reduce((a, r) => a + (r.lk || 0), 0);
+      const rank = T.findIndex((x) => x.t.id === mt) + 1;
+      myLine = kpi(fx(tot, 0), `your FP (${rank}${["st", "nd", "rd"][rank - 1] || "th"} of ${T.length})`) + kpi(sg(tl, 0), "your luck", lkCls(tl, 10));
+      mineCard = `<div class="card"><h4>Your team<b>${esc(lg.byId[mt].name)}</b></h4>` +
+        (mine.length ? mine.map((r) => srow(r, `${fx(r.fp)} <span class="${lkCls(r.lk)}">(${sg(r.lk)})</span>`, false)).join("") +
+          `<div class="srow" style="border-top:1px solid var(--rule);margin-top:.2rem;padding-top:.25rem"><b>${mine.length} played</b>` +
+          `<span class="v"><b>${fx(tot)}</b> <span class="${lkCls(tl, 8)}">(${sg(tl)} luck)</span></span></div>`
+          : '<p class="note" style="margin:0">None of your players played.</p>') +
+        `<p class="note" style="margin:.3rem 0 0;font-size:.74rem">Everyone on your roster today, started or benched.</p></div>`;
+    }
   }
-  cards += `<div class="card"><h4>Top fantasy scores</h4>${byFp.map((r) => srow(r, fx(r.fp))).join("")}</div>` +
-    `<div class="card"><h4>Ran hot (box score flatters)</h4>${hot.map((r) => srow(r, `<span class="pos-dn">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)).join("") || '<p class="note">-</p>'}</div>` +
-    `<div class="card"><h4>Ran cold (better than it looks)</h4>${cold.map((r) => srow(r, `<span class="pos-up">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)).join("") || '<p class="note">-</p>'}</div>`;
-  $("rc-stand").innerHTML = cards;
+  const list = (title, rows, fn, empty = "-") => `<div class="card"><h4>${title}</h4>${rows.map(fn).join("") || `<p class="note" style="margin:0">${empty}</p>`}</div>`;
+  $("rc-sthead").textContent = `The night in fantasy — ${dlabel(RC.day)}`;
+  $("rc-stand").innerHTML =
+    `<div class="kpis nf-kpis">${kpi(games.length, "games")}${kpi(all.length, "players")}${kpi(fx(totFp, 0), "fantasy points")}` +
+    `${kpi(sg(totLk, 0), "league-wide luck", lkCls(totLk, 30))}${myLine}</div>` +
+    (board || mineCard ? `<div class="nf-top">${board}${mineCard}</div>` : "") +
+    '<div class="stand">' +
+    list("Top fantasy scores", byFp, (r) => srow(r, fx(r.fp))) +
+    list("Ran hot (box score flatters)", hot, (r) => srow(r, `<span class="pos-dn">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)) +
+    list("Ran cold (better than it looks)", cold, (r) => srow(r, `<span class="pos-up">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)) +
+    (lg ? list("Free agents who popped", faPop, (r) => srow(r, `${fx(r.fp)} <span class="sub">${r.lk != null ? sg(r.lk) + " luck" : ""}</span>`, false), "No free agents played") : "") +
+    list("Minutes up (vs his usual)", minUp, (r) => srow(r, `<span class="pos-up">+${r.dm.toFixed(0)} min</span> <span class="sub">${r.min} min · ${fx(r.fp)} fp</span>`), "Nobody played 8+ minutes over his norm") +
+    "</div>";
 
   // ---- game cards
   const logo = (t) => RECAP.logos[t] ? `<img src="${esc(RECAP.logos[t])}" alt="" loading="lazy">` : "";
@@ -1112,7 +1156,7 @@ function renderWaivers() {
       `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
-      `<td class="l grp">${gs}</td>` +
+      `<td class="l grp gcol">${gs}</td>` +
       `<td class="grp">${fx(r.fp)}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
       `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
       `<td class="grp ${r.risk ? "" : "dim"}" title="${b2 ? `Sat ${b2[0]} of ${b2[1]} second nights (last season + this)` : "No second nights on record"}">${r.listed ? "your list" : Math.round(r.psit * 100) + "%"}</td>` +
@@ -1238,9 +1282,9 @@ function renderInseason() {
   const luckCols = (r, sign) =>
     `<td>${r.gp}</td><td class="grp">${fx(r.now)}</td><td>${fx(r.adj)}</td>` +
     `<td class="big ${sign > 0 ? (r.gap >= 2 ? "pos-up" : "") : (r.gap <= -2 ? "pos-dn" : r.gap >= 2 ? "pos-up" : "")}">${sign > 0 ? sg(r.gap) : sg(-r.gap)}</td>` +
-    `<td class="l dim" style="white-space:normal;min-width:11rem">${esc(luckWhy(r.p, -sign))}</td>` +
+    `<td class="l dim why">${esc(luckWhy(r.p, -sign))}</td>` +
     `<td class="grp">${fx(r.ros)}</td><td class="pos-up" title="${r.boost ? esc(boostTip(r.boost)) : ""}">${r.boost ? "+" + r.boost.fpg.toFixed(1) + " thru " + r.boost.thru.slice(5) : ""}</td><td>${fx(r.pre)}</td><td class="${r.pre != null && r.now != null ? cut(r.now - r.pre) : ""}">${r.pre != null && r.now != null ? sg(r.now - r.pre) : "-"}</td>` +
-    `<td class="dim">${r.p.pre_rank ?? "-"}</td><td>${spark(lucks(r.p.id), 110, 26)}</td>`;
+    `<td class="dim">${r.p.pre_rank ?? "-"}</td><td>${spark(lucks(r.p.id), 80, 24)}</td>`;
   const luckHead = (sign) =>
     H("gp", "GP") + H("now", "Now FP/G", "grp", "Actual FP/G this season") +
     H("adj", "Luck-adj", "", "FP/G with luck removed: his own per-minute rates at the minutes he played, plus his real shot attempts and assists (the parts that carry into future games)") +
@@ -1561,6 +1605,36 @@ const normCdf = (x) => {   // Abramowitz-Stegun
   const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
   return x > 0 ? 1 - p : p;
 };
+// The league's matchup periods: ESPN's map (matchup id -> its fantasy weeks)
+// when the league was pulled, else built from the League tab's playoff weeks
+// and weeks per round. Playoff rounds are named from the end (Finals, ...).
+function matchupPeriods() {
+  const W = Object.fromEntries(META.weeks.map((w) => [w[0], w]));
+  let per = [];
+  if (L.mp) per = Object.entries(L.mp).map(([id, wks]) => ({id: +id, weeks: wks.map(Number)})).sort((a, b) => a.id - b.id);
+  else {
+    const pw = L.playoff_weeks, len = Math.max(1, L.po_len || 1), last = META.weeks.length;
+    for (let w = 1; w <= (pw ? pw[0] - 1 : last); w++) per.push({id: w, weeks: [w]});
+    if (pw) for (let w = pw[0], id = pw[0]; w <= pw[1]; w += len, id++)
+      per.push({id, weeks: Array.from({length: Math.min(len, pw[1] - w + 1)}, (_, i) => w + i)});
+  }
+  per = per.filter((p) => p.weeks.length && p.weeks.every((w) => W[w]));
+  const poStart = L.playoff_weeks ? L.playoff_weeks[0] : Infinity;
+  const po = per.filter((p) => p.weeks[0] >= poStart);
+  const names = ["Finals", "Semifinals", "Quarterfinals"];
+  po.forEach((p, i) => { p.playoff = true; p.label = names[po.length - 1 - i] || `Playoff round ${i + 1}`; });
+  const gameDays = new Set(Object.values(META.sched).flatMap((g) => g.map((x) => x[0])));
+  per.forEach((p) => {
+    p.start = W[p.weeks[0]][1]; p.end = W[p.weeks[p.weeks.length - 1]][2];
+    if (!p.label) p.label = `Week ${p.weeks[0]}`;
+    let n = 0;
+    for (let d = p.start; d <= p.end; d = addDays(d, 1)) if (gameDays.has(d)) n++;
+    p.gameDays = n;
+    // ESPN: adds per game day x game days, rounded down (assumed; scaled proportionally per ESPN)
+    p.adds = L.adds_day ? Math.floor(L.adds_day * n + 1e-9) : L.adds;
+  });
+  return per;
+}
 function renderWeek() {
   const lg = LGRES[L.id];
   if (!lg) {
@@ -1576,15 +1650,20 @@ function renderWeek() {
     return;
   }
   const today = todayET();
-  const weeks = META.weeks;
-  if (!weeks.length) { $("wk-detail").innerHTML = '<p class="note">No matchup weeks in this build.</p>'; return; }
-  if (WK.week == null || !weeks.some((w) => w[0] === WK.week)) {
-    const cur = weeks.find((w) => w[1] <= today && today <= w[2]) || weeks.find((w) => w[2] >= today) || weeks[weeks.length - 1];
-    WK.week = cur[0];
+  const periods = matchupPeriods();
+  if (!periods.length) { $("wk-detail").innerHTML = '<p class="note">No matchup weeks in this build.</p>'; return; }
+  if (WK.week == null || !periods.some((p) => p.id === WK.week)) {
+    const cur = periods.find((p) => p.start <= today && today <= p.end) || periods.find((p) => p.end >= today) || periods[periods.length - 1];
+    WK.week = cur.id;
   }
-  const wstate = (w) => (w[2] < today ? "final" : w[1] <= today ? "now" : "upcoming");
-  $("wk-week").innerHTML = weeks.map((w) => `<option value="${w[0]}"${w[0] === WK.week ? " selected" : ""}>Week ${w[0]} (${w[1].slice(5)} to ${w[2].slice(5)}) · ${wstate(w)}</option>`).join("");
-  const [wk, ws, we] = META.weeks.find((w) => w[0] === WK.week);
+  const pstate = (p) => (p.end < today ? "final" : p.start <= today ? "now" : "upcoming");
+  const opt = (p) => `<option value="${p.id}"${p.id === WK.week ? " selected" : ""}>${p.label}` +
+    `${p.playoff ? ` · weeks ${p.weeks[0]}${p.weeks.length > 1 ? "–" + p.weeks[p.weeks.length - 1] : ""}` : ""} (${p.start.slice(5)} to ${p.end.slice(5)}) · ${pstate(p)}</option>`;
+  const reg = periods.filter((p) => !p.playoff), po = periods.filter((p) => p.playoff);
+  $("wk-week").innerHTML = `<optgroup label="Regular season">${reg.map(opt).join("")}</optgroup>` +
+    (po.length ? `<optgroup label="Playoffs">${po.map(opt).join("")}</optgroup>` : "");
+  const PER = periods.find((p) => p.id === WK.week);
+  const wk = PER.id, ws = PER.start, we = PER.end;
   const days = [];
   for (let d = ws; d <= we; d = addDays(d, 1)) days.push(d);
   const SLOTS = [];
@@ -1598,8 +1677,11 @@ function renderWeek() {
   const liveOf = (tid) => { const m = (WK.mm || []).find((x) => x.matchupPeriodId === wk && x.home && x.away && (x.home.teamId === tid || x.away.teamId === tid));
     if (!m) return 0; const sd = m.home.teamId === tid ? m.home : m.away; return (sd.totalPointsLive != null ? sd.totalPointsLive : sd.totalPoints) || 0; };
   Object.entries(TW).forEach(([tid, T]) => { T.final = liveOf(+tid) + T.rem; });
-  const lim = L.adds;
+  const lim = PER.adds;
   const addsLeft = (id) => (lim == null ? null : Math.max(0, lim - ((lg.tx[id] || {})[String(wk)] || 0)));
+  const addsTip = L.adds_day
+    ? `Adds limit this matchup: ${lim} = ${(L.adds_day * 7).toFixed(0)}/7 per game day × ${PER.gameDays} game days, rounded down (ESPN scales the limit to the matchup's game days). Left = limit − adds used.`
+    : `Adds limit this matchup: ${lim}. Left = limit − adds used.`;
   const mt = myTeam();
   const over = we < today;
   // ---- matchups this week; the detail shows BOTH teams of the chosen one
@@ -1630,7 +1712,7 @@ function renderWeek() {
       `<div class="wbar" title="Rough win chance"><span style="width:${(pa * 100).toFixed(0)}%"></span></div>` +
       `<div class="mfoot"><span>${over ? (ap > hp ? esc(lg.byId[A.teamId].name) + " won" : hp > ap ? esc(lg.byId[H.teamId].name) + " won" : "tie") : `win ${Math.round(pa * 100)}% – ${Math.round((1 - pa) * 100)}%`}</span>` +
       (over ? "" : `<span title="Starter games left this week">starts left ${st(a)} – ${st(h)}</span>` +
-      (lim != null ? `<span title="Adds left this week">adds ${addsLeft(A.teamId)} – ${addsLeft(H.teamId)}</span>` : "")) + "</div></div>";
+      (lim != null ? `<span title="${esc(addsTip)}">adds ${addsLeft(A.teamId)} – ${addsLeft(H.teamId)} of ${lim}</span>` : "")) + "</div></div>";
   }).join("");
   $("wk-cards").innerHTML = cards || '<p class="note">No matchups found for this week (a bye week, or this league&rsquo;s matchup periods don&rsquo;t follow this calendar).</p>';
   // ---- detail: both teams of the chosen matchup
@@ -1677,7 +1759,7 @@ function renderWeek() {
     "All choices are saved for this week in your browser.</p>";
   const myM = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
   $("wk-count").textContent = `${ms.length} matchups`;
-  $("wk-lede").innerHTML = `Every matchup in week ${wk}, scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
+  $("wk-lede").innerHTML = `Every matchup in ${PER.playoff ? "the " + PER.label + " (weeks " + PER.weeks.join("–") + ")" : "week " + wk}: ${PER.gameDays} game days, ${lim != null ? lim + " adds" : "adds per your league"}. Scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
     `(${SLOTS.length} starter slots, filled by an exact assignment of who plays that day), at rest-of-season FP/G with the matchup and back-to-back adjustments from the Waivers tab. ` +
     `Players out or on IR count from ESPN&rsquo;s expected return date when it has one. Click a matchup to see both teams below. Pick any week, past or future.` +
     (myM ? "" : "");
@@ -1769,6 +1851,7 @@ function tradeSide(lg, tid, out, inn, keep) {
   return res;
 }
 function renderTrade() {
+  renderPastTrades();
   const lg = LGRES[L.id];
   if (!lg) {
     $("tr-score").innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
@@ -1862,6 +1945,102 @@ function renderTrade() {
     "The best trades win on projection and still look fair by box score. Players on your keep list are never the ones dropped to make room. " +
     `With about ${Math.max(...Object.values(TEAMLEFT))} team games left, every number here is a forecast; a gap under ${Math.round(TR_EVEN * 100)}% of what you send is inside the noise.`;
 }
+// ---- past trades: value at the time vs value now ----------------------------
+// At the time = the in-season blend (section 3 of How it works) re-run with
+// only the games before the trade date, x availability x team games left
+// then. Now = fantasy points actually scored since the trade + today's
+// rest-of-season points. Plain sums (no roster-spot adjustment).
+const PT = {key: null, p: null, trades: null};
+function rosAt(p, T) {
+  const C = GAMES.C, rows = (GAMES.byP[p.id] || []).filter((r) => r[C.d] < T);
+  const approx = !p.ps;
+  const ps = p.ps || p.s, pbp = p.pbp || p.bp, mpg0 = (p.ps ? p.pmpg : p.mpg) || 1e-9;
+  let gp = rows.length, mn = 0;
+  const tot = STATS.map(() => 0), cnt = [0, 0, 0];
+  rows.forEach((r) => { mn += r[C.min] || 0; STATS.forEach((k, i) => { tot[i] += r[C[k]] || 0; });
+    cnt[0] += r[C.dd]; cnt[1] += r[C.td]; cnt[2] += r[C.qd]; });
+  const mpg = (5 * mpg0 + mn) / (5 + gp);
+  const sl = STATS.map((k, i) => (ps[i] / mpg0 * 600 + tot[i]) / (600 + mn) * mpg);
+  const geq = 600 / mpg0;
+  const bp = pbp.map((b, j) => (b * geq + cnt[j]) / (geq + gp));
+  const sched = (META.sched[p.tm] || []).map((g) => g[0]);
+  const before = sched.filter((d) => d < T).length, left = sched.filter((d) => d >= T).length;
+  const av0 = p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
+  const av = Math.min(1, (av0 * 20 + gp) / (20 + before));
+  return {fp: fpg(sl, bp), av, left, tot: fpg(sl, bp) * av * left, approx};
+}
+function sinceFP(p, T) {
+  const C = GAMES.C;
+  return (GAMES.byP[p.id] || []).filter((r) => r[C.d] >= T)
+    .reduce((a, r) => a + fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]), 0);
+}
+function loadPastTrades(lg) {
+  const key = L.id;
+  if (PT.key === key && PT.p) return PT.p;
+  PT.key = key; PT.trades = null;
+  const days = [...new Set(Object.values(META.sched).flatMap((g) => g.map((x) => x[0])))].sort();
+  const n = days.filter((d) => d <= nowDay()).length;            // ESPN scoring periods = game days
+  const flt = JSON.stringify({transactions: {filterType: {value: ["TRADE_ACCEPT", "TRADE_UPHOLD", "TRADE_PROPOSAL", "TRADE_VETO", "TRADE_DECLINE"]}}});
+  const ids = Array.from({length: n}, (_, i) => i + 1);
+  const out = [];
+  const one = (sp) => fetch(espnBase() + key + "?view=mTransactions2&scoringPeriodId=" + sp, {headers: {"x-fantasy-filter": flt}})
+    .then((r) => (r.ok ? r.json() : {transactions: []})).catch(() => ({transactions: []}))
+    .then((j) => (j.transactions || []).forEach((t) => out.push(t)));
+  const pool = async () => { while (ids.length) { await one(ids.shift()); } };
+  PT.p = Promise.all(Array.from({length: 6}, pool)).then(() => {
+    const seen = new Set();
+    PT.trades = out.filter((t) => t.status === "EXECUTED" && /TRADE/.test(t.type) && !seen.has(t.id) && seen.add(t.id))
+      .map((t) => {
+        const ts = t.processDate || t.proposedDate || 0;
+        const d = new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York"}).format(new Date(ts));
+        const items = (t.items || []).filter((i) => i.playerId > 0 && i.toTeamId != null && i.fromTeamId != null);
+        return {id: t.id, d, items};
+      }).filter((t) => t.items.length).sort((a, b) => (a.d < b.d ? 1 : -1));
+    return PT.trades;
+  });
+  return PT.p;
+}
+function renderPastTrades() {
+  const el = $("tr-past"), lg = LGRES[L.id];
+  if (!lg) { el.innerHTML = '<p class="note">Past trades are read from a public ESPN league.</p>'; return; }
+  if (!GAMES || PT.trades == null) {
+    el.innerHTML = '<p class="note">Reading the league&rsquo;s transaction log from ESPN&hellip;</p>';
+    Promise.all([loadGames(), loadPastTrades(lg)]).then(() => renderPastTrades());
+    return;
+  }
+  if (!PT.trades.length) {
+    el.innerHTML = '<div class="card"><p class="note" style="margin:0">No trades have gone through in this league yet this season. When one does, it shows here: ' +
+      'what each side was worth by the model on the trade date, and what it looks like now (points scored since + today&rsquo;s rest-of-season projection).</p></div>';
+    return;
+  }
+  const tn = (id) => esc((lg.byId[id] || {}).name || "Team " + id);
+  el.innerHTML = PT.trades.map((t) => {
+    const sides = {};
+    t.items.forEach((i) => { (sides[i.toTeamId] = sides[i.toTeamId] || []).push(i.playerId); });
+    const teams = Object.keys(sides).map(Number);
+    const val = (tid) => sides[tid].map((pid) => {
+      const p = BYID[pid];
+      if (!p) return {pid, n: (lg.name[pid] || "#" + pid), then: 0, since: 0, ros: 0, missing: true};
+      const a = rosAt(p, t.d), sl = seasonLine(p);
+      return {pid, n: p.n, then: a.tot, since: sinceFP(p, t.d), ros: sl.tot, approx: a.approx};
+    });
+    const V = Object.fromEntries(teams.map((tid) => [tid, val(tid)]));
+    const sum = (tid, k) => V[tid].reduce((a, x) => a + (k === "now" ? x.since + x.ros : x[k]), 0);
+    const [A, B] = teams;
+    const thenEdge = B != null ? sum(A, "then") - sum(B, "then") : 0, nowEdge = B != null ? sum(A, "now") - sum(B, "now") : 0;
+    const who = (e) => (Math.abs(e) < 50 ? "even" : (e > 0 ? tn(A) : tn(B)) + " by " + Math.abs(e).toFixed(0));
+    const sideHtml = (tid) => `<div><div class="lbl2"><strong>${tn(tid)}</strong> got</div>` +
+      V[tid].map((x) => `<div class="srow"><span class="nm name" data-id="${x.pid}">${esc(x.n)}</span><span class="v">` +
+        `<span class="dim" title="Rest-of-season points by the model on ${t.d}">${fx(x.then, 0)}</span> &rarr; ` +
+        `<b title="${fx(x.since, 0)} scored since + ${fx(x.ros, 0)} projected from today">${fx(x.since + x.ros, 0)}</b>${x.approx ? "*" : ""}</span></div>`).join("") +
+      `<div class="srow" style="border-top:1px solid var(--rule)"><b>Total</b><span class="v"><span class="dim">${fx(sum(tid, "then"), 0)}</span> &rarr; <b>${fx(sum(tid, "now"), 0)}</b></span></div></div>`;
+    return `<div class="card" style="margin-bottom:.8rem"><div class="controls" style="margin-bottom:.4rem"><strong>${new Date(t.d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"})}</strong>` +
+      `<span class="count" style="margin-left:0">At the time: <b>${who(thenEdge)}</b> · Now: <b class="${Math.sign(nowEdge) !== Math.sign(thenEdge) && Math.abs(nowEdge) >= 50 ? "pos-dn" : ""}">${who(nowEdge)}</b></span></div>` +
+      `<div class="grid2">${teams.map(sideHtml).join("")}</div></div>`;
+  }).join("") + '<p class="note">Each player: <span class="dim">value on the trade date</span> &rarr; <b>value now</b> (points scored since the trade + rest-of-season points from today). ' +
+    'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums, no roster-spot adjustment.</p>';
+}
+
 function bindTrade() {
   $("tr-a").addEventListener("change", (e) => { TR.a = +e.target.value; TR.give.clear(); TR.get.clear(); if (TR.b === TR.a) TR.b = null; renderTrade(); });
   $("tr-b").addEventListener("change", (e) => { TR.b = +e.target.value; TR.get.clear(); renderTrade(); });
@@ -2054,6 +2233,9 @@ fetchData(false)
     bindTrade();
     bindRefresh();
     initTips();
+    // console hooks used to verify the math (harmless for visitors)
+    window.FNBA_DEBUG = {rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+      previewTrades: (list) => { PT.key = L.id; PT.trades = list; PT.p = Promise.resolve(list); renderPastTrades(); }};
     bindBoostPanel("wv-boosts");
     bindBoostPanel("is-boosts");
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));

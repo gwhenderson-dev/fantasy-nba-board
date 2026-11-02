@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=25876fc195">
+<link rel="stylesheet" href="app.css?v=b9ac6b36ef">
 </head>
 <body>
 <header class="top">
@@ -51,6 +51,7 @@
           <div class="ctl"><label for="lg-adds">Adds / week</label><input id="lg-adds" type="number" min="0" max="50"></div>
           <div class="ctl"><label for="lg-po1">Playoffs from wk</label><input id="lg-po1" type="number" min="1" max="30"></div>
           <div class="ctl"><label for="lg-po2">through wk</label><input id="lg-po2" type="number" min="1" max="30"></div>
+          <div class="ctl"><label for="lg-polen" title="How many fantasy weeks each playoff round lasts (e.g. 2 = semifinals over 2 weeks)">Weeks per playoff round</label><input id="lg-polen" type="number" min="1" max="4"></div>
         </div>
         <h3>Roster slots</h3>
         <div class="fields" id="lg-slots"></div>
@@ -185,6 +186,8 @@
   <section class="panel" id="tab-recap" hidden>
     <h1>Daily recap</h1>
     <p class="lede" id="rc-lede"></p>
+    <h2 id="rc-sthead" style="margin-top:.4rem">The night in fantasy</h2>
+    <div id="rc-stand"></div>
     <div class="controls">
       <div class="ctl"><label for="rc-day">Day</label>
         <div class="daynav"><button class="btn" id="rc-prev" aria-label="Previous day">&lsaquo;</button>
@@ -195,8 +198,6 @@
     <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="lgrow">Name</span> your player</span><span class="lg-i"><span class="lgrow theirs">Name</span> on another fantasy team (the Fantasy column says whose; FA = free agent)</span></div>
     <div class="games" id="rc-games"></div>
     <div id="rc-box"></div>
-    <h2 id="rc-sthead">The night in fantasy</h2>
-    <div class="stand" id="rc-stand"></div>
   </section>
   <section class="panel" id="tab-week" hidden>
     <h1>My week</h1>
@@ -229,6 +230,8 @@
       </div>
     </div>
     <p class="note" id="tr-note"></p>
+    <h2>Past trades in this league</h2>
+    <div id="tr-past"><p class="note">Open this tab to load the league&rsquo;s trades.</p></div>
   </section>
 
   <!-- ========================================================== HOW IT WORKS -->
@@ -444,7 +447,13 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
   your ticks: forced start = placed first if a slot fits,
               untick = benched
 projected final = live ESPN score + Σ remaining lineups
-win chance = Φ( (A − B) / √(Σ SD² of every start left) )</div>
+win chance = Φ( (A − B) / √(Σ SD² of every start left) )
+adds limit = adds per game day × game days in the matchup,
+             rounded down   (e.g. 4/7 × 6 game days = 3)</div>
+    <p>The week list is your league&rsquo;s own matchup schedule: ESPN&rsquo;s map of matchups to weeks when the league was pulled,
+      otherwise the League tab&rsquo;s playoff weeks and weeks per round. Multi-week playoff rounds appear as one entry
+      (Semifinals, Finals). ESPN stores the add limit per game day, so a week with an off-day gets fewer adds and a longer
+      matchup more; ESPN doesn&rsquo;t document the rounding, so rounding down is assumed.</p>
     <p>The assignment is exact (the Hungarian algorithm), so positions are filled properly, not just ten bodies; each start shows
       the slot it fills, and the open-slots row names the open positions. The win chance treats games as independent and is untested
       as a probability.</p>
@@ -456,7 +465,11 @@ win chance = Φ( (A − B) / √(Σ SD² of every start left) )</div>
 score = V(after) − V(before)        for your side
 box-score view = Σ actual FP/G × games left (in) − (out)
 playoff view   = same as score with ROS FP/G × playoff games
-roughly even if |score| < 3% of what you send</div>
+roughly even if |score| < 3% of what you send
+past trades:
+  then = ROS points on the trade date (the in-season update
+         re-run with only games before that day)
+  now  = FP scored since the trade + ROS points from today</div>
     <p>Because free agents are in both rosters&rsquo; baselines, a player you get only counts for what he adds over the waiver
       wire, a 2-for-1&rsquo;s open spot is filled by the best free agent, and nothing is credited for a pickup you could make today
       anyway.</p>
@@ -490,6 +503,6 @@ roughly even if |score| < 3% of what you send</div>
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=8fb2cdbff7"></script>
+<script src="app.js?v=6182ce6a98"></script>
 </body>
 </html>
