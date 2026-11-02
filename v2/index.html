@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=acf62e8e44">
+<link rel="stylesheet" href="app.css?v=c86d626074">
 </head>
 <body>
 <header class="top">
@@ -345,8 +345,12 @@ streak = how many of his team's reports in a row list him Out
 Out, streak 1  = out for that game only (rest, a knock)
 Out, streak 2+ = out until a report clears him
 otherwise ESPN's status (OUT / IR / SUSP / DTD)</div>
-    <p>Colours: <span class="tag inj" style="margin:0">OUT</span> red, <span class="tag doubt" style="margin:0">DOUBT</span> orange,
-      <span class="tag dtd" style="margin:0">Q / DTD</span> yellow, <span class="tag prob" style="margin:0">PROB</span> grey.</p>
+    <p><strong>Health tags are solid:</strong> <span class="tag inj" style="margin:0">OUT</span> (also IR, SUSP)
+      <span class="tag doubt" style="margin:0">DOUBT</span> <span class="tag dtd" style="margin:0">DTD</span>
+      <span class="tag dtd" style="margin:0">Q</span> <span class="tag prob" style="margin:0">PROB</span>.
+      <strong>Everything else is an outline:</strong> <span class="tag b2b" style="margin:0">B2B</span> sits back-to-backs,
+      <span class="tag wvr" style="margin:0">WVR</span> on waivers, <span class="tag rk" style="margin:0">RK</span> rookie,
+      <span class="tag boost" style="margin:0">▲ +2.5 FP</span> injury boost (extra FP per game).</p>
     <h3>How long he is out</h3>
     <div class="formula">return date = your weeks-out (Injury boosts panel), else
               ESPN's expected return date, else
@@ -480,6 +484,6 @@ roughly even if |score| < 3% of what you send</div>
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=70d14b093f"></script>
+<script src="app.js?v=ff5f69785c"></script>
 </body>
 </html>

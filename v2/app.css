@@ -5,6 +5,8 @@
   --good: #1f7a4d; --good-bg: #e3f3ea; --warn: #b4441f; --warn-bg: #fbe9e1;
   --gold: #a87400; --gold-bg: #fbf1d9;
   --red: #c42b2b; --red-bg: #fde4e4; --yel: #8a6d00; --yel-bg: #fff3bf; --org: #b45309; --org-bg: #ffedd5;
+  --h-out: #c42b2b; --h-doubt: #a8361a; --h-dtd: #c2570c; --h-prob: #6b7280; --h-ink: #ffffff;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236d7079' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
   --r: 10px;
@@ -18,6 +20,8 @@
     --good: #4fc287; --good-bg: #16291f; --warn: #f08a62; --warn-bg: #33201a;
     --gold: #e0b44e; --gold-bg: #2e2715;
     --red: #ff6b6b; --red-bg: #3a1a1c; --yel: #f5d04a; --yel-bg: #332b0e; --org: #fb923c; --org-bg: #36210f;
+    --h-out: #e5484d; --h-doubt: #d4553a; --h-dtd: #e2700f; --h-prob: #5b616b; --h-ink: #ffffff;
+    --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238b8e97' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -28,6 +32,8 @@
   --good: #4fc287; --good-bg: #16291f; --warn: #f08a62; --warn-bg: #33201a;
   --gold: #e0b44e; --gold-bg: #2e2715;
   --red: #ff6b6b; --red-bg: #3a1a1c; --yel: #f5d04a; --yel-bg: #332b0e; --org: #fb923c; --org-bg: #36210f;
+  --h-out: #e5484d; --h-doubt: #d4553a; --h-dtd: #e2700f; --h-prob: #5b616b; --h-ink: #ffffff;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238b8e97' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -71,6 +77,8 @@ h3 { font-size: .95rem; margin: 1.2rem 0 .4rem; }
 input[type=text], input[type=search], input[type=number], select {
   background: var(--paper); border: 1px solid var(--rule2); border-radius: 8px; padding: .38rem .55rem; min-height: 2.1rem; }
 input[type=number] { width: 5.2rem; font-family: var(--mono); }
+select { -webkit-appearance: none; appearance: none; padding-right: 2rem; background-image: var(--chev);
+  background-repeat: no-repeat; background-position: right .7rem center; background-size: .7rem auto; cursor: pointer; }
 input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: .3rem; }
 .chip { border: 1px solid var(--rule2); background: var(--paper); border-radius: 999px; padding: .3rem .75rem; font-size: .82rem; cursor: pointer; min-height: 2.1rem; }
@@ -114,12 +122,15 @@ tr.cut td { border-bottom: 2px dashed var(--gold); }
 tr.cutlbl td { background: var(--gold-bg); color: var(--gold); font-size: .72rem; text-align: left; font-weight: 600; padding: .25rem .6rem; }
 tbody tr:hover td { background: var(--band); }
 .tag { display: inline-block; font-size: .64rem; font-weight: 700; letter-spacing: .04em; padding: .05rem .32rem; border-radius: 4px; margin-left: .35rem; vertical-align: 1px; }
-.tag.inj { background: var(--red-bg); color: var(--red); }
-.tag.rk { background: var(--accent-bg); color: var(--accent); }
-.tag.dtd { background: var(--yel-bg); color: var(--yel); }
-.tag.doubt { background: var(--org-bg); color: var(--org); }
-.tag.prob { background: var(--band); color: var(--muted); }
-.tag.boost { background: var(--good-bg); color: var(--good); }
+.tag { border: 1px solid transparent; }
+/* HEALTH tags (official report / ESPN status) are solid; everything else is an outline */
+.tag.inj, .tag.doubt, .tag.dtd, .tag.prob { color: var(--h-ink); border-radius: 999px; padding: .06rem .42rem; }
+.tag.inj { background: var(--h-out); }
+.tag.doubt { background: var(--h-doubt); }
+.tag.dtd { background: var(--h-dtd); }
+.tag.prob { background: var(--h-prob); }
+.tag.rk { background: transparent; color: var(--accent); border-color: var(--accent); }
+.tag.boost { background: transparent; color: var(--good); border-color: var(--good); }
 
 /* ---- player modal ------------------------------------------------------ */
 .scrim { position: fixed; inset: 0; background: rgba(10,10,14,.45); z-index: 50; display: flex; justify-content: flex-end; }
@@ -178,8 +189,8 @@ tr.mine td.fan { color: var(--accent); font-weight: 650; }
 .gch { display: inline-flex; align-items: baseline; gap: .25rem; font-size: .76rem; background: var(--band); border-radius: 6px; padding: .08rem .4rem; margin-right: .25rem; white-space: nowrap; }
 .gch .m { font-variant-numeric: tabular-nums; }
 .gch.b2 { outline: 1px dashed var(--gold); }
-.tag.b2b { background: var(--gold-bg); color: var(--gold); }
-.tag.wvr { background: var(--band); color: var(--muted); }
+.tag.b2b { background: transparent; color: var(--gold); border-color: var(--gold); }
+.tag.wvr { background: transparent; color: var(--muted); border-color: var(--rule2); }
 details.card summary { cursor: pointer; }
 .card.mycard { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 /* ---- trade analyzer ----------------------------------------------------- */

@@ -1064,7 +1064,7 @@ function renderWaivers() {
       (g.bst > 0.05 ? `<span class="m pos-up" title="Injury boost that night">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
     const b2 = r.p.b2b;
     return `<tr data-id="${p.id}"><td class="dim">${i + 1}</td>` +
-      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${r.listed ? "On your list: does not play second nights" : "Sits second nights of back-to-backs"}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.min.toFixed(0)} min</span>` : ""}</td>` +
+      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${r.listed ? "On your list: does not play second nights" : "Sits second nights of back-to-backs"}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.fpg.toFixed(1)} FP</span>` : ""}</td>` +
       `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
