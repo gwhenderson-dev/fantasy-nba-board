@@ -370,7 +370,11 @@ const outNow = (p) => espnOut(p) || longOut(p);
 // games (3+ played) and not just back from the injury report. His games
 // don't count on Waivers / My week, and he can't inherit an absentee's minutes.
 const teamPlayed = (tm) => { const l = META.last_game_day || ""; return (META.sched[tm] || []).filter((g) => g[0] <= l).length; };
-const benched = (p) => !!p && !isAbsent(p) && !p.fresh && teamPlayed(p.tm) >= 3 && !(OFF.cleared && OFF.cleared[p.id]);
+// "Healthy" means BOTH sources agree: not on the official report at all and
+// ESPN ACTIVE — a returning player (Claxton: out all season, Doubtful
+// tonight) hasn't played either, but that is injury, not the coach's choice.
+const benched = (p) => !!p && !isAbsent(p) && !off(p) && (!p.inj || p.inj === "ACTIVE") && !p.fresh &&
+  teamPlayed(p.tm) >= 3 && !(OFF.cleared && OFF.cleared[p.id]);
 const benchTip = (p) => `Not in the rotation: no minutes in any of ${p.tm}'s last ${Math.min(5, teamPlayed(p.tm))} games while healthy` +
   `${p.gp ? ` (${p.gp} games played this season)` : " (hasn't played this season)"}.\nHis games don't count here until he plays.`;
 const outOn = (p, d) => { const o = off(p); return !!o && o[0] === "Out" && o[1] === d; };
