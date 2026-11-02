@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=6c7167b1e6">
+<link rel="stylesheet" href="app.css?v=18e8b835a6">
 </head>
 <body>
 <header class="top">
@@ -168,7 +168,7 @@
       </div></div>
       <span class="count" id="wv-count"></span>
     </div>
-    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><span class="tag boost">▲ +1.9 FP · Holiday out</span> injury boost: extra FP/G while the named teammates are out (hover for the working)</span><span class="lg-i"><span class="tag dnp">DNP</span> healthy but out of the rotation (no minutes in his team&rsquo;s last 5 games): his games don&rsquo;t count</span><span class="lg-i"><span class="gch">vs BOS <span class="m pos-up">+2.1</span></span> matchup adjustment (green easier, red tougher)</span><span class="lg-i"><span class="gch">@ MIA <span class="m pos-up">▲1.2</span></span> injury boost that night</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span></div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><span class="tag boost">▲ +1.9 FP · Holiday out</span> injury boost: extra FP/G while the named teammates are out (hover for the working)</span><span class="lg-i"><span class="tag dnp">DNP</span> healthy but out of the rotation (no minutes in his team&rsquo;s last 5 games): his games don&rsquo;t count</span><span class="lg-i"><span class="gch">vs BOS <span class="m pos-up">+2.1</span></span> matchup adjustment (green easier, red tougher)</span><span class="lg-i"><span class="gch">@ MIA <span class="m pos-up">▲1.2</span></span> injury boost that night</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span><span class="lg-i"><span class="gch st">vs LAL</span> listed doubtful / questionable that night: counted at the chance he plays (doubtful 1%, questionable ~50%)</span></div>
     <div class="tablewrap"><table id="wv-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="wv-note"></p>
     <div id="wv-boosts"></div>
@@ -372,6 +372,12 @@ otherwise ESPN's status (OUT / IR / SUSP / DTD)</div>
       When the official report lists a player, it decides: Out on two reports in a row (or Out once with an ESPN return date after that
       game) is a multi-game absence; Out once with no later date is that game only. Rest and personal days mean back next game. A name on
       the report we can&rsquo;t match never clears anyone on that team with the same surname.</p>
+    <p><strong>Doubtful, questionable, probable</strong> (src/backtest/status_play.py, official game-day reports 2023-26): players listed
+      doubtful played <strong>1%</strong> of the time (784 listings), questionable <strong>50%</strong> (41% when coming back from a layoff;
+      5,082), probable <strong>93%</strong> (83%; 1,882). That game counts at that chance on Waivers and My week (a doubtful game is treated
+      as not played unless you tick it). <strong>Back from a layoff</strong> (5+ team games missed): his first game back averages
+      <strong>83%</strong> of his usual minutes and the second <strong>92%</strong>, then normal (1,527 returns, 2019-26), so those two games
+      are scaled down.</p>
     <h3>How long he is out</h3>
     <div class="formula">return date = your weeks-out (Injury boosts panel), else
               ESPN's expected return date, else
@@ -515,6 +521,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=ba5c076919"></script>
+<script src="app.js?v=5b3c06eafc"></script>
 </body>
 </html>

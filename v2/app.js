@@ -375,6 +375,30 @@ const teamPlayed = (tm) => { const l = META.last_game_day || ""; return (META.sc
 // tonight) hasn't played either, but that is injury, not the coach's choice.
 const benched = (p) => !!p && !isAbsent(p) && !off(p) && (!p.inj || p.inj === "ACTIVE") && !p.fresh &&
   teamPlayed(p.tm) >= 3 && !(OFF.cleared && OFF.cleared[p.id]);
+// Game-day status -> chance he plays THAT game, measured on the official
+// 5 PM reports 2023-26 (src/backtest/status_play.py): Doubtful 1%,
+// Questionable 50% (41% coming back from a layoff), Probable 93% (83%).
+const returning = (p) => !!p && !p.fresh && teamPlayed(p.tm) >= 3;
+function statusPlay(p, d) {
+  const o = off(p), S = META.status_play;
+  if (!o || !S || o[1] !== d || !S.play[o[0]]) return 1;
+  return S.play[o[0]][returning(p) ? 1 : 0];
+}
+const statusPlayTip = (p, d) => {
+  const o = off(p), sp = statusPlay(p, d);
+  return sp < 1 ? `${o[0]} on the official report: players listed ${o[0].toLowerCase()} play ${Math.round(sp * 100)}% of the time` +
+    `${returning(p) ? " (coming back from a layoff)" : ""}, so this game counts ${Math.round(sp * 100)}%` : "";
+};
+// First two games back from 5+ missed games: 83% / 92% of his usual minutes
+// (1,527 returns 2019-26). Returns date -> minutes factor for his upcoming games.
+function rampFor(p) {
+  const S = META.status_play;
+  if (!S || !returning(p)) return () => 1;
+  const last = META.last_game_day || "", back = isAbsent(p) ? absWindow(p).ret : "";
+  const up = (META.sched[p.tm] || []).map((g) => g[0])
+    .filter((d) => d > last && d >= back && !outOn(p, d) && statusPlay(p, d) >= 0.5);
+  return (d) => { const i = up.indexOf(d); return i >= 0 && i < S.ramp.length ? S.ramp[i] : 1; };
+}
 const benchTip = (p) => `Not in the rotation: no minutes in any of ${p.tm}'s last ${Math.min(5, teamPlayed(p.tm))} games while healthy` +
   `${p.gp ? ` (${p.gp} games played this season)` : " (hasn't played this season)"}.\nHis games don't count here until he plays.`;
 const outOn = (p, d) => { const o = off(p); return !!o && o[0] === "Out" && o[1] === d; };
@@ -1118,9 +1142,11 @@ function streamRows() {
     const listed = own.has(normName(p.n));
     const psit = listed ? 1 : p.b2b ? p.b2b[2] : B.base;
     let proj = 0, ceil = null;
+    const ramp = rampFor(p);
     const games = sch.map(([d, opp, home]) => {
       const second = teamDays.has(addDays(d, -1));
-      const play = second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1;
+      const sp = statusPlay(p, d), rf = ramp(d);
+      const play = (second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1) * sp;
       const mf = META.mf[opp];
       let adj = 0, tip = "";
       if (mf) {
@@ -1134,10 +1160,10 @@ function streamRows() {
           `   FG% ${opp} allows: ${((mf.fgp || 1) * 100).toFixed(0)}% of league\n` +
           `   ${home ? "home (+0.5)" : "away (−0.5)"} · ${mf.n} ${opp} games so far`;
       }
-      const bst = boostFP(p, d);
-      proj += play * (fp + adj + bst);
-      if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, fp + adj + bst + CZ * sd);
-      return {d, opp, home, second, play, adj, bst, tip, val: play * (fp + adj + bst)};
+      const bst = boostFP(p, d), v = (fp + bst) * rf + adj;
+      proj += play * v;
+      if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, v + CZ * sd * rf);
+      return {d, opp, home, second, play, sp, rf, adj, bst, tip, val: play * v};
     });
     const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
     const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
@@ -1183,9 +1209,11 @@ function renderWaivers() {
     const chipTip = (g) => [`${niceDay(g.d)} ${g.home ? "vs" : "@"} ${g.opp} — projected ${g.val.toFixed(1)} FP`,
       g.tip,
       g.bst > 0.05 ? `Injury boost that night: +${g.bst.toFixed(1)} FP (${r.boost ? r.boost.names.join(", ") : "teammate"} out)` : "",
+      g.sp < 1 ? statusPlayTip(r.p, g.d) : "",
+      g.rf < 1 ? `Back from a layoff: about ${Math.round(g.rf * 100)}% of his usual minutes in this game (first two games back)` : "",
       g.second ? `2nd night of a back-to-back: ${Math.round(r.psit * 100)}% chance he sits` + (r.p.b2b ? ` (sat ${r.p.b2b[0]} of ${r.p.b2b[1]} second nights)` : "") +
-        `, so this game counts ${Math.round(g.play * 100)}%` : ""].filter(Boolean).join("\n");
-    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}" title="${esc(chipTip(g))}">` +
+        `, so this game counts ${Math.round(g.play / (g.sp || 1) * 100)}%` : ""].filter(Boolean).join("\n");
+    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}${g.sp < 0.6 ? " st" : ""}" title="${esc(chipTip(g))}">` +
       `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}` +
       `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span>` +
       (g.bst > 0.05 ? `<span class="m pos-up">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
@@ -1578,19 +1606,21 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     const sd = p ? (p.sd || 0) * scale : 0;
     const teamDays = new Set(p ? (META.sched[p.tm] || []).map((g) => g[0]) : []);
     const psit = p && p.b2b ? p.b2b[2] : B.base;
+    const ramp = p ? rampFor(p) : () => 1;
     days.forEach((d) => {
       const g = p ? (META.sched[p.tm] || []).find((x) => x[0] === d) : null;
       let val = 0, avail = false;
-      if (g && plays && !(hurt && !(id in marks) && ret && d < ret) && !(outOn(p, d) && !(id in marks))) {
+      const sp = p ? statusPlay(p, d) : 1;
+      if (g && plays && !(hurt && !(id in marks) && ret && d < ret) && !(outOn(p, d) && !(id in marks)) && !(sp < 0.05 && !(id in marks))) {
         const second = teamDays.has(addDays(d, -1));
-        const play = second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1;
+        const play = (second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1) * (id in marks ? 1 : sp);
         const mf = META.mf[g[1]];
         let adj = 0;
         if (mf) {
           const c = posCls(p.pos), b = META.mfb;
           adj = (b.pace * (mf.pace - 1) + b.dvp * ((mf[c] || 1) - 1) + b.fgp * ((mf.fgp || 1) - 1) + b.home * (g[2] ? 0.5 : -0.5)) * scale;
         }
-        val = Math.max(0, play * (fp + adj + boostFP(p, d)));
+        val = Math.max(0, play * ((fp + boostFP(p, d)) * ramp(d) + adj));
         avail = true;
       }
       r.days.push({d, g, avail, val, sd2: sd * sd, st: false});
