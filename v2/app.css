@@ -248,3 +248,21 @@ textarea { font: inherit; background: var(--paper); color: var(--ink); border: 1
   h1 { font-size: 1.25rem; }
 }
 td.dg .slt { display: block; font-size: .6rem; font-weight: 650; letter-spacing: .02em; color: var(--muted); margin-top: .1rem; line-height: 1; }
+
+/* ---- per-board key -------------------------------------------------------- */
+.legend { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; align-items: center; font-size: .76rem; color: var(--muted);
+  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r); padding: .45rem .7rem; margin: 0 0 .7rem; }
+.legend .lg-i { display: inline-flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.legend .tag { margin-left: 0; }
+.legend .gch { margin-right: 0; }
+.lgbox { display: inline-block; width: .9rem; height: .9rem; border-radius: 3px; border: 1.5px solid var(--rule2); background: var(--paper); vertical-align: -2px; }
+.lgbox.on { background: var(--good); border-color: var(--good); }
+.lgbox.man { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lgbox.warn { outline: 2px solid var(--red); outline-offset: 1px; background: var(--red); border-color: var(--red); }
+.legend .out-x { color: var(--warn); }
+.legend .slt-s { font-size: .62rem; letter-spacing: .02em; }
+.lgrow { background: var(--accent-bg); color: var(--ink); padding: .05rem .35rem; border-radius: 4px; font-weight: 600; }
+.lgbar { display: inline-flex; align-items: center; gap: 2px; height: 16px; }
+.lgbar i { display: inline-block; width: 4px; }
+.lgbar i.up { height: 7px; background: var(--warn); align-self: flex-start; margin-top: 1px; }
+.lgbar i.dn { height: 6px; background: var(--good); align-self: flex-end; margin-bottom: 1px; }

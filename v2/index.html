@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=c86d626074">
+<link rel="stylesheet" href="app.css?v=be493df1f4">
 </head>
 <body>
 <header class="top">
@@ -110,6 +110,7 @@
       <div class="ctl"><label for="pj-q">Search</label><input id="pj-q" type="search" placeholder="player or team" autocomplete="off"></div>
       <span class="count" id="pj-count"></span>
     </div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag rk">RK</span> rookie</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="dim"><b>142</b></span> greyed rank = past the waiver line</span></div>
     <div class="tablewrap"><table id="pj-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="pj-note"></p>
   </section>
@@ -128,6 +129,7 @@
       <div class="ctl" id="is-teamctl"><label for="is-team">From team</label><select id="is-team"></select></div>
       <span class="count" id="is-count"></span>
     </div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="pos-up"><b>+11.5</b></span> buy-low gap: real level above the box score</span><span class="lg-i"><span class="pos-up"><b>+1.9 thru 12-01</b></span> injury boost per game, and until when</span><span class="lg-i"><span class="lgbar"><i class="up"></i><i class="dn"></i><i class="up"></i></span> luck by game (up orange = hot, down green = cold)</span></div>
     <div id="is-body"></div>
     <p class="note" id="is-note"></p>
     <div id="is-boosts"></div>
@@ -165,6 +167,7 @@
       </div></div>
       <span class="count" id="wv-count"></span>
     </div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><span class="tag boost">▲ +1.9 FP</span> injury boost: extra FP/G while a teammate is out (hover for why)</span><span class="lg-i"><span class="gch">vs BOS <span class="m pos-up">+2.1</span></span> matchup adjustment (green easier, red tougher)</span><span class="lg-i"><span class="gch">@ MIA <span class="m pos-up">▲1.2</span></span> injury boost that night</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span></div>
     <div class="tablewrap"><table id="wv-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="wv-note"></p>
     <div id="wv-boosts"></div>
@@ -189,6 +192,7 @@
           <button class="btn" id="rc-next" aria-label="Next day">&rsaquo;</button></div></div>
       <span class="count" id="rc-count"></span>
     </div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="lgrow">Name</span> your player (fantasy column = who owns him, FA = free agent)</span></div>
     <div class="games" id="rc-games"></div>
     <div id="rc-box"></div>
     <h2 id="rc-sthead">The night in fantasy</h2>
@@ -203,12 +207,14 @@
       <span class="count" id="wk-count"></span>
     </div>
     <div class="stand" id="wk-cards"></div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="lgbox on"></span> starts (in the best lineup)</span><span class="lg-i"><span class="lgbox"></span> bench: no slot left that night</span><span class="lg-i"><span class="lgbox on man"></span> your choice</span><span class="lg-i"><span class="lgbox on warn"></span> you started him but no slot fits</span><span class="lg-i"><b class="out-x">×</b> not playing</span><span class="lg-i"><b class="slt-s">PG</b> slot he fills</span><span class="lg-i"><b>10/10</b> starters / slots that night</span><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span></div>
     <div id="wk-detail"></div>
     <p class="note" id="wk-note"></p>
   </section>
   <section class="panel" id="tab-trade" hidden>
     <h1>Trade analyzer</h1>
     <p class="lede" id="tr-lede"></p>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-up"><b>+250</b></span> / <span class="pos-dn"><b>&minus;306</b></span> rest-of-season points gained / lost</span><span class="lg-i"><span class="dim">was below the waiver wire</span> = costs nothing, a free agent is as good</span></div>
     <div id="tr-score"></div>
     <div class="grid2" style="margin-top:1rem">
       <div class="card">
