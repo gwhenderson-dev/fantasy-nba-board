@@ -826,7 +826,12 @@ function renderRecap() {
     lines[g[0]] = gameLines(g[0]);
     Object.values(lines[g[0]]).forEach((rows) => rows.forEach((r) => { if (r.fp != null) all.push(r); }));
   });
-  $("rc-count").textContent = `${games.length} game${games.length === 1 ? "" : "s"} · ${all.length} players`;
+  // games scheduled that day but not final when the site was built
+  const sched = new Set();
+  Object.entries(META.sched).forEach(([t, gs]) => gs.forEach((g) => { if (g[0] === RC.day) sched.add([t, g[1]].sort().join("-")); }));
+  const missing = Math.max(0, sched.size - games.length);
+  $("rc-count").innerHTML = `${games.length} game${games.length === 1 ? "" : "s"} · ${all.length} players` +
+    (missing ? ` · <span class="pos-dn">${missing} more not final when the site was built (they arrive with the next build)</span>` : "");
   $("rc-lede").innerHTML = `Every game of the night, scored under <strong>${esc(L.name)}</strong>. Click a game for both box scores. ` +
     `<strong>Luck</strong> = fantasy points minus luck-adjusted points (his own per-minute rates at the minutes he played, plus his real shots and assists): ` +
     `<span class="pos-dn">orange</span> means the box score flatters him, <span class="pos-up">green</span> means he played better than it looks.`;
