@@ -2329,7 +2329,7 @@ function showTab(t) {
   if (t === "insea") renderInseason();
   if (t === "week") renderWeek();
   if (t === "trade") renderTrade();
-  requestAnimationFrame(() => { markSticky(); fitLedes(); });   // a panel just shown has real heights now
+  setTimeout(() => { markSticky(); fitLedes(); });   // a panel just shown has real heights now
 }
 function renderAll() {
   renderProj();
@@ -2385,9 +2385,10 @@ function initPhone() {
   nav.addEventListener("scroll", edge, {passive: true});
   let q = 0;
   const run = () => { q = 0; markSticky(); fitLedes(); edge(); };
-  new MutationObserver(() => { if (!q) q = requestAnimationFrame(run); })
+  // a timer, not requestAnimationFrame: frames pause in a hidden tab and the marks would never land
+  new MutationObserver(() => { if (!q) q = setTimeout(run); })
     .observe(document.querySelector("main"), {childList: true, subtree: true});
-  window.addEventListener("resize", () => { if (!q) q = requestAnimationFrame(run); });
+  window.addEventListener("resize", () => { if (!q) q = setTimeout(run); });
   run();
 }
 
