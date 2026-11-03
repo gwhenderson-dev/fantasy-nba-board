@@ -2320,6 +2320,8 @@ const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"
 function showTab(t) {
   if (!TABS.includes(t)) t = "proj";
   document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+  const nav = document.querySelector(".tabs"), on = nav.querySelector('[aria-selected="true"]');
+  if (on) nav.scrollLeft += on.getBoundingClientRect().left - nav.getBoundingClientRect().left - (nav.clientWidth - on.offsetWidth) / 2;   // phones: active tab in view
   TABS.forEach((k) => { $("tab-" + k).hidden = k !== t; });
   if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
   if (t === "recap") renderRecap();
@@ -2327,6 +2329,7 @@ function showTab(t) {
   if (t === "insea") renderInseason();
   if (t === "week") renderWeek();
   if (t === "trade") renderTrade();
+  requestAnimationFrame(() => { markSticky(); fitLedes(); });   // a panel just shown has real heights now
 }
 function renderAll() {
   renderProj();
@@ -2335,6 +2338,57 @@ function renderAll() {
   if (!$("tab-insea").hidden) renderInseason();
   if (!$("tab-week").hidden) renderWeek();
   if (!$("tab-trade").hidden) renderTrade();
+}
+
+// ============================================================ PHONES
+// Wide tables keep the player column on screen while they scroll sideways
+// (the column holding the first row's player name gets .stk); long intros
+// clamp to three lines on phones with a More/Less link; each key folds into
+// a "Key" line on phones. Re-applied after every render via one observer.
+function markSticky() {
+  document.querySelectorAll(".tablewrap table").forEach((tb) => {
+    const row = tb.tBodies[0] && [...tb.tBodies[0].rows].find((r) => r.querySelector(".name"));
+    if (!row) return;
+    const i = [...row.cells].findIndex((c) => c.classList.contains("name") || c.querySelector(".name"));
+    if (i < 0) return;
+    for (const r of tb.rows) {
+      if (r.cells.length !== row.cells.length) continue;   // section / total rows span differently
+      r.cells[i].classList.add("stk");
+    }
+  });
+}
+function fitLedes() {
+  document.querySelectorAll(".lede").forEach((el) => {
+    let b = el.nextElementSibling;
+    if (!b || !b.classList.contains("ledemore")) {
+      b = document.createElement("button");
+      b.type = "button"; b.className = "ledemore";
+      b.addEventListener("click", () => { el.classList.toggle("open"); fitLedes(); });
+      el.after(b);
+    }
+    const open = el.classList.contains("open");
+    const show = open || el.scrollHeight > el.clientHeight + 2;
+    if (b.hidden === show) b.hidden = !show;
+    const txt = open ? "Less" : "More";
+    if (b.textContent !== txt) b.textContent = txt;
+  });
+}
+function initPhone() {
+  document.querySelectorAll(".legend").forEach((lg) => {
+    const h = document.createElement("button");
+    h.type = "button"; h.className = "lg-head"; h.textContent = "Key ▸";
+    h.addEventListener("click", () => { h.textContent = lg.classList.toggle("open") ? "Key ▾" : "Key ▸"; });
+    lg.prepend(h);
+  });
+  const nav = document.querySelector(".tabs");
+  const edge = () => nav.classList.toggle("end", nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 4);
+  nav.addEventListener("scroll", edge, {passive: true});
+  let q = 0;
+  const run = () => { q = 0; markSticky(); fitLedes(); edge(); };
+  new MutationObserver(() => { if (!q) q = requestAnimationFrame(run); })
+    .observe(document.querySelector("main"), {childList: true, subtree: true});
+  window.addEventListener("resize", () => { if (!q) q = requestAnimationFrame(run); });
+  run();
 }
 
 // ============================================================ HOVER BOXES
@@ -2500,6 +2554,7 @@ fetchData(false)
     bindTrade();
     bindRefresh();
     initTips();
+    initPhone();
     // console hooks used to verify the math (harmless for visitors)
     window.FNBA_DEBUG = {rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       previewTrades: (list) => { PT.key = L.id; PT.trades = list; PT.p = Promise.resolve(list); renderPastTrades(); }};
