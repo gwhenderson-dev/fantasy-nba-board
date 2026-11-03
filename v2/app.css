@@ -411,3 +411,15 @@ select { max-width: 100%; }
   /* my week: your matchup first */
   #wk-cards .mcard.minem { order: -1; }
 }
+
+/* ---- waivers: streaming planner ------------------------------------------- */
+.sp-card { margin: 0 0 1.1rem; }
+.sp-card > summary { cursor: pointer; }
+.sp-steps { margin: .5rem 0; padding-left: 1.3rem; font-size: .9rem; }
+.sp-steps li { margin: .35rem 0; }
+.sp-steps .name { font-weight: 620; cursor: pointer; }
+.sp-steps .name:hover, .sp-card .note .name:hover { color: var(--accent); }
+.sp-card .note .name { cursor: pointer; }
+table.sp-days td, table.sp-days th { text-align: center; }
+table.sp-days td.l { text-align: left; }
+.sp-drops { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .25rem .8rem; font-size: .85rem; margin: .4rem 0; }
