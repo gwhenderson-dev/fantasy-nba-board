@@ -1,0 +1,110 @@
+# Official NBA injury report -> v2/data/injuries.json, every 15 minutes from
+# 9 am to 1 am ET.
+#
+# WHY HERE AND WHY A LOOP (2026-11-03): GitHub's cron is unreliable — the old
+# hourly job in the private repo ran 2 of its 13 slots a day, hours late. This
+# repo is public, so Actions minutes are free: one run loops for ~5.5 hours,
+# then re-dispatches itself (workflow_dispatch is the one event GITHUB_TOKEN
+# may trigger), so the chain never depends on cron. The crons below are only a
+# backstop that restarts the chain each morning or after a failure; the
+# concurrency group keeps it to one running loop (+ at most one waiting run).
+#
+# The code lives in the PRIVATE repo gwhenderson-dev/fantasy-nba
+# (src/ingest/injury_report.py), read with the read-only deploy key in the
+# CODE_DEPLOY_KEY secret. Edit the logic there; this file only schedules it.
+name: Injury report loop
+
+on:
+  schedule:
+    - cron: "7 13-23 * * *"
+    - cron: "7 0-4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: injuries
+  cancel-in-progress: false
+
+permissions:
+  contents: write     # push injuries.json
+  actions: write      # re-dispatch this workflow
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    env:
+      HAS_KEY: ${{ secrets.CODE_DEPLOY_KEY != '' }}
+      TZ: America/New_York
+    steps:
+      - name: Game-day window (9 am - 1 am ET)?
+        id: win
+        run: |
+          h=$(date +%-H)
+          if [ "$HAS_KEY" != "true" ]; then echo "CODE_DEPLOY_KEY not set yet - nothing to do"
+          elif [ "$h" -ge 9 ] || [ "$h" -lt 1 ]; then echo "on=1" >> "$GITHUB_OUTPUT"; echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+          else echo "outside the window ($h:00 ET)"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.win.outputs.on
+        with:
+          path: site
+
+      - uses: actions/checkout@v4
+        if: steps.win.outputs.on
+        with:
+          repository: gwhenderson-dev/fantasy-nba
+          ssh-key: ${{ secrets.CODE_DEPLOY_KEY }}
+          path: code
+
+      - uses: actions/setup-python@v5
+        if: steps.win.outputs.on
+        with:
+          python-version: "3.14"
+
+      - if: steps.win.outputs.on
+        run: pip install requests pandas pdfplumber pyyaml
+
+      # injury-status rules; a failure stops before anything is published
+      - name: Injury report tests
+        id: tests
+        if: steps.win.outputs.on
+        working-directory: code
+        run: python -m tests.test_injury_report
+
+      - name: Refresh every 15 minutes
+        if: steps.win.outputs.on
+        run: |
+          git -C site config user.name "github-actions[bot]"
+          git -C site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          in_window() { h=$(date +%-H); [ "$h" -ge 9 ] || [ "$h" -lt 1 ]; }
+          end=$((SECONDS + 330 * 60))
+          while :; do
+            # start each round from the published site (drops any push that failed last round)
+            git -C site fetch -q origin HEAD && git -C site reset -q --hard FETCH_HEAD || true
+            if [ -f site/v2/data/players.json ]; then
+              (cd code && python -m src.ingest.injury_report \
+                  --players ../site/v2/data/players.json --out ../site/v2/data/injuries.json) \
+                || echo "::warning::injury report fetch failed - trying again next round"
+              git -C site add v2/data/injuries.json
+              if ! git -C site diff --cached --quiet; then
+                git -C site commit -q -m "Injury report $(date '+%F %H:%M') ET"
+                # fails only if the daily board publish pushed meanwhile; next round redoes it
+                git -C site push -q || echo "::warning::push failed - trying again next round"
+              fi
+            fi
+            [ $((SECONDS + 15 * 60)) -lt $end ] && in_window || break
+            sleep 900
+          done
+
+      # only after a long healthy run: a run that broke early must not respawn
+      # itself every minute (the cron backstop retries within the hour)
+      - name: Hand over to the next run
+        if: always() && steps.tests.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          h=$(date +%-H)
+          if [ $(( $(date +%s) - T0 )) -lt 3600 ]; then echo "ran under an hour - not respawning"
+          elif [ "$h" -ge 9 ] || [ "$h" -lt 1 ]; then
+            gh workflow run injuries.yml --repo "$GITHUB_REPOSITORY" && echo "next run dispatched"
+          else echo "window closed - the morning cron restarts the chain"; fi
