@@ -909,6 +909,7 @@ function gameLines(gid) {
     } else if (f && dnp == null) {
       row.min = f[0]; row.box = f.slice(1, 1 + STATS.length); row.fg3a = f[1 + STATS.length];
       row.fp = fpg(row.box, multi(row.box));
+      if (RECAP.lv && RECAP.lv[gid]) row.adj = adjLine(BYID[id], row.min, row.box);
     }
     if (row.fp != null && row.adj != null) row.lk = row.fp - row.adj;
     (out[tm] = out[tm] || []).push(row);
@@ -916,6 +917,104 @@ function gameLines(gid) {
   return out;
 }
 const lkCls = (v, t = 3) => (v == null ? "" : v >= t ? "pos-dn" : v <= -t ? "pos-up" : "");
+// luck-adjusted FP for one box line, the build's adj_line: his frozen per-minute
+// rates at the minutes he played, his real shot attempts (at his own make rates)
+// and his real assists. p.lp = [mpg, c, c3, per-minute rates in STATS order, dd, td, qd].
+function adjLine(p, M, box) {
+  const q = p && p.lp;
+  if (!q || !(q[0] > 0) || M == null) return null;
+  const [mpg, c, c3] = q, bp = q.slice(3 + STATS.length);
+  const s = q.slice(3, 3 + STATS.length).map((x) => x * M);
+  const dA = box[SI.FGA] - s[SI.FGA];
+  s[SI.FGA] = box[SI.FGA]; s[SI.FGM] += c * dA; s[SI.FG3M] += c3 * dA; s[SI.PTS] += (2 * c + c3) * dA;
+  s[SI.AST] = box[SI.AST];
+  return fpg(s, bp.map((b) => b * M / mpg));
+}
+
+// ---- LIVE NIGHTS: a game shows up here as soon as ESPN calls it final, not at
+// the next site build (GitHub runs scheduled builds hours late). Same ESPN site
+// API as src/ingest/espn_box.py (CORS open); results go into RECAP in the
+// recap.json shapes, box lines as fallback lines (RECAP.lv marks them live, so
+// they get the luck split from p.lp). A day is re-checked at most every 5 min.
+const ESPN_SITE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/";
+const ETRI = {GS: "GSW", NY: "NYK", SA: "SAS", NO: "NOP", UTAH: "UTA", WSH: "WAS"};
+let LIVE_AT = {};
+async function espnSite(path, q) {
+  // ESPN's CDN can cache an empty body for one exact URL -> vary the query string
+  for (const extra of ["", "&lang=en&region=us", "&region=us"]) {
+    try {
+      const r = await fetch(ESPN_SITE + path + "?" + q + extra, {cache: "no-store"});
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (j && Object.keys(j).length) return j;
+    } catch (e) { /* try the next variant */ }
+  }
+  return null;
+}
+function liveDays() {
+  const today = todayET(), lo = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+  const sched = {}, have = {};
+  Object.entries(META.sched).forEach(([t, gs]) => gs.forEach((g) => {
+    if (g[0] <= today && g[0] >= lo) (sched[g[0]] = sched[g[0]] || new Set()).add([t, g[1]].sort().join("-"));
+  }));
+  RECAP.games.forEach((g) => { have[g[1]] = (have[g[1]] || 0) + 1; });
+  return Object.keys(sched).filter((d) => sched[d].size > (have[d] || 0) && !(Date.now() - (LIVE_AT[d] || 0) < 3e5));
+}
+async function liveDay(d) {
+  LIVE_AT[d] = Date.now();
+  const sb = await espnSite("scoreboard", "dates=" + d.replace(/-/g, ""));
+  if (!sb) return 0;
+  const known = new Set(RECAP.games.map((g) => g[0]));
+  let added = 0;
+  for (const e of sb.events || []) {
+    const gid = +e.id, st = e.status.type, c = e.competitions[0];
+    if (!st.completed || known.has(gid)) continue;
+    const side = {};
+    c.competitors.forEach((t) => { side[t.homeAway] = t; });
+    if (!side.home || !side.away) continue;
+    const sm = await espnSite("summary", "event=" + gid);
+    const teams = (sm && sm.boxscore && sm.boxscore.players) || [];
+    if (!teams.length) continue;                      // box not posted yet: next check
+    const T = (t) => ETRI[t.team.abbreviation] || t.team.abbreviation;
+    const q = (t) => (t.linescores || []).map((x) => Math.round(x.value || 0)).join(",");
+    RECAP.games.push([gid, d, T(side.away), T(side.home), +side.away.score, +side.home.score,
+                      q(side.away), q(side.home), st.shortDetail || st.name, +(e.status.period || 0)]);
+    RECAP.logos[T(side.away)] = side.away.team.logo; RECAP.logos[T(side.home)] = side.home.team.logo;
+    const box = RECAP.box[gid] = [];
+    (RECAP.lv = RECAP.lv || {})[gid] = 1;
+    teams.forEach((tm) => {
+      const abb = T(tm);
+      (tm.statistics || []).forEach((blk) => (blk.athletes || []).forEach((a) => {
+        const s = {}; (blk.names || []).forEach((n, i) => { s[n] = (a.stats || [])[i]; });
+        const pid = +a.athlete.id, dnp = !!a.didNotPlay || !(a.stats && a.stats.length);
+        const n = (k) => (/^[+-]?\d+$/.test(s[k] || "") ? parseInt(s[k], 10) : null);
+        const sp = (k) => String(s[k] || "0-0").split("-").map((x) => parseInt(x, 10) || 0);
+        box.push([pid, abb, a.starter ? 1 : 0, dnp ? (a.reason || null) : null, n("+/-")]);
+        if (!BYID[pid]) RECAP.nm[pid] = a.athlete.displayName;
+        if (dnp) return;
+        const [fgm, fga] = sp("FG"), [f3m, f3a] = sp("3PT"), [ftm, fta] = sp("FT");
+        const v = {PTS: n("PTS"), FGM: fgm, FGA: fga, FTM: ftm, FTA: fta, FG3M: f3m, REB: n("REB"),
+                   OREB: n("OREB"), AST: n("AST"), STL: n("STL"), BLK: n("BLK"), TOV: n("TO")};
+        RECAP.fb[gid + ":" + pid] = [n("MIN")].concat(STATS.map((k) => v[k] || 0), [f3a]);
+      }));
+    });
+    added++;
+  }
+  return added;
+}
+let LIVE_P = null;
+function liveRecap() {
+  const days = liveDays();
+  if (!days.length || LIVE_P) return;
+  LIVE_P = Promise.all(days.map(liveDay)).then((n) => {
+    LIVE_P = null;
+    if (n.some((x) => x) && !$("tab-recap").hidden) {
+      const latest = RECAP.games.map((g) => g[1]).sort().pop();
+      if (RC.day && RC.day < latest && RC.auto) RC.day = latest;   // follow tonight unless a day was picked
+      renderRecap();
+    }
+  }).catch(() => { LIVE_P = null; });
+}
 
 function renderRecap() {
   if (!RECAP || !GAMES) {
@@ -926,9 +1025,10 @@ function renderRecap() {
     });
     return;
   }
+  liveRecap();
   const days = [...new Set(RECAP.games.map((g) => g[1]))].sort().reverse();
   if (!days.length) { $("rc-games").innerHTML = '<p class="note">No finished games yet.</p>'; return; }
-  if (!RC.day || !days.includes(RC.day)) RC.day = days[0];
+  if (!RC.day || !days.includes(RC.day)) { RC.day = days[0]; RC.auto = true; }
   const di = days.indexOf(RC.day);
   const dlabel = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"});
   // two linked day pickers (top of the page and above the games)
@@ -951,7 +1051,8 @@ function renderRecap() {
   Object.entries(META.sched).forEach(([t, gs]) => gs.forEach((g) => { if (g[0] === RC.day) sched.add([t, g[1]].sort().join("-")); }));
   const missing = Math.max(0, sched.size - games.length);
   $("rc-count").innerHTML = `${games.length} game${games.length === 1 ? "" : "s"} · ${all.length} players` +
-    (missing ? ` · <span class="pos-dn">${missing} more not final when the site was built (they arrive with the next build)</span>` : "");
+    (missing ? ` · <span class="pos-dn">${missing} more not final yet (each one appears here once ESPN calls it final; reopen Recap or press Refresh)</span>` : "") +
+    (games.some((g) => RECAP.lv && RECAP.lv[g[0]]) ? ` · <span class="dim" title="Fetched from ESPN in your browser; the next site build replaces it with the full data">live from ESPN</span>` : "");
   $("rc-lede").innerHTML = `Every game of the night, scored under <strong>${esc(L.name)}</strong>. Click a game for both box scores. ` +
     `<strong>Luck</strong> = fantasy points minus luck-adjusted points (his own per-minute rates at the minutes he played, plus his real shots and assists): ` +
     `<span class="pos-dn">orange</span> means the box score flatters him, <span class="pos-up">green</span> means he played better than it looks.`;
@@ -1074,11 +1175,11 @@ function renderRecap() {
       (showFan ? " Fantasy owners are today's rosters, not the rosters on the night." : "") + "</p></div>";
 }
 function bindRecap() {
-  document.querySelectorAll(".rc-daysel").forEach((el) => el.addEventListener("change", (e) => { RC.day = e.target.value; RC.g = null; renderRecap(); }));
+  document.querySelectorAll(".rc-daysel").forEach((el) => el.addEventListener("change", (e) => { RC.day = e.target.value; RC.g = null; RC.auto = false; renderRecap(); }));
   const step = (d) => {
     const days = [...new Set(RECAP.games.map((g) => g[1]))].sort().reverse();
     const i = days.indexOf(RC.day) + d;
-    if (i >= 0 && i < days.length) { RC.day = days[i]; RC.g = null; renderRecap(); }
+    if (i >= 0 && i < days.length) { RC.day = days[i]; RC.g = null; RC.auto = i === 0; renderRecap(); }
   };
   document.querySelectorAll(".rc-prev").forEach((b) => b.addEventListener("click", () => step(1)));
   document.querySelectorAll(".rc-next").forEach((b) => b.addEventListener("click", () => step(-1)));
@@ -2292,7 +2393,7 @@ function reloadData() {
   DATA_V = "?t=" + Date.now();
   return fetchData(true).then((d) => {
     applyData(d);
-    GAMES = GAMES_P = null; RECAP = RECAP_P = null;
+    GAMES = GAMES_P = null; RECAP = RECAP_P = null; LIVE_AT = {};
     Object.keys(LGDATA).forEach((k) => delete LGDATA[k]);
     Object.keys(LGRES).forEach((k) => delete LGRES[k]);
     Object.assign(WK, {mm: null, mmP: null});
