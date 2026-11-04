@@ -1227,7 +1227,20 @@ function windowDays() {
   if (WV.win === "0") return [d0];
   if (WV.win === "1") return [addDays(d0, 1)];
   if (WV.win === "01") return [d0, addDays(d0, 1)];
+  if (WV.win === "rw" || WV.win === "nw") {                         // fantasy weeks run Mon-Sun (META.weeks)
+    const W = META.weeks, k = W.findIndex((w) => w[1] <= d0 && d0 <= w[2]);
+    const wk = WV.win === "rw" ? W[k] : W[k + 1] || (k < 0 ? W.find((w) => w[1] > d0) : null);
+    if (!wk) return [];
+    const out = [];
+    for (let d = WV.win === "rw" ? d0 : wk[1]; d <= wk[2]; d = addDays(d, 1)) out.push(d);
+    return out;
+  }
   return Array.from({length: 7}, (_, i) => addDays(d0, i));
+}
+function windowLabel() {
+  const days = windowDays(), wk = days.length ? (META.weeks.find((w) => w[1] <= days[0] && days[0] <= w[2]) || [""])[0] : "";
+  return WV.win === "0" ? "today" : WV.win === "1" ? "tomorrow" : WV.win === "01" ? "today and tomorrow"
+    : WV.win === "rw" ? `in the rest of week ${wk}` : WV.win === "nw" ? `in week ${wk}, next week` : "in the next 7 days";
 }
 function streamRows() {
   const days = new Set(windowDays());
@@ -1344,9 +1357,9 @@ function renderWaivers() {
   }).join("");
   $("wv-table").querySelector("tbody").innerHTML = body ||
     `<tr><td class="l dim" colspan="14">No ${WV.avail ? "available " : ""}players have a game in this window.</td></tr>`;
-  const wl = WV.win === "0" ? "today" : WV.win === "1" ? "tomorrow" : WV.win === "01" ? "today and tomorrow" : "the next 7 days";
+  const wl = windowLabel();
   $("wv-count").textContent = `${list.length} of ${rows.length} with a game ${wl}`;
-  $("wv-lede").innerHTML = `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
+  $("wv-lede").innerHTML = !days.length ? "No fantasy week left in the schedule for this window. " : `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
     (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
       : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ")) +
     `Players out are left off, using the <strong>official NBA injury report</strong>${OFF.as_of ? ` (as of ${esc(OFF.as_of)})` : ""} first and ESPN&rsquo;s status otherwise: ` +
