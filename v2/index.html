@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=6d4f0cd67a">
+<link rel="stylesheet" href="app.css?v=255faa46f7">
 </head>
 <body>
 <header class="top">
@@ -235,6 +235,7 @@
       <span class="count" id="wk-count"></span>
     </div>
     <div class="stand" id="wk-cards"></div>
+    <details class="card sp-card ss-card" id="ss-box" open hidden></details>
     <div class="legend" aria-label="Key"><span class="lg-i"><span class="lgbox on"></span> starts (in the best lineup)</span><span class="lg-i"><span class="lgbox"></span> bench: no slot left that night</span><span class="lg-i"><span class="lgbox on man"></span> your choice</span><span class="lg-i"><span class="lgbox on warn"></span> you started him but no slot fits</span><span class="lg-i"><b class="out-x">×</b> not playing</span><span class="lg-i"><b class="slt-s">PG</b> slot he fills</span><span class="lg-i"><b>9/10</b> bottom row: starter slots filled that night (letters = slots still empty)</span><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span></div>
     <div id="wk-detail"></div>
     <p class="note" id="wk-note"></p>
@@ -487,6 +488,15 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
   play on a second night = 1 − max(0, P(sit) − 0.076)</div>
     <p>Sitting habits carry over between seasons only partly (correlation 0.25), so each rate is pulled toward the league&rsquo;s 11%;
       0.076 is the rest rate on ordinary nights. Players on your &ldquo;won&rsquo;t play back-to-backs&rdquo; list get P(sit) = 1.</p>
+    <h3>Start / sit</h3>
+    <p>On My week, for each remaining night of this matchup when more of your players have a game than you have starter slots. Each
+      player&rsquo;s value that night is the per-game formula above: rest-of-season FP/G, plus any injury boost, scaled by a return ramp,
+      plus the matchup (opponent pace, FP the opponent allows to his position, FG% it allows, home or away), times the chance he plays
+      (back-to-back habit, game-day injury report). <strong>Ceiling</strong> ranks by a 1-in-10 good night instead
+      (value + 1.40 &times; his game-to-game SD, the tested Waivers ceiling), which is the better aim when you are behind.
+      The start list is the exact best assignment to your slots, positions respected. For each bench player the page forces him in,
+      re-solves, and shows who would sit and what it costs. The percentage is a rough chance he outscores that starter tonight
+      (a normal approximation with each player&rsquo;s game-to-game SD, games treated as independent). It is untested as a probability.</p>
     <h3>Streaming planner</h3>
     <p>For the rest of the current matchup, each day&rsquo;s lineup is filled exactly as on My week (the best legal assignment of
       that day&rsquo;s players to your starter slots, each game valued with the formula above). You say how many players you&rsquo;ll drop;
@@ -578,6 +588,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=214755d468"></script>
+<script src="app.js?v=55de1a92b7"></script>
 </body>
 </html>

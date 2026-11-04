@@ -2069,13 +2069,21 @@ function dayVals(p, days, own, ok) {
       const second = teamDays.has(addDays(d, -1));
       play = (second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1) * (own ? 1 : sp);
       const mf = META.mf[g[1]];
-      let adj = 0;
+      let adj = 0, parts = null;
       if (mf) {
         const c = posCls(p.pos), b = META.mfb;
-        adj = (b.pace * (mf.pace - 1) + b.dvp * ((mf[c] || 1) - 1) + b.fgp * ((mf.fgp || 1) - 1) + b.home * (g[2] ? 0.5 : -0.5)) * scale;
+        parts = {pace: b.pace * (mf.pace - 1) * scale, dvp: b.dvp * ((mf[c] || 1) - 1) * scale,
+                 fgp: b.fgp * ((mf.fgp || 1) - 1) * scale, home: b.home * (g[2] ? 0.5 : -0.5) * scale,
+                 f: {pace: mf.pace, dvp: mf[c] || 1, fgp: mf.fgp || 1, c, n: mf.n}};
+        adj = parts.pace + parts.dvp + parts.fgp + parts.home;
       }
-      val = Math.max(0, play * ((fp + boostFP(p, d)) * ramp(d) + adj));
+      const bst = boostFP(p, d), rf = ramp(d), v = (fp + bst) * rf + adj, sg2 = sd * rf;
+      val = Math.max(0, play * v);
       avail = true;
+      // when he plays: v +- sg2; else 0 -> mean val, variance of that mixture
+      return {d, g, avail, val, play, sd2: sd * sd, st: false, base: fp, bst, rf, adj, parts, v, second, sp,
+        ceil: play >= 0.5 ? v + META.ceiling.z * sg2 : val,
+        var: Math.max(0, play * (sg2 * sg2 + v * v) - val * val)};
     }
     return {d, g, avail, val, play, sd2: sd * sd, st: false};
   });
@@ -2265,6 +2273,13 @@ function renderWeek() {
       (lim != null ? `<span class="v">${addsLeft(A.teamId)}<small>/${lim}</small></span><span class="k" title="${esc(addsTip)}">adds left</span><span class="v">${addsLeft(H.teamId)}<small>/${lim}</small></span>` : "") +
       "</div></div>");
   }).join("");
+  // ---- start / sit for your team, rest of this matchup
+  if (mt != null && TW[mt] && !over) {
+    const myM0 = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
+    const oppId = myM0 ? (myM0.home.teamId === mt ? myM0.away.teamId : myM0.home.teamId) : null;
+    $("ss-box").hidden = false;
+    renderStartSit(lg, TW[mt], days, today, SLOTS, oppId != null && TW[oppId] ? TW[mt].final - TW[oppId].final : null);
+  } else $("ss-box").hidden = true;
   $("wk-cards").innerHTML = cards || '<p class="note">No matchups found for this week (a bye week, or this league&rsquo;s matchup periods don&rsquo;t follow this calendar).</p>';
   // ---- detail: both teams of the chosen matchup
   const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
@@ -2319,7 +2334,131 @@ function renderWeek() {
   $("wk-note").innerHTML = "Win chance is rough: it treats each remaining game as independent, with each player&rsquo;s game-to-game spread (the same one behind the Waivers ceiling). " +
     "While tonight&rsquo;s games are being played, players already in action count twice (in the live score and the projection) until the next morning&rsquo;s build. Rosters, injuries, live scores and adds are read from ESPN; projections are from this morning.";
 }
+// ============================================================ START / SIT
+// Nights when more of your players play than you have starter slots. Each
+// player's value that night = the My week / Waivers per-game formula (ROS FP/G
+// + injury boost, return ramp, matchup: pace / FP allowed to his position /
+// FG% allowed / home, back-to-back and game-day status odds). The lineup is
+// the exact best assignment to the starter slots; every bench player is then
+// forced in to price the swap exactly (who drops out, points it costs).
+const SS = {day: null, mode: "proj"};
+function startSit(T, i, SLOTS, mode) {
+  const av = T.ps.filter((r) => r.days[i].avail);
+  const w = (r) => (mode === "ceil" ? r.days[i].ceil : r.days[i].val);
+  const solve = (force) => {
+    const res = assignMax(av.map((r) => SLOTS.map((s) => (r.elig.includes(s) ? Math.max(w(r), 0.01) + (r === force ? 1e5 : 0) : 0))));
+    const st = new Map();
+    av.forEach((r, k) => { if (res.rc[k] >= 0) st.set(r, SLOTS[res.rc[k]]); });
+    return {st, tot: [...st.keys()].reduce((a, r) => a + w(r), 0)};
+  };
+  const best = solve(null);
+  const minStart = Math.min(...[...best.st.keys()].map(w));
+  const rows = av.map((r) => {
+    const x = r.days[i], o = {r, x, w: w(r), slot: best.st.get(r)};
+    o.start = o.slot != null;
+    if (!o.start) {
+      const f = solve(r);
+      if (!f.st.has(r)) o.noslot = true;
+      else {
+        o.cost = best.tot - f.tot;
+        o.out = [...best.st.keys()].filter((q) => !f.st.has(q));
+        // chance he outscores the starter he'd replace (normal approx., games independent)
+        const q = o.out[0];
+        if (q) { const v = x.var + q.days[i].var; o.beat = v > 0 ? normCdf((x.val - q.days[i].val) / Math.sqrt(v)) : (x.val > q.days[i].val ? 1 : 0); }
+      }
+      o.pos = o.w > minStart;          // ranks above a starter but positions keep him out
+    }
+    return o;
+  });
+  return {rows, tot: best.tot, n: av.length};
+}
+function renderStartSit(lg, T, days, today, SLOTS, margin) {
+  const box = $("ss-box");
+  const idx = days.map((d, i) => i).filter((i) => days[i] >= today && T.ps.filter((r) => r.days[i].avail).length > SLOTS.length);
+  if (!idx.length) {
+    box.innerHTML = `<summary><strong>Start / sit</strong> &mdash; nights with more players than slots</summary><p class="note">No crowded nights left this week: you never have more than ${SLOTS.length} players playing, so everyone who plays starts.</p>`;
+    return;
+  }
+  if (SS.day == null || !idx.some((i) => days[i] === SS.day)) SS.day = days[idx[0]];
+  const i = days.indexOf(SS.day);
+  const S = startSit(T, i, SLOTS, SS.mode);
+  SS.last = {T, i, SLOTS};
+  const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"}) + " " + (+d.slice(8));
+  const chip = (k, v, lbl, tip) => `<button class="chip" data-ss${k}="${v}" aria-pressed="${(k === "day" ? SS.day : SS.mode) === v}"${tip ? ` title="${esc(tip)}"` : ""}>${lbl}</button>`;
+  const dayChips = idx.map((j) => chip("day", days[j], `${dn(days[j])} <small>${T.ps.filter((r) => r.days[j].avail).length} for ${SLOTS.length}</small>`)).join("");
+  const top = Math.max(...S.rows.map((o) => o.x.ceil), 1);
+  const mtip = (x) => {
+    if (!x.parts) return "No matchup data for this opponent yet";
+    const P = x.parts, f = P.f, cw = {G: "guards", F: "forwards", C: "centres"}[f.c], o = x.g[1];
+    return `Matchup ${sg(x.adj)} FP vs an average game\n` +
+      `  pace: ${o} plays at ${(f.pace * 100).toFixed(0)}% of league  ${sg(P.pace)}\n` +
+      `  ${o} allows ${(f.dvp * 100).toFixed(0)}% of league FP to ${cw}  ${sg(P.dvp)}\n` +
+      `  ${o} allows ${(f.fgp * 100).toFixed(0)}% of league FG%  ${sg(P.fgp)}\n` +
+      `  ${x.g[2] ? "home" : "away"}  ${sg(P.home)}\n` +
+      `(${f.n} ${o} games so far; tested on 16 seasons of games)`;
+  };
+  const flags = (o) => {
+    const x = o.x, out = [];
+    const st = statusTag(o.r, lg);
+    if (st) out.push(st);
+    if (x.second && x.play < 1 && x.sp >= 1) out.push(`<span class="tag b2b" title="${esc(`Second night of a back-to-back: he has sat ${o.r.p && o.r.p.b2b ? b2b0(o.r.p) : "some"} of these. Counts ${Math.round(x.play * 100)}% of a game`)}">B2B ${Math.round((1 - x.play) * 100)}%</span>`);
+    else if (x.sp < 1) out.push(`<span class="tag dtd" title="${esc(statusPlayTip(o.r.p, x.d) || "")}">plays ${Math.round(x.play * 100)}%</span>`);
+    if (x.bst > 0.05) out.push(`<span class="tag boost" title="Injury boost: teammates out">▲ +${fx(x.bst)}</span>`);
+    if (x.rf < 0.995) out.push(`<span class="tag" title="Back from a long absence: minutes ramp up over his first two games">ramp ${Math.round(x.rf * 100)}%</span>`);
+    return out.join("");
+  };
+  const row = (o) => {
+    const x = o.x, p = o.r.p, opp = x.g[1];
+    const why = o.start ? "" : o.noslot ? `<span class="ss-why" title="Every slot he can fill (${esc(o.r.elig.map((s) => ESPN_SLOT[s]).join(", "))}) is taken by a better player">no slot</span>`
+      : `<span class="ss-why" title="${esc(`Starting him instead costs ${fx(o.cost)} ${SS.mode === "ceil" ? "ceiling " : ""}points: ${o.out.map((q) => q.n).join(", ")} would sit. He outscores ${o.out[0] ? o.out[0].n : "him"} about ${Math.round((o.beat || 0) * 100)}% of the time (rough)`)}">` +
+        `vs ${esc(surname(o.out[0] ? o.out[0].n : ""))} <b>${Math.round((o.beat || 0) * 100)}%</b> · −${fx(o.cost)}</span>`;
+    return `<div class="ss-row${o.start ? " on" : ""}${!o.start && o.beat >= 0.4 ? " close" : ""}">` +
+      (p ? headshot(p.id) : '<span class="sp-hs"></span>') +
+      `<div class="ss-mid"><div class="ss-n"><span class="name" data-id="${o.r.id}">${esc(o.r.n)}</span>${o.start ? `<span class="slt-s">${ESPN_SLOT[o.slot]}</span>` : ""}${flags(o)}</div>` +
+      `<div class="ss-sub">${teamLogo(p ? p.tm : "")}<span class="dim">${x.g[2] ? "vs" : "@"}</span> ${teamLogo(opp)}${opp}` +
+      `<span class="ss-mch ${x.adj >= 0.5 ? "pos-up" : x.adj <= -0.5 ? "pos-dn" : "dim"}" title="${esc(mtip(x))}">${x.parts ? sg(x.adj) : "–"}</span>${why}</div>` +
+      `<div class="ss-bar" title="${esc(`Projected ${fx(x.val)} FP (${fx(x.base)} FP/G${x.bst > 0.05 ? " + " + fx(x.bst) + " boost" : ""}${x.adj ? " " + sg(x.adj) + " matchup" : ""}${x.play < 1 ? ", × " + Math.round(x.play * 100) + "% to play" : ""}). Ceiling (a 1-in-10 night) ${fx(x.ceil)}`)}">` +
+      `<i class="p" style="width:${(100 * x.val / top).toFixed(1)}%"></i><i class="c" style="left:${(100 * x.ceil / top).toFixed(1)}%"></i></div></div>` +
+      `<div class="ss-v"><b>${fx(SS.mode === "ceil" ? x.ceil : x.val)}</b><small>${SS.mode === "ceil" ? "ceil" : "proj"}</small></div></div>`;
+  };
+  const on = S.rows.filter((o) => o.start).sort((a, b) => b.w - a.w);
+  const sit = S.rows.filter((o) => !o.start).sort((a, b) => b.w - a.w);
+  const close = sit.filter((o) => o.beat != null).sort((a, b) => b.beat - a.beat)[0];
+  // the lineup on the grid below (your own ticks included) vs this one
+  const grid = new Set(T.ps.filter((r) => r.days[i].st).map((r) => r.id));
+  const diff = on.filter((o) => !grid.has(o.r.id));
+  const kpi = (v, k, tip) => `<div class="sp-kpi"${tip ? ` title="${esc(tip)}"` : ""}><b>${v}</b><span>${k}</span></div>`;
+  box.innerHTML = `<summary><strong>Start / sit</strong> &mdash; nights with more players than slots</summary>` +
+    `<div class="controls" style="margin-top:.6rem"><div class="ctl"><span class="lbl">Crowded nights</span><div class="chips">${dayChips}</div></div>` +
+    `<div class="ctl"><span class="lbl">Rank by</span><div class="chips">${chip("mode", "proj", "Projected", "Expected points tonight")}${chip("mode", "ceil", "Ceiling", "A 1-in-10 good night: chase this when you are behind")}</div></div></div>` +
+    `<div class="sp-kpis">${kpi(S.n, "playing", `${S.n} of your players have a game, ${SLOTS.length} starter slots`)}` +
+    kpi(fx(on.reduce((a, o) => a + o.x.val, 0), 0), "proj FP", "Projected points from the best lineup") +
+    (close ? kpi(`${Math.round(close.beat * 100)}%`, "closest call", `${close.r.n} outscores ${close.out[0].n} about ${Math.round(close.beat * 100)}% of the time (rough: normal approximation, games independent)`) : "") +
+    (margin != null && !isNaN(margin) ? kpi(`${margin >= 0 ? "+" : "−"}${fx(Math.abs(margin), 0)}`, "week margin", margin < -30 ? "Projected to lose this week: ceiling picks give you more upside" : "Projected margin in your matchup this week") : "") + "</div>" +
+    (margin < -30 && SS.mode !== "ceil" ? `<p class="ss-hint">Behind this week? Try <button class="linkbtn" data-ssmode="ceil">Ceiling</button>.</p>` : "") +
+    `<div class="grid2 ss-cols"><div><h3 class="ss-h on">Start <small>${on.length}</small></h3>${on.map(row).join("")}</div>` +
+    `<div><h3 class="ss-h">Sit <small>${sit.length}</small></h3>${sit.map(row).join("")}</div></div>` +
+    (diff.length ? `<p class="ss-hint">Your lineup in the grid below differs: it benches ${diff.map((o) => esc(o.r.n)).join(", ")}.</p>` : "") +
+    `<div class="legend" aria-label="Key"><span class="lg-i"><span class="ss-bar lg"><i class="p" style="width:60%"></i><i class="c" style="left:85%"></i></span> projected, gold tick = ceiling</span>` +
+    `<span class="lg-i"><span class="ss-mch pos-up">+1.1</span> matchup FP (hover for why)</span>` +
+    `<span class="lg-i"><span class="ss-why">vs Name <b>45%</b> · −2.0</span> chance he outscores the starter he&rsquo;d replace · points it costs</span>` +
+    `<span class="lg-i"><span class="lgbox" style="outline:1px dashed var(--gold)"></span> close call (40%+)</span></div>`;
+}
+function bindStartSit() {
+  $("ss-box").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-ssday],[data-ssmode]");
+    if (b) {
+      if (b.dataset.ssday) SS.day = b.dataset.ssday;
+      if (b.dataset.ssmode) SS.mode = b.dataset.ssmode;
+      renderWeek();
+      return;
+    }
+    const n = e.target.closest(".name[data-id]");
+    if (n && BYID[+n.dataset.id]) openPlayer(+n.dataset.id);
+  });
+}
 function bindWeek() {
+  bindStartSit();
   $("wk-week").addEventListener("change", (e) => { WK.week = +e.target.value; renderWeek(); });
   $("wk-team").addEventListener("change", (e) => { WK.pair = e.target.value.split(",").map(Number); renderWeek(); });
   $("wk-cards").addEventListener("click", (e) => {
@@ -2998,6 +3137,10 @@ fetchData(false)
           mem: P.mem.map(pk), pool: P.pool.map(pk), before: P.before.map((x) => [x.starts, x.pts]),
           plans: P.plans.map((Q) => ({label: Q.label, moves: Q.moves.map((m) => ({t: m.t, add: m.f.id, drop: m.o ? m.o.id : null,
             alts: m.alts.map((x) => [x.c.id, x.dSt, x.dPts, x.dG])})), after: Q.after.map((x) => [x.starts, x.pts])}))}; },
+      ss: () => { const {T, i, SLOTS} = SS.last; const one = (m) => { const S = startSit(T, i, SLOTS, m);
+          return S.rows.map((o) => ({id: o.r.id, n: o.r.n, elig: o.r.elig, val: o.x.val, ceil: o.x.ceil, var: o.x.var,
+            start: o.start, slot: o.slot, cost: o.cost, beat: o.beat, out: o.out ? o.out.map((q) => q.id) : null, noslot: !!o.noslot})); };
+        return {SLOTS, day: SS.day, proj: one("proj"), ceil: one("ceil")}; },
       previewTrades: (list) => { PT.key = L.id; PT.trades = list; PT.p = Promise.resolve(list); renderPastTrades(); }};
     bindBoostPanel("wv-boosts");
     bindBoostPanel("is-boosts");
