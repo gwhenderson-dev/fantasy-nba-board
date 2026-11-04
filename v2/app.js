@@ -2853,16 +2853,19 @@ function renderSchedule() {
     : SC.sort === "tm" ? SC.dir * (TEAM_NAMES[a.tm] || a.tm).localeCompare(TEAM_NAMES[b.tm] || b.tm)
     : SC.dir * ((game[a.tm][SC.sort] ? 1 : 0) - (game[b.tm][SC.sort] ? 1 : 0)) || a.tm.localeCompare(b.tm));
   const on = (k) => (SC.sort === k ? ` on${SC.dir > 0 ? " asc" : ""}` : "");
-  $("sc-table").querySelector("thead").innerHTML = `<tr><th class="l${on("tm")}" data-k="tm">Team</th><th class="grp${on("n")}" data-k="n"><span class="sc-full">Games</span><span class="sc-ab">G</span></th>` +
-    all.map((d, i) => `<th class="sc-d${i >= 7 ? " sc-next" : ""}${i === 7 ? " grp" : ""}${d < today ? " past" : ""}${on(d)}" data-k="${d}">${dn(d)}${i >= 7 ? " ·W" + (SC.week + 1) : ""}` +
-      `<br><span class="dim">${d.slice(5).replace("-", "/")}</span></th>`).join("") + "</tr>" +
-    `<tr class="sc-tot"><th class="l"><span class="sc-full">Games that day</span><span class="sc-ab">Per day</span></th><th class="grp"></th>` +
-    perDay.map((n, i) => `<th class="sc-d${i >= 7 ? " sc-next" : ""}${i === 7 ? " grp" : ""}"><span class="${i < 7 && n && n === light ? "sc-lt" : ""}">${n}</span></th>`).join("") + "</tr>";
+  // column classes: alternate shading, a heavier line where next week starts, today outlined
+  const cc = (d, i) => `sc-d${i % 2 ? " alt" : ""}${i >= 7 ? " sc-next" : ""}${i === 7 ? " wkb" : ""}${d < today ? " past" : ""}${d === today ? " today" : ""}`;
+  $("sc-table").querySelector("thead").innerHTML = `<tr><th class="l${on("tm")}" data-k="tm">Team</th><th class="sc-gc${on("n")}" data-k="n" title="Games this week (Mon–Sun)"><span class="sc-full">Games</span><span class="sc-ab">G</span></th>` +
+    all.map((d, i) => `<th class="${cc(d, i)}${on(d)}" data-k="${d}" title="Click to sort by who plays this day">` +
+      `<span class="sc-tag">${d === today ? "Today" : i >= 7 ? "Next wk" : "&nbsp;"}</span><span class="sc-dn">${dn(d)}</span><span class="sc-dt">${d.slice(5).replace("-", "/")}</span></th>`).join("") + "</tr>" +
+    `<tr class="sc-tot"><th class="l"><span class="sc-full">Games that day</span><span class="sc-ab">Per day</span></th><th class="sc-gc"></th>` +
+    perDay.map((n, i) => `<th class="${cc(all[i], i)}"><span class="${i < 7 && n && n === light ? "sc-lt" : ""}">${n}</span></th>`).join("") + "</tr>";
   $("sc-table").querySelector("tbody").innerHTML = rows.map((r) => `<tr><td class="l sc-team">${teamLogo(r.tm)}<span class="name"><span class="sc-full">${esc(TEAM_NAMES[r.tm] || r.tm)}</span><span class="sc-ab">${esc(r.tm)}</span></span></td>` +
-    `<td class="grp"><span class="sc-gn${r.n >= 4 ? " hi" : r.n <= 2 ? " lo" : ""}">${r.n}</span></td>` +
+    `<td class="sc-gc"><span class="sc-gn${r.n >= 4 ? " hi" : r.n <= 2 ? " lo" : ""}">${r.n}</span></td>` +
     all.map((d, i) => { const g = game[r.tm][d];
-      return `<td class="sc-d${i >= 7 ? " sc-next" : ""}${i === 7 ? " grp" : ""}${d < today ? " past" : ""}${SC.days.has(d) ? " sel" : ""}">` +
-        (g ? `<span title="${esc(`${TEAM_NAMES[r.tm]} ${g[1] ? "vs" : "at"} ${TEAM_NAMES[g[0]] || g[0]}`)}">${g[1] ? "" : "@"}${esc(g[0])}</span>` : "") + "</td>"; }).join("") + "</tr>").join("") ||
+      return `<td class="${cc(d, i)}${SC.days.has(d) ? " sel" : ""}">` +
+        (g ? `<span class="sc-g ${g[1] ? "h" : "a"}" title="${esc(`${TEAM_NAMES[r.tm]} ${g[1] ? "vs" : "at"} ${TEAM_NAMES[g[0]] || g[0]} (${g[1] ? "home" : "away"})`)}">` +
+          `${teamLogo(g[0]).replace('class="sp-logo"', 'class="sp-logo sc-ol"')}${g[1] ? "" : "<i>@</i>"}${esc(g[0])}</span>` : `<span class="sc-no">–</span>`) + "</td>"; }).join("") + "</tr>").join("") ||
     `<tr><td class="l dim" colspan="${all.length + 2}">No team plays on all of those days.</td></tr>`;
   $("sc-count").textContent = SC.days.size ? `${rows.length} of 30 teams play on all of ${[...SC.days].sort().map(dn).join(", ")}` : "";
   $("sc-note").textContent = "The last two columns are the start of next week, for planning a pickup that carries over. Click a column heading to sort; " +
