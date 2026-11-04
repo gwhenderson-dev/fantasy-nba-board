@@ -818,8 +818,8 @@ function openPlayer(id) {
     STATS.map((k) => `<td>${fx(s[SI[k]])}</td>`).join("") + `<td class="grp big">${fx(fp)}</td>${extra}</tr>`;
   const next = (META.sched[p.tm] || []).filter((g) => g[0] > (META.last_game_day || "")).slice(0, 7);
   $("drawer").innerHTML =
-    `<div class="dhead"><div><h1>${esc(p.n)}${tags(p)}</h1>` +
-    `<div class="dsub">${esc(p.tm)} · ${esc(p.pos || "")}${p.age ? " · age " + Math.floor(p.age) : ""}` +
+    `<div class="dhead">${headshot(p.id, "dh-hs")}<div><h1>${esc(p.n)}${tags(p)}</h1>` +
+    `<div class="dsub">${teamLogo(p.tm)}${esc(TEAM_NAMES[p.tm] || p.tm)} · ${esc(p.pos || "")}${p.age ? " · age " + Math.floor(p.age) : ""}` +
     `${p.own != null ? " · " + p.own.toFixed(0) + "% rostered" : ""}${off(p) ? " · " + esc(offTitle(off(p), p).split("\n").slice(1, 2).join("")) : offCleared(p) && p.inj && p.inj !== "ACTIVE" ? " · official report: available (ESPN still says " + esc(p.inj) + ")" : p.inj && p.inj !== "ACTIVE" ? " · ESPN: " + esc(p.inj) : ""}${benched(p) ? " · not in the rotation" : ""}</div></div>` +
     `<button class="x" id="dclose" aria-label="Close">×</button></div>` +
     '<div class="kpis">' +
@@ -2916,6 +2916,33 @@ function renderAll() {
 // (the column holding the first row's player name gets .stk); long intros
 // clamp to three lines on phones with a More/Less link; each key folds into
 // a "Key" line on phones. Re-applied after every render via one observer.
+// player thumbnails + team logos on every board, added after each render
+// (one pass, idempotent): a .name / .nm with a player id gets a headshot; a
+// cell or small label holding a team code ("LAL", "LAL · PF") gets the logo.
+// Cards that draw their own pictures (planner, start/sit) and the schedule
+// grid are left alone.
+const PIC_SKIP = ".sp-card, .ss-card, #sc-table, .sp-alt, .sp-team";
+function addPics(root) {
+  root.querySelectorAll(".name:not([data-pic]), .nm:not([data-pic])").forEach((el) => {
+    el.dataset.pic = "1";
+    if (el.closest(PIC_SKIP)) return;
+    const tr = el.closest("tr[data-id]");
+    const id = el.dataset.id || (tr ? tr.dataset.id : "");
+    if (!/^\d+$/.test(id || "")) return;
+    const img = document.createElement("img");
+    img.className = "pth"; img.alt = ""; img.loading = "lazy";
+    img.src = `https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${id}.png&w=64&h=48&scale=crop`;
+    img.onerror = () => { img.style.visibility = "hidden"; };
+    el.prepend(img);
+  });
+  root.querySelectorAll("td:not([data-pic]), span.dim:not([data-pic]), span.sub:not([data-pic]), span.sp-tm:not([data-pic])").forEach((el) => {
+    el.dataset.pic = "1";
+    if (el.children.length || el.closest(PIC_SKIP)) return;
+    const m = /^([A-Z]{2,4})(\s*(·|$))/.exec(el.textContent.trim());
+    if (!m || !TEAM_NAMES[m[1]]) return;
+    el.insertAdjacentHTML("afterbegin", teamLogo(m[1]).replace('class="sp-logo"', 'class="sp-logo tl"'));
+  });
+}
 function markSticky() {
   document.querySelectorAll(".tablewrap table").forEach((tb) => {
     const row = tb.tBodies[0] && [...tb.tBodies[0].rows].find((r) => r.querySelector(".name"));
@@ -2955,7 +2982,7 @@ function initPhone() {
   const edge = () => nav.classList.toggle("end", nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 4);
   nav.addEventListener("scroll", edge, {passive: true});
   let q = 0;
-  const run = () => { q = 0; markSticky(); fitLedes(); edge(); };
+  const run = () => { q = 0; addPics(document.querySelector("main")); markSticky(); fitLedes(); edge(); };
   // a timer, not requestAnimationFrame: frames pause in a hidden tab and the marks would never land
   new MutationObserver(() => { if (!q) q = setTimeout(run); })
     .observe(document.querySelector("main"), {childList: true, subtree: true});
