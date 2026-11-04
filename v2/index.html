@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=07db196cec">
+<link rel="stylesheet" href="app.css?v=6d4f0cd67a">
 </head>
 <body>
 <header class="top">
@@ -25,6 +25,7 @@
     <button class="tab" role="tab" data-tab="recap">Recap</button>
     <button class="tab" role="tab" data-tab="week">My week</button>
     <button class="tab" role="tab" data-tab="trade">Trade analyzer</button>
+    <button class="tab" role="tab" data-tab="sched">Schedule</button>
     <button class="tab" role="tab" data-tab="how">How it works</button>
   </nav>
 </header>
@@ -261,6 +262,20 @@
   </section>
 
   <!-- ========================================================== HOW IT WORKS -->
+  <section class="panel" id="tab-sched" hidden>
+    <h1>NBA schedule</h1>
+    <div class="controls">
+      <div class="ctl"><label for="sc-week">Week</label><select id="sc-week"></select></div>
+      <div class="ctl"><span class="lbl">Plays on</span><div class="chips" id="sc-days"></div></div>
+      <span class="count" id="sc-count"></span>
+    </div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><b>@ORL</b> away at Orlando</span><span class="lg-i"><b>ORL</b> home vs Orlando</span>
+      <span class="lg-i"><span class="sc-gn hi">4</span> 4+ games this week</span><span class="lg-i"><span class="sc-gn lo">2</span> 2 or fewer</span>
+      <span class="lg-i"><span class="sc-lt">7</span> lightest night of the week</span></div>
+    <div class="tablewrap" style="max-height:none"><table id="sc-table"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="sc-note"></p>
+  </section>
+
   <section class="panel prose" id="tab-how" hidden>
     <h1>How it works</h1>
     <p class="lede">Everything on this site comes from one model built on NBA box scores. No outside projections are mixed in:
@@ -529,6 +544,11 @@ past trades:
       wire, a 2-for-1&rsquo;s open spot is filled by the best free agent, and nothing is credited for a pickup you could make today
       anyway.</p>
 
+    <h3>Schedule tab</h3>
+    <p>Every NBA team&rsquo;s games in the chosen fantasy week (Monday to Sunday), plus next week&rsquo;s Monday and Tuesday:
+      &ldquo;@ORL&rdquo; is a game at Orlando, &ldquo;ORL&rdquo; a home game against Orlando. The top row counts the games each day;
+      &ldquo;Plays on&rdquo; keeps only the teams that play on every day you pick. From the official NBA schedule in this morning&rsquo;s build.</p>
+
     <h2 id="how-good">12. How good is it?</h2>
     <ul class="plan">
       <li>Draft rankings: beats last season&rsquo;s totals in 22 of 24 seasons and last season&rsquo;s per-game in 20 of 24.</li>
@@ -558,6 +578,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=dfac9eb0e2"></script>
+<script src="app.js?v=214755d468"></script>
 </body>
 </html>

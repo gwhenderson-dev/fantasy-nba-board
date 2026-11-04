@@ -538,3 +538,26 @@ select { max-width: 100%; }
   .sp-moves { grid-template-columns: minmax(0, 1fr); }
   .sp-mv { grid-template-columns: 2.6rem minmax(0, 1fr); }
 }
+
+/* ---- schedule tab ----------------------------------------------------------- */
+#sc-table th.sc-d, #sc-table td.sc-d { text-align: center; min-width: 4.2rem; }
+#sc-table td.sc-d { font-weight: 620; font-size: .82rem; }
+#sc-table td.sc-d.past, #sc-table th.sc-d.past { opacity: .5; }
+#sc-table .sc-next { background-image: linear-gradient(rgba(127, 127, 127, .07), rgba(127, 127, 127, .07)); color: var(--muted); }
+#sc-table td.sc-d.sel { background: var(--accent-bg); }
+#sc-table tr.sc-tot th { top: auto; position: static; font-size: .78rem; color: var(--ink); background: var(--band); }
+#sc-table td.sc-team { font-weight: 620; }
+#sc-table td.sc-team .name { cursor: default; }
+#sc-table td.sc-team .sp-logo { width: 20px; height: 20px; margin-right: .45rem; vertical-align: -5px; }
+.sc-gn { display: inline-block; min-width: 1.6rem; text-align: center; border-radius: 6px; font-weight: 700; padding: .05rem .3rem; }
+.sc-gn.hi { background: var(--good-bg); color: var(--good); }
+.sc-gn.lo { background: var(--warn-bg); color: var(--warn); }
+.sc-lt { display: inline-block; min-width: 1.5rem; border-radius: 6px; background: var(--good-bg); color: var(--good); font-weight: 750; padding: 0 .3rem; }
+.sc-ab { display: none; }
+@media (max-width: 640px) {
+  .sc-full { display: none; }
+  .sc-ab { display: inline; }
+  #tab-sched td.stk { min-width: 0; white-space: nowrap; }
+  #sc-table th.sc-d, #sc-table td.sc-d { min-width: 3.1rem; padding-left: .2rem; padding-right: .2rem; }
+  #sc-table td.sc-d { font-size: .76rem; }
+}

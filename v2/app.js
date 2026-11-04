@@ -2676,8 +2676,78 @@ function bindTrade() {
   });
 }
 
+// =============================================================== SCHEDULE
+// Every NBA team's games in one fantasy week (Mon-Sun): "@ORL" = at Orlando,
+// "ORL" = home vs Orlando; plus the next week's Monday and Tuesday, as on
+// Hashtag Basketball's schedule grid (owner, 2026-11-04).
+const TEAM_NAMES = {ATL: "Atlanta Hawks", BKN: "Brooklyn Nets", BOS: "Boston Celtics", CHA: "Charlotte Hornets", CHI: "Chicago Bulls",
+  CLE: "Cleveland Cavaliers", DAL: "Dallas Mavericks", DEN: "Denver Nuggets", DET: "Detroit Pistons", GSW: "Golden State Warriors",
+  HOU: "Houston Rockets", IND: "Indiana Pacers", LAC: "LA Clippers", LAL: "Los Angeles Lakers", MEM: "Memphis Grizzlies",
+  MIA: "Miami Heat", MIL: "Milwaukee Bucks", MIN: "Minnesota Timberwolves", NOP: "New Orleans Pelicans", NYK: "New York Knicks",
+  OKC: "Oklahoma City Thunder", ORL: "Orlando Magic", PHI: "Philadelphia 76ers", PHX: "Phoenix Suns", POR: "Portland Trail Blazers",
+  SAC: "Sacramento Kings", SAS: "San Antonio Spurs", TOR: "Toronto Raptors", UTA: "Utah Jazz", WAS: "Washington Wizards"};
+const SC = {week: null, days: new Set(), sort: "tm", dir: 1};
+function renderSchedule() {
+  const W = META.weeks, today = todayET();
+  if (SC.week == null || !W.some((w) => w[0] === SC.week)) {
+    const cur = W.find((w) => w[1] <= today && today <= w[2]) || W.find((w) => w[2] >= today) || W[W.length - 1];
+    SC.week = cur[0];
+  }
+  const md = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"});
+  $("sc-week").innerHTML = W.map((w) => `<option value="${w[0]}"${w[0] === SC.week ? " selected" : ""}>Week ${w[0]}: ${md(w[1])} – ${md(w[2])}` +
+    `${w[2] < today ? " · done" : w[1] <= today ? " · now" : ""}</option>`).join("");
+  const wk = W.find((w) => w[0] === SC.week);
+  const days = [];
+  for (let d = wk[1]; d <= wk[2]; d = addDays(d, 1)) days.push(d);
+  const extra = [addDays(wk[2], 1), addDays(wk[2], 2)];            // next Monday + Tuesday
+  const all = days.concat(extra);
+  const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
+  $("sc-days").innerHTML = days.map((d) => `<button type="button" class="chip" data-d="${d}" aria-pressed="${SC.days.has(d)}">${dn(d)}</button>`).join("");
+  const game = {};                                                   // team -> date -> [opp, home]
+  Object.entries(META.sched).forEach(([tm, gs]) => { game[tm] = {}; gs.forEach(([d, o, h]) => { game[tm][d] = [o, h]; }); });
+  const perDay = all.map((d) => Object.keys(game).filter((tm) => game[tm][d]).length / 2);   // two teams per game
+  const played = days.map((_, i) => perDay[i]).filter((n) => n > 0);
+  const light = played.length ? Math.min(...played) : 0;
+  let rows = Object.keys(game).map((tm) => ({tm, n: days.filter((d) => game[tm][d]).length}));
+  if (SC.days.size) rows = rows.filter((r) => [...SC.days].every((d) => game[r.tm][d]));
+  rows.sort((a, b) => SC.sort === "n" ? SC.dir * (a.n - b.n) || a.tm.localeCompare(b.tm)
+    : SC.sort === "tm" ? SC.dir * (TEAM_NAMES[a.tm] || a.tm).localeCompare(TEAM_NAMES[b.tm] || b.tm)
+    : SC.dir * ((game[a.tm][SC.sort] ? 1 : 0) - (game[b.tm][SC.sort] ? 1 : 0)) || a.tm.localeCompare(b.tm));
+  const on = (k) => (SC.sort === k ? ` on${SC.dir > 0 ? " asc" : ""}` : "");
+  $("sc-table").querySelector("thead").innerHTML = `<tr><th class="l${on("tm")}" data-k="tm">Team</th><th class="grp${on("n")}" data-k="n"><span class="sc-full">Games</span><span class="sc-ab">G</span></th>` +
+    all.map((d, i) => `<th class="sc-d${i >= 7 ? " sc-next" : ""}${i === 7 ? " grp" : ""}${d < today ? " past" : ""}${on(d)}" data-k="${d}">${dn(d)}${i >= 7 ? " ·W" + (SC.week + 1) : ""}` +
+      `<br><span class="dim">${d.slice(5).replace("-", "/")}</span></th>`).join("") + "</tr>" +
+    `<tr class="sc-tot"><th class="l"><span class="sc-full">Games that day</span><span class="sc-ab">Per day</span></th><th class="grp"></th>` +
+    perDay.map((n, i) => `<th class="sc-d${i >= 7 ? " sc-next" : ""}${i === 7 ? " grp" : ""}"><span class="${i < 7 && n && n === light ? "sc-lt" : ""}">${n}</span></th>`).join("") + "</tr>";
+  $("sc-table").querySelector("tbody").innerHTML = rows.map((r) => `<tr><td class="l sc-team">${teamLogo(r.tm)}<span class="name"><span class="sc-full">${esc(TEAM_NAMES[r.tm] || r.tm)}</span><span class="sc-ab">${esc(r.tm)}</span></span></td>` +
+    `<td class="grp"><span class="sc-gn${r.n >= 4 ? " hi" : r.n <= 2 ? " lo" : ""}">${r.n}</span></td>` +
+    all.map((d, i) => { const g = game[r.tm][d];
+      return `<td class="sc-d${i >= 7 ? " sc-next" : ""}${i === 7 ? " grp" : ""}${d < today ? " past" : ""}${SC.days.has(d) ? " sel" : ""}">` +
+        (g ? `<span title="${esc(`${TEAM_NAMES[r.tm]} ${g[1] ? "vs" : "at"} ${TEAM_NAMES[g[0]] || g[0]}`)}">${g[1] ? "" : "@"}${esc(g[0])}</span>` : "") + "</td>"; }).join("") + "</tr>").join("") ||
+    `<tr><td class="l dim" colspan="${all.length + 2}">No team plays on all of those days.</td></tr>`;
+  $("sc-count").textContent = SC.days.size ? `${rows.length} of 30 teams play on all of ${[...SC.days].sort().map(dn).join(", ")}` : "";
+  $("sc-note").textContent = "The last two columns are the start of next week, for planning a pickup that carries over. Click a column heading to sort; " +
+    "click a day under “Plays on” to list only the teams that play that day (pick several for teams that play on all of them).";
+}
+function bindSchedule() {
+  $("sc-week").addEventListener("change", (e) => { SC.week = +e.target.value; SC.days.clear(); renderSchedule(); });
+  $("sc-days").addEventListener("click", (e) => {
+    const c = e.target.closest(".chip[data-d]");
+    if (!c) return;
+    if (SC.days.has(c.dataset.d)) SC.days.delete(c.dataset.d); else SC.days.add(c.dataset.d);
+    renderSchedule();
+  });
+  $("sc-table").querySelector("thead").addEventListener("click", (e) => {
+    const th = e.target.closest("th[data-k]");
+    if (!th) return;
+    const k = th.dataset.k;
+    if (SC.sort === k) SC.dir = -SC.dir; else { SC.sort = k; SC.dir = k === "tm" ? 1 : -1; }
+    renderSchedule();
+  });
+}
+
 // ================================================================ ROUTING
-const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "how"];
+const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "sched", "how"];
 function showTab(t) {
   if (!TABS.includes(t)) t = "proj";
   document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
@@ -2690,6 +2760,7 @@ function showTab(t) {
   if (t === "insea") renderInseason();
   if (t === "week") renderWeek();
   if (t === "trade") renderTrade();
+  if (t === "sched") renderSchedule();
   setTimeout(() => { markSticky(); fitLedes(); });   // a panel just shown has real heights now
 }
 function renderAll() {
@@ -2915,6 +2986,7 @@ fetchData(false)
     bindInseason();
     bindWeek();
     bindTrade();
+    bindSchedule();
     bindRefresh();
     initTips();
     initPhone();
