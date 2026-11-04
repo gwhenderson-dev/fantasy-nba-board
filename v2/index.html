@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=494d5a23f2">
+<link rel="stylesheet" href="app.css?v=e9f25be9ee">
 </head>
 <body>
 <header class="top">
@@ -482,7 +482,11 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
       Each roster spot you give up (or an open one) then gets the best <em>sequence</em> of free agents across the remaining days,
       found exactly by dynamic programming over day, adds used and who holds the spot, for every number of adds. The adds left this
       matchup are split across spots by a small knapsack, and the spots are re-solved against each other until the total stops improving.
-      &ldquo;Most games&rdquo; counts starts (points break ties); &ldquo;Most points&rdquo; counts projected points. An add must earn at least
+      &ldquo;Most games&rdquo; counts expected starts (each projected point worth 1/200 of a start, so a whole start always wins but
+      a much better player beats a small rest risk); &ldquo;Most points&rdquo; counts projected points. Up to four options are shown: the best
+      plan, the best plan using none of its players (in case they&rsquo;re taken), the best plan for the other aim, and the best single
+      move. Under each pickup, &ldquo;Or instead&rdquo; lists the next-best free agents for exactly the same days, with the rest of the plan
+      unchanged; &ldquo;rest risk&rdquo; marks one who may sit a back-to-back night. An add must earn at least
       0.3 starts or 2 points. Free agents only: a waiver claim doesn&rsquo;t clear in time. The planner considers the best 40 free agents over
       the window plus the best 6 on each single day. Checked: every day&rsquo;s lineup matches an independent solver, and with one droppable
       player no schedule beats the plan (brute force over every switch day and pickup).</p>
@@ -557,6 +561,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=7b37a91cfc"></script>
+<script src="app.js?v=dbd57b15db"></script>
 </body>
 </html>
