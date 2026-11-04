@@ -1641,16 +1641,15 @@ function renderPlanner() {
     `<em class="${d > 0 ? "pos-up" : d < 0 ? "pos-dn" : "dim"}">${note}</em></div>`;
   const kpis = '<div class="sp-kpis">' +
     kpi("Starts left", Q.b0.starts, Q.a0.starts, Q.dSt, Q.dSt ? sg(Q.dSt, 0) + " starts" : "no change") +
-    kpi("Projected points", fx(Q.b0.pts, 0), fx(Q.a0.pts, 0), Q.dPts, Q.dPts ? sg(Q.dPts, 0) + " pts" : "no change") +
-    kpi("Adds needed", `${Q.moves.length} of ${P.addsLeft}`, null, 0, `you have left${P.PER.adds != null ? ` (${P.used} of ${P.PER.adds} used)` : ""}`) +
+    kpi("Points", fx(Q.b0.pts, 0), fx(Q.a0.pts, 0), Q.dPts, Q.dPts ? sg(Q.dPts, 0) + " pts" : "no change") +
+    kpi("Adds", `${Q.moves.length}`, null, 0, `of ${P.addsLeft} left`) +
     "</div>";
   // ---- the options
   const opts = P.plans.length && A.moves.length ? '<div class="sp-opts">' + P.plans.map((pl, k) =>
-    `<button type="button" class="sp-opt${pl === Q ? " on" : ""}" data-sp="${k}" aria-pressed="${pl === Q}">` +
+    `<button type="button" class="sp-opt${pl === Q ? " on" : ""}" data-sp="${k}" aria-pressed="${pl === Q}" title="${esc(pl.why + " · " + pl.moves.length + " add" + (pl.moves.length === 1 ? "" : "s"))}">` +
     `<span class="sp-ol">${esc(pl.label)}</span>` +
     `<span class="sp-ov"><b class="${pl.dSt > 0 ? "pos-up" : ""}">${sg(pl.dSt, 0)}</b> starts · <b class="${pl.dPts > 0 ? "pos-up" : ""}">${sg(pl.dPts, 0)}</b> pts</span>` +
-    `<span class="sp-avs">${pl.moves.map((m) => headshot(m.f.id, "sp-av")).join("")}<span class="dim">${pl.moves.length} add${pl.moves.length === 1 ? "" : "s"}</span></span>` +
-    `<span class="sp-why">${esc(pl.why)}</span></button>`).join("") + "</div>" : "";
+    `<span class="sp-avs">${pl.moves.map((m) => headshot(m.f.id, "sp-av")).join("")}</span></button>`).join("") + "</div>" : "";
   // ---- timeline: each roster spot that changes hands, day by day
   const rows = [];
   Q.moves.filter((m) => !m.chain).forEach((m0) => {
@@ -1665,7 +1664,7 @@ function renderPlanner() {
   let hue = 0;
   const tl = rows.length ? `<div class="sp-tl" style="--nd:${nd}">` +
     '<div class="sp-tlh"></div>' + P.days.map((d, i) => `<div class="sp-tlh${gameDay(i) ? "" : " dim"}">${dn(d)}<span>${md(d)}</span></div>`).join("") +
-    rows.map((r, k) => `<div class="sp-tll">${r.o ? `Spot ${k + 1}` : "Open spot"}</div>` +
+    rows.map((r, k) => `<div class="sp-tll">${r.o ? k + 1 : "Open"}</div>` +
       (r.o && r.t0 > 0 ? `<div class="sp-seg keep" style="grid-column:2/${2 + r.t0}">${headshot(r.o.id, "sp-av")}<span class="sp-sn">${esc(last(r.o.n))}</span>` +
         marks(r.o, 0, r.t0, (i) => Q.after[i].ids.has(r.o.id)) + "</div>" : "") +
       (!r.o && r.t0 > 0 ? `<div class="sp-seg empty" style="grid-column:2/${2 + r.t0}"></div>` : "") +
@@ -1673,7 +1672,7 @@ function renderPlanner() {
         return `<div class="sp-seg add" style="grid-column:${2 + h.from}/${2 + h.to};--c:${c}" title="${esc(m.f.n + " · " + m.f.p.tm)}">${headshot(m.f.id, "sp-av")}` +
           `<span class="sp-sn">${esc(last(m.f.n))}</span>` + marks(h, h.from, h.to, (i) => m.starts[i]) + "</div>"; }).join("")).join("") +
     // starter slots each night: grey = already filled, colour = filled by the plan
-    '<div class="sp-tll">Starters</div>' + P.days.map((d, i) => {
+    '<div class="sp-tll" title="Starter slots filled each night">Slots</div>' + P.days.map((d, i) => {
       if (!gameDay(i)) return '<div class="sp-pc dim">no games</div>';
       const b = Q.before[i].starts, a = Q.after[i].starts;
       const pips = Array.from({length: P.slots}, (_, k) => `<i class="${k < Math.min(a, b) ? "f" : k < a ? "n" : k < b ? "l" : ""}"></i>`).join("");
@@ -1686,26 +1685,24 @@ function renderPlanner() {
     const games = P.days.map((d, i) => (i >= h.from && i < h.to && h.dv[i].g ? `<span class="sp-g${mv.starts[i] ? " st" : ""}" title="${esc(mv.starts[i] ? "Starts: " + fx(h.dv[i].val, 0) + " pts projected" : "Plays, but no open slot that night")}">` +
       `${dn(d)} ${h.dv[i].g[2] ? "vs" : "@"} ${esc(h.dv[i].g[1])}</span>` : "")).join("");
     const lost = mv.o && mv.o.orig ? P.days.map((d, i) => (i >= mv.t && mv.o.dv[i].avail && Q.before[i].ids.has(mv.o.id) ? dn(d) : null)).filter(Boolean) : [];
-    const out = mv.o == null ? '<span class="dim">into your open roster spot</span>'
-      : `drop ${headshot(mv.o.id, "sp-av sm")}<span class="name" data-id="${mv.o.id}">${esc(mv.o.n)}</span>` +
-        (mv.o.orig ? (lost.length ? ` <span class="dim">· gives up his ${lost.join(", ")} start${lost.length > 1 ? "s" : ""}</span>` : ' <span class="dim">· no starts left this week</span>')
-          : ' <span class="dim">· your earlier streamer, done</span>');
+    const out = mv.o == null ? '<span class="dim">open roster spot</span>'
+      : `drop ${headshot(mv.o.id, "sp-av sm")}<span class="name" data-id="${mv.o.id}" title="${esc(mv.o.orig ? (lost.length ? `Gives up his ${lost.join(", ")} start${lost.length > 1 ? "s" : ""}` : "No starts left this week") : "Your earlier streamer, done")}">${esc(mv.o.n)}</span>` +
+        (lost.length ? ` <span class="dim">−${lost.join(", ")}</span>` : "");
     const nst = mv.starts.filter(Boolean).length;
     const alt = (x) => {
       // same number of starts but fewer EXPECTED starts = a back-to-back rest risk
       const risk = !x.dSt && x.dG < -0.02;
-      const d = x.dSt ? `${sg(x.dSt, 0)} start${Math.abs(x.dSt) === 1 ? "" : "s"}` : Math.abs(x.dPts) < 0.5 ? (risk ? "rest risk" : "about even")
-        : `${risk ? "" : "same starts, "}${sg(x.dPts, 0)} pts${risk ? " · rest risk" : ""}`;
+      const d = x.dSt ? `${sg(x.dSt, 0)} st` : Math.abs(x.dPts) < 0.5 ? (risk ? "risk" : "even") : `${sg(x.dPts, 0)}${risk ? " · risk" : ""}`;
       return `<button type="button" class="sp-alt name" data-id="${x.c.id}" title="${esc(`${x.c.n} (${x.c.p.tm}) on the same days instead: ${sg(x.dSt, 0)} starts, ${sg(x.dPts, 0)} pts vs this plan` + (!x.dSt && x.dG < -0.02 ? `\nHe may rest a back-to-back night: ${sg(x.dG, 2)} expected starts` : ""))}">` +
-        `${headshot(x.c.id, "sp-av sm")}<span>${esc(x.c.n)}</span><em class="${x.dSt < 0 || x.dPts < -0.5 ? "pos-dn" : "dim"}">${d}</em></button>`;
+        `${headshot(x.c.id, "sp-av sm")}<span>${esc(last(x.c.n))}</span><em class="${x.dSt < 0 || x.dPts < -0.5 ? "pos-dn" : "dim"}">${d}</em></button>`;
     };
     return `<div class="sp-mv"><div class="sp-when"><b>${dn(P.days[mv.t])}</b><span>${md(P.days[mv.t])}</span></div>` +
-      `<div class="sp-body"><div class="sp-add">${headshot(f.id)}<div class="sp-who"><span class="sp-tag">ADD</span>` +
+      `<div class="sp-body"><div class="sp-add">${headshot(f.id)}<div class="sp-who">` +
       `<span class="name" data-id="${f.id}">${esc(f.n)}</span><span class="sp-tm">${teamLogo(f.p.tm)}${esc(f.p.tm)} · ${esc(f.p.pos || "")}</span>${tags(f.p)}` +
       `<div class="sp-gs">${games}</div></div>` +
       `<div class="sp-val"><b>${nst}</b><span>start${nst === 1 ? "" : "s"}</span><em>${fx(mv.pts, 0)} pts</em></div></div>` +
       `<div class="sp-out">${out}</div>` +
-      (mv.alts.length ? `<div class="sp-alts"><span class="lbl">Or instead</span>${mv.alts.map(alt).join("")}</div>` : "") + "</div></div>";
+      (mv.alts.length ? `<div class="sp-alts"><span class="lbl" title="Next best free agents for the same days; the number is points vs this pick (st = starts)">Or</span>${mv.alts.map(alt).join("")}</div>` : "") + "</div></div>";
   };
   // ---- NBA teams playing on your short nights
   const openDays = P.before.map((x, i) => ({i, open: P.slots - x.starts})).filter((x) => x.open > 0 && gameDay(x.i));
@@ -1713,18 +1710,17 @@ function renderPlanner() {
   P.pool.forEach((f) => openDays.forEach(({i}) => { if (f.dv[i].avail) { const t = (teams[f.p.tm] = teams[f.p.tm] || {tm: f.p.tm, d: new Set(), best: f}); t.d.add(i); } }));
   const tlist = Object.values(teams).sort((x, y) => y.d.size - x.d.size || y.best.w.reduce((s, v) => s + v, 0) - x.best.w.reduce((s, v) => s + v, 0)).slice(0, 8);
   box.innerHTML = kpis + opts +
-    (Q.moves.length ? `<p class="sp-qw">${esc(Q.why)}. ${P.PER.label}, ${md(P.days[0])} to ${md(P.days[nd - 1])}.</p>` + tl +
-      '<div class="sp-legend"><span><i class="sp-k st"></i> starts</span><span><i class="sp-k bn"></i> plays, no open slot</span>' +
-      '<span><i class="sp-k f"></i> slot already filled</span><span><i class="sp-k n"></i> filled by the plan</span><span><i class="sp-k e"></i> empty</span></div>' +
+    (Q.moves.length ? tl +
+      '<div class="sp-legend"><span><i class="sp-k st"></i> starts</span><span><i class="sp-k bn"></i> no slot</span>' +
+      '<span><i class="sp-k n"></i> added</span><span><i class="sp-k f"></i> filled</span></div>' +
       `<div class="sp-moves">${Q.moves.map(card).join("")}</div>`
       : `<p class="msg info">No pickup adds at least ${isG ? "0.3 starts" : "2 points"} with ${SP.n ? "these drops" : "no drops"}${P.addsLeft ? "" : " (no adds left this matchup)"}.</p>`) +
-    (tlist.length ? `<div class="sp-teams"><span class="lbl">Teams playing on your short nights (${openDays.map((x) => dn(P.days[x.i])).join(", ")})</span>` +
-      tlist.map((t) => `<span class="sp-team">${teamLogo(t.tm)}<b>${esc(t.tm)}</b> ${t.d.size}× <span class="name dim" data-id="${t.best.id}">${esc(last(t.best.n))}</span></span>`).join("") + "</div>" : "") +
+    (tlist.length ? `<div class="sp-teams"><span class="lbl" title="${esc("NBA teams with the most games on nights you have open slots: " + openDays.map((x) => dn(P.days[x.i])).join(", "))}">Short nights</span>` +
+      tlist.map((t) => `<span class="sp-team name" data-id="${t.best.id}" title="${esc(`${t.tm}: ${t.d.size} game${t.d.size > 1 ? "s" : ""} on your short nights · best free agent ${t.best.n}`)}">${teamLogo(t.tm)}<b>${esc(t.tm)}</b> ${t.d.size}</span>`).join("") + "</div>" : "") +
     `<details class="sp-dropbox"><summary class="note">Who can be dropped (${P.pick.size} ticked)</summary>` +
     '<div class="sp-drops">' + P.cands.map((c) => `<label><input type="checkbox" data-spd="${c.r.id}"${P.pick.has(c.r.id) ? " checked" : ""}> ${esc(c.r.n)} ` +
       `<span class="dim">${fx(c.tot, 0)} ROS pts</span></label>`).join("") + "</div>" +
-    `<p class="note">Ticked by default: your ${SP.n} lowest by rest-of-season points (ROS FP/G × projected games left), keep list excluded. ` +
-    "Ticking more lets the planner choose among them; it still drops at most the number above. A streamer it adds can be swapped again later in the week.</p></details>";
+    `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list excluded. Tick more to let the planner choose.</p></details>`;
 }
 function bindPlanner() {
   const chips = (id, attr, fn) => document.querySelectorAll(`#${id} .chip`).forEach((c) => c.addEventListener("click", () => {

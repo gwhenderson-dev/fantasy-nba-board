@@ -510,8 +510,8 @@ select { max-width: 100%; }
 .sp-alt em { font-style: normal; font-size: .68rem; margin-left: .3rem; }
 /* teams + drop picker */
 .sp-teams { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: .9rem 0 .2rem; }
-.sp-teams .lbl { flex-basis: 100%; }
-.sp-team { display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; background: var(--band); border-radius: 999px; padding: .15rem .55rem .15rem .35rem; }
+.sp-teams .lbl { margin-right: .2rem; }
+.sp-team { cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; background: var(--band); border-radius: 999px; padding: .15rem .55rem .15rem .35rem; }
 .sp-dropbox { margin-top: .6rem; }
 .sp-dropbox summary { cursor: pointer; }
 .sp-drops { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .25rem .8rem; font-size: .85rem; margin: .4rem 0; }
