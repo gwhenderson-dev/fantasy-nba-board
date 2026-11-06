@@ -272,6 +272,10 @@ table.tbrk td, table.tbrk th { white-space: normal; }
 .mstat .k { text-align: center; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .mres { margin-top: .6rem; padding-top: .45rem; border-top: 1px solid var(--rule); font-size: .82rem; font-weight: 620; text-align: center; }
 td.dg { text-align: center; padding: .3rem .25rem; font-size: .8rem; }
+.wk-m { font-size: .6rem; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; margin-left: .15rem; letter-spacing: 0; }
+.slt .wk-m:first-child { margin-left: 0; }
+.wk-m.up { color: var(--good); }
+.wk-m.dn { color: var(--red); }
 td.dg.st { color: var(--good); font-weight: 700; }
 td.dg.bn { color: var(--gold); }
 td.dg.out { color: var(--warn); }

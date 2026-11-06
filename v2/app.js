@@ -1246,6 +1246,7 @@ const posCls = (pos) => {
 // 1 = allows the fewest (toughest), N = the most (easiest), as ESPN's football
 // matchup ranks. Owner's colours: the 15 easiest green, the 10 toughest red.
 const DVP_GREEN = 15, DVP_RED = 10;
+const WK_MCH = 2.0;                       // My week: mark a game only when the matchup is worth 2+ FP either way (~1 in 4 games)
 const CLS_NAME = {G: "guards", F: "forwards", C: "centres"};
 let DVP = null;
 function dvpRanks() {
@@ -2406,9 +2407,15 @@ function renderWeek() {
     const tip = x.noslot ? "You started him but every slot he can fill is taken — he won't count"
       : x.pick === 1 ? `You started him: ${fx(x.val)} projected` : x.pick === 0 ? "You benched him"
       : x.st ? `In the best lineup: ${fx(x.val)} projected. Untick to bench him` : "On the bench: the best lineup has no slot for him. Tick to start him";
-    return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip)}">` +
+    // quiet matchup mark: only when the tested matchup adjustment is big (|adj| >= WK_MCH)
+    const pc = posCls((BYID[r.id] || {}).pos), opp = x.g[1], adj = x.adj || 0;
+    const big = Math.abs(adj) >= WK_MCH;
+    const mtip = `${x.g[2] ? "vs" : "@"} ${opp}: matchup ${sg(adj)} FP` + (x.parts ? ` (pace ${sg(x.parts.pace)}, vs ${CLS_NAME[pc]} ${sg(x.parts.dvp)}, FG% ${sg(x.parts.fgp)}, ${x.g[2] ? "home" : "away"} ${sg(x.parts.home)})` : "") +
+      "\n" + dvpTip(opp, pc);
+    return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip + "\n" + mtip)}">` +
       `<input type="checkbox" class="gcb" data-tid="${tid}" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
-      (x.st && x.slot != null ? `<span class="slt">${ESPN_SLOT[x.slot]}</span>` : "") + "</td>";
+      (x.st && x.slot != null || big ? `<span class="slt">${x.st && x.slot != null ? ESPN_SLOT[x.slot] : ""}` +
+        (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length + (r.manual ? 1 : 0), 0);
   return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
