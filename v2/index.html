@@ -360,7 +360,9 @@ MPG        = (5 × draft MPG + season minutes) / (5 + games)
 availability = (20 × draft availability + games played)
              / (20 + team games so far)
 bonuses: same as rates, evidence = 600 / draft MPG games</div>
-    <p>This blend beat both &ldquo;never update&rdquo; and &ldquo;trust the season so far&rdquo; at all 25 test checkpoints. Its
+    <p>This blend beat both &ldquo;never update&rdquo; and &ldquo;trust the season so far&rdquo; at all 25 test checkpoints (two weeks in to late January). A later check (Nov 2026) re-tuned the weights for
+      the last third of the season (days 112&ndash;140): the best setting was the same 600 minutes / 5 games / 20 games, and dropping the
+      preseason projection late in the season was clearly worse (+0.12 FP/G error, 4 of 5 test seasons worse). Its
       result is the <strong>ROS FP/G</strong> used everywhere in-season, and:</p>
     <div class="formula">ROS points = ROS FP/G × availability × games left
            + injury boost (section 5)
