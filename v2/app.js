@@ -1407,8 +1407,8 @@ function renderWaivers() {
     (lg ? '<th class="l" title="FA = free agent, WVR = on waivers">Status</th>' : "") +
     H("proj", days.length > 1 ? "Proj total" : "Proj", "grp big", "Projected fantasy points in the window: rest-of-season FP/G + each game's matchup adjustment, times the chance he plays second nights of back-to-backs") +
     H("ceil", "Ceiling", "", "A top-10% night in the window (his best game): projection + 1.40 x his game-to-game spread, shrunk toward last season's spread. Backtest: 10.6% of games beat it") +
-    '<th class="l grp" title="Each game: opponent, its defence rank vs his position (1 = toughest, 30 = easiest), and the matchup adjustment in FP (position defence, pace, FG% allowed, home court)">Games (defence rank &middot; matchup FP)</th>' +
-    H("inj", "Injury / team effect", "", "Extra fantasy points from teammates being out (their minutes and usage passed on), added up over this window. Blank = no teammate out") +
+    '<th class="l grp gcolh" title="Each game: opponent, its defence rank vs his position (1 = toughest, 30 = easiest), and the matchup adjustment in FP (position defence, pace, FG% allowed, home court)">Games<br><span class="th-sub">defence rank &middot; matchup FP</span></th>' +
+    H("inj", 'Injury /<br>team effect', "l grp injh", "Extra fantasy points from teammates being out (their minutes and usage passed on), added up over this window. Blank = no teammate out") +
     H("fp", "ROS FP/G", "grp", "Rest-of-season FP/G (the tested in-season blend)") +
     H("now", "Now FP/G", "", "Actual FP/G this season") +
     H("adjFp", "Luck-adj", "", "FP/G with luck removed: his own per-minute rates at the minutes he played, plus his real shot attempts and assists") +
@@ -1436,9 +1436,9 @@ function renderWaivers() {
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
       `<td class="l grp gcol">${gs}</td>` +
-      (r.inj ? `<td class="l injcol" title="${esc(boostTip(r.boost) + (r.injN < r.ng ? `\nBoosted in ${r.injN} of his ${r.ng} games in this window (the rest come after a return)` : ""))}">` +
-        `<b class="pos-up">+${r.inj.toFixed(1)}</b>${r.ng > 1 ? ` <span class="dim">(${r.injPg.toFixed(1)}/g${r.injN < r.ng ? `, ${r.injN} of ${r.ng}` : ""})</span>` : ""}` +
-        `<span class="sub">${esc(r.boost.parts.map((x) => surname(x.name)).join(", "))} out</span></td>` : `<td class="injcol"></td>`) +
+      (r.inj ? `<td class="l grp injcol" title="${esc(boostTip(r.boost) + (r.injN < r.ng ? `\nBoosted in ${r.injN} of his ${r.ng} games in this window (the rest come after a return)` : ""))}">` +
+        `<b class="pos-up">+${r.inj.toFixed(1)}</b>${r.ng > 1 ? `<span class="dim inj-pg">${r.injPg.toFixed(1)}/g${r.injN < r.ng ? ` · ${r.injN} of ${r.ng} games` : ""}</span>` : ""}` +
+        `<span class="sub">${esc(r.boost.parts.map((x) => surname(x.name)).join(", "))} out</span></td>` : `<td class="grp injcol"></td>`) +
       `<td class="grp">${fx(r.fp)}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
       `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
       `<td class="grp ${r.risk ? "" : "dim"}" title="${b2 ? `Sat ${b2[0]} of ${b2[1]} second nights (last season + this)` : "No second nights on record"}">${r.listed ? "your list" : Math.round(r.psit * 100) + "%"}</td>` +

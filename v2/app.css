@@ -350,8 +350,14 @@ table.mini .nm { cursor: pointer; font-weight: 560; }
 
 /* wide tables: wrap the long text cells instead of scrolling sideways */
 #wv-table td.gcol { white-space: normal; min-width: 15rem; line-height: 1.9; }
-#wv-table td.injcol { white-space: nowrap; }
-#wv-table td.injcol .sub { display: block; font-size: .7rem; color: var(--muted); max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
+#wv-table td.injcol, #wv-table th.injh { border-left: 1px solid var(--rule2); border-right: 1px solid var(--rule2); padding-left: .7rem; padding-right: .7rem; min-width: 7rem; }
+#wv-table th.injh, #wv-table th.gcolh { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+#wv-table .th-sub { font-size: .62rem; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
+#wv-table td.gcol, #wv-table th.gcolh { border-left: 1px solid var(--rule2); padding-left: .6rem; }
+#wv-table td.injcol { white-space: nowrap; vertical-align: middle; line-height: 1.35; }
+#wv-table td.injcol b { font-size: .86rem; }
+#wv-table td.injcol .inj-pg { margin-left: .45rem; font-size: .72rem; }
+#wv-table td.injcol .sub { display: block; margin-top: .15rem; font-size: .7rem; color: var(--muted); max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
 #wv-table td.gcol .gch { margin: .08rem .2rem .08rem 0; }
 #is-table td.why { white-space: normal; min-width: 7.5rem; max-width: 11rem; font-size: .74rem; line-height: 1.3; }
 @media (max-width: 1360px) and (min-width: 641px) {
