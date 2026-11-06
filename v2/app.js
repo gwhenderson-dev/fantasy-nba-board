@@ -625,7 +625,7 @@ function boostTip(b) {
   b.parts.forEach((x) => {
     L2.push(`${x.name} is out (usage ${x.uK.toFixed(2)} per min) — back about ${niceDay(x.ret)} (${x.src})`);
     L2.push(`   +${x.min.toFixed(1)} min × his ${b.perMin.toFixed(2)} FP per min = +${x.fpMin.toFixed(1)}`);
-    if (x.fpUse > 0.05) L2.push(`   usage bump while ${x.name.split(" ").slice(-1)[0]} sits = +${x.fpUse.toFixed(1)}`);
+    if (x.fpUse > 0.05) L2.push(`   usage bump while ${surname(x.name)} sits = +${x.fpUse.toFixed(1)}`);
   });
   if (b.lone) L2.push("Lone backup centre: at least +4.8 minutes");
   L2.push(`${b.games} games affected ≈ +${b.tot.toFixed(0)} rest-of-season points`);
@@ -1372,7 +1372,10 @@ function streamRows() {
     });
     const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
     const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
-    out.push({p, fp, games, proj, ceil, now, adjFp, boost: boostInfo(p), luck: now != null && adjFp != null ? now - adjFp : null,
+    const bg = games.filter((g) => g.bst > 0.05);
+    const inj = bg.length ? bg.reduce((a, g) => a + g.bst * g.play, 0) : null;   // FP the injury boost adds in this window
+    out.push({p, fp, games, proj, ceil, now, adjFp, boost: boostInfo(p), inj, injN: bg.length, injPg: bg.length ? bg.reduce((a, g) => a + g.bst, 0) / bg.length : 0,
+      luck: now != null && adjFp != null ? now - adjFp : null,
       psit, listed, risk: listed || psit >= B.flag, ng: games.length,
       st: rostered ? (lg.byId[lg.owner[p.id]] || {}).ab : lg ? (lg.wv[p.id] ? "WVR" : "FA") : null});
   });
@@ -1404,7 +1407,8 @@ function renderWaivers() {
     (lg ? '<th class="l" title="FA = free agent, WVR = on waivers">Status</th>' : "") +
     H("proj", days.length > 1 ? "Proj total" : "Proj", "grp big", "Projected fantasy points in the window: rest-of-season FP/G + each game's matchup adjustment, times the chance he plays second nights of back-to-backs") +
     H("ceil", "Ceiling", "", "A top-10% night in the window (his best game): projection + 1.40 x his game-to-game spread, shrunk toward last season's spread. Backtest: 10.6% of games beat it") +
-    '<th class="l grp">Games (matchup adjustment)</th>' +
+    '<th class="l grp" title="Each game: opponent, its defence rank vs his position (1 = toughest, 30 = easiest), and the matchup adjustment in FP (position defence, pace, FG% allowed, home court)">Games (defence rank &middot; matchup FP)</th>' +
+    H("inj", "Injury / team effect", "", "Extra fantasy points from teammates being out (their minutes and usage passed on), added up over this window. Blank = no teammate out") +
     H("fp", "ROS FP/G", "grp", "Rest-of-season FP/G (the tested in-season blend)") +
     H("now", "Now FP/G", "", "Actual FP/G this season") +
     H("adjFp", "Luck-adj", "", "FP/G with luck removed: his own per-minute rates at the minutes he played, plus his real shot attempts and assists") +
@@ -1424,21 +1428,24 @@ function renderWaivers() {
     const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}${g.sp < 0.6 ? " st" : ""}" title="${esc(dvpTip(g.opp, pc) + "\n" + chipTip(g))}">` +
       `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}${dvpBadge(g.opp, pc)}` +
       `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span>` +
-      (g.bst > 0.05 ? `<span class="m pos-up">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
+      "</span>").join("");
     const b2 = r.p.b2b;
     return `<tr data-id="${p.id}"><td class="dim">${i + 1}</td>` +
-      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${esc(r.listed ? "On your list: doesn't play the 2nd night of back-to-backs, so those games count 0" : `Often rests the 2nd night of back-to-backs\nSat ${b2b0(r.p)} second nights (last season + this)\nChance he sits a 2nd night: ${Math.round(r.psit * 100)}% (league 11%)`)}">B2B</span>` : ""}${r.boost ? `<span class="tag boost" title="${esc(boostTip(r.boost))}">▲ +${r.boost.fpg.toFixed(1)} FP · ${esc(r.boost.parts.map((x) => x.name.split(" ").slice(-1)[0]).join(", "))} out</span>` : ""}</td>` +
+      `<td class="l name">${esc(p.n)}${tags(p)}${r.risk ? `<span class="tag b2b" title="${esc(r.listed ? "On your list: doesn't play the 2nd night of back-to-backs, so those games count 0" : `Often rests the 2nd night of back-to-backs\nSat ${b2b0(r.p)} second nights (last season + this)\nChance he sits a 2nd night: ${Math.round(r.psit * 100)}% (league 11%)`)}">B2B</span>` : ""}</td>` +
       `<td class="l dim">${esc(p.tm)}</td><td class="l dim">${esc(p.pos || "")}</td>` +
       (lg ? `<td class="l">${r.st === "WVR" ? '<span class="tag wvr" style="margin:0">WVR</span>' : esc(r.st || "")}</td>` : "") +
       `<td class="grp big">${fx(r.proj)}</td><td>${fx(r.ceil)}</td>` +
       `<td class="l grp gcol">${gs}</td>` +
+      (r.inj ? `<td class="l injcol" title="${esc(boostTip(r.boost) + (r.injN < r.ng ? `\nBoosted in ${r.injN} of his ${r.ng} games in this window (the rest come after a return)` : ""))}">` +
+        `<b class="pos-up">+${r.inj.toFixed(1)}</b>${r.ng > 1 ? ` <span class="dim">(${r.injPg.toFixed(1)}/g${r.injN < r.ng ? `, ${r.injN} of ${r.ng}` : ""})</span>` : ""}` +
+        `<span class="sub">${esc(r.boost.parts.map((x) => surname(x.name)).join(", "))} out</span></td>` : `<td class="injcol"></td>`) +
       `<td class="grp">${fx(r.fp)}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
       `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
       `<td class="grp ${r.risk ? "" : "dim"}" title="${b2 ? `Sat ${b2[0]} of ${b2[1]} second nights (last season + this)` : "No second nights on record"}">${r.listed ? "your list" : Math.round(r.psit * 100) + "%"}</td>` +
       `<td class="dim">${p.own != null ? p.own.toFixed(0) : "-"}</td></tr>`;
   }).join("");
   $("wv-table").querySelector("tbody").innerHTML = body ||
-    `<tr><td class="l dim" colspan="14">No ${WV.avail ? "available " : ""}players have a game in this window.</td></tr>`;
+    `<tr><td class="l dim" colspan="15">No ${WV.avail ? "available " : ""}players have a game in this window.</td></tr>`;
   const wl = windowLabel();
   $("wv-count").textContent = `${list.length} of ${rows.length} with a game ${wl}`;
   const shut = days.includes(META.asof) && META.asof === todayET() && dayLocked(META.asof);

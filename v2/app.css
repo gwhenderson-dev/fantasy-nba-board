@@ -350,6 +350,8 @@ table.mini .nm { cursor: pointer; font-weight: 560; }
 
 /* wide tables: wrap the long text cells instead of scrolling sideways */
 #wv-table td.gcol { white-space: normal; min-width: 15rem; line-height: 1.9; }
+#wv-table td.injcol { white-space: nowrap; }
+#wv-table td.injcol .sub { display: block; font-size: .7rem; color: var(--muted); max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
 #wv-table td.gcol .gch { margin: .08rem .2rem .08rem 0; }
 #is-table td.why { white-space: normal; min-width: 7.5rem; max-width: 11rem; font-size: .74rem; line-height: 1.3; }
 @media (max-width: 1360px) and (min-width: 641px) {
