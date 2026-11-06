@@ -463,6 +463,10 @@ select { max-width: 100%; }
 .sp-tlh { text-align: center; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink2); line-height: 1.2; }
 .sp-tlh span { display: block; font-weight: 500; color: var(--muted); letter-spacing: 0; }
 .sp-tlh.dim { opacity: .45; }
+.sp-tlh.past { opacity: .4; }
+.sp-tlh em { display: block; font-style: normal; font-size: .6rem; font-weight: 600; letter-spacing: .03em; color: var(--muted); text-transform: lowercase; }
+.sp-seg.past { background: repeating-linear-gradient(135deg, rgba(127, 127, 127, .09) 0 6px, transparent 6px 12px); border-radius: 8px; min-height: 2.2rem; }
+.sp-pc.past { color: var(--muted); opacity: .5; font-size: .66rem; justify-content: center; }
 .sp-tll { grid-column: 1; font-size: .74rem; font-weight: 650; color: var(--muted); align-self: center; }
 .sp-seg { border-radius: 9px; padding: .3rem .4rem .35rem; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto;
   align-items: center; column-gap: .35rem; row-gap: .25rem; min-width: 0; }

@@ -1808,17 +1808,24 @@ function renderPlanner() {
       return !x.avail ? '<i class="no"></i>' : starts(i) ? `<i class="st" title="${esc(dn(P.days[i]) + ": starts — " + fx(x.val, 0) + " pts projected")}"></i>`
         : `<i class="bn" title="${esc(dn(P.days[i]) + ": plays, but no open slot")}"></i>`; }).join("") + "</span>";
   let hue = 0;
-  const tl = rows.length ? `<div class="sp-tl" style="--nd:${nd}">` +
-    '<div class="sp-tlh"></div>' + P.days.map((d, i) => `<div class="sp-tlh${gameDay(i) ? "" : " dim"}">${dn(d)}<span>${md(d)}</span></div>`).join("") +
+  // the whole matchup week stays on screen: days already played (or locked) are greyed
+  const past = [], tdy = todayET();
+  for (let d = P.PER.start; d < P.days[0]; d = addDays(d, 1)) past.push(d);
+  const np = past.length;
+  const pastLbl = (d) => (d === tdy ? (dayLocked(tdy) ? "locked" : "skipped") : "done");
+  const tl = rows.length ? `<div class="sp-tl" style="--nd:${np + nd}">` +
+    '<div class="sp-tlh"></div>' + past.map((d) => `<div class="sp-tlh past" title="${esc(d === tdy ? (dayLocked(tdy) ? "Today's pickups closed at the first tip-off" : "You chose to start the plan tomorrow") : "Already played: nothing to plan")}">${dn(d)}<span>${md(d)}</span><em>${pastLbl(d)}</em></div>`).join("") +
+    P.days.map((d, i) => `<div class="sp-tlh${gameDay(i) ? "" : " dim"}">${dn(d)}<span>${md(d)}</span></div>`).join("") +
     rows.map((r, k) => `<div class="sp-tll">${r.o ? k + 1 : "Open"}</div>` +
-      (r.o && r.t0 > 0 ? `<div class="sp-seg keep" style="grid-column:2/${2 + r.t0}">${headshot(r.o.id, "sp-av")}<span class="sp-sn">${esc(last(r.o.n))}</span>` +
+      (np ? `<div class="sp-seg past" style="grid-column:2/${2 + np}"></div>` : "") +
+      (r.o && r.t0 > 0 ? `<div class="sp-seg keep" style="grid-column:${2 + np}/${2 + np + r.t0}">${headshot(r.o.id, "sp-av")}<span class="sp-sn">${esc(last(r.o.n))}</span>` +
         marks(r.o, 0, r.t0, (i) => Q.after[i].ids.has(r.o.id)) + "</div>" : "") +
-      (!r.o && r.t0 > 0 ? `<div class="sp-seg empty" style="grid-column:2/${2 + r.t0}"></div>` : "") +
+      (!r.o && r.t0 > 0 ? `<div class="sp-seg empty" style="grid-column:${2 + np}/${2 + np + r.t0}"></div>` : "") +
       r.chain.map((m) => { const h = m.h, c = SP_HUES[hue++ % SP_HUES.length];
-        return `<div class="sp-seg add" style="grid-column:${2 + h.from}/${2 + h.to};--c:${c}" title="${esc(m.f.n + " · " + m.f.p.tm)}">${headshot(m.f.id, "sp-av")}` +
+        return `<div class="sp-seg add" style="grid-column:${2 + np + h.from}/${2 + np + h.to};--c:${c}" title="${esc(m.f.n + " · " + m.f.p.tm)}">${headshot(m.f.id, "sp-av")}` +
           `<span class="sp-sn">${esc(last(m.f.n))}</span>` + marks(h, h.from, h.to, (i) => m.starts[i]) + "</div>"; }).join("")).join("") +
     // starter slots each night: grey = already filled, colour = filled by the plan
-    '<div class="sp-tll" title="Starter slots filled each night">Slots</div>' + P.days.map((d, i) => {
+    '<div class="sp-tll" title="Starter slots filled each night">Slots</div>' + past.map((d) => `<div class="sp-pc past">${pastLbl(d)}</div>`).join("") + P.days.map((d, i) => {
       if (!gameDay(i)) return '<div class="sp-pc dim">no games</div>';
       const b = Q.before[i].starts, a = Q.after[i].starts;
       const pips = Array.from({length: P.slots}, (_, k) => `<i class="${k < Math.min(a, b) ? "f" : k < a ? "n" : k < b ? "l" : ""}"></i>`).join("");
