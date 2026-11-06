@@ -1543,7 +1543,9 @@ function dayLocked(d) {
   return x !== "pending" && (x.live || (x.tip != null && Date.now() >= x.tip));
 }
 const tipClock = (d) => { const x = LOCK[d]; return x && x.tip ? new Date(x.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit", timeZoneName: "short"}) : ""; };
-const SP = {n: 1, metric: "games", from: "0", pick: null, key: null, plan: null};
+const SP = {n: 1, metric: "games", from: "0", pick: null, key: null, plan: null, dropOpen: false};
+const spPickKey = () => `fnba.v2.droppick.${L.key || L.id}.${myTeam()}`;
+function spSaved() { const v = lsGet(spPickKey(), null); return Array.isArray(v) ? v : null; }
 const SP_PTW = 1 / 200;                   // "Most games": one projected point = 1/200 of a start
 const SP_POOL = 40;                       // free agents considered: the best 40 over the window + 6 per day
 function planStream(inner) {
@@ -1572,7 +1574,10 @@ function planStream(inner) {
   // who may go: the visitor's ticks, else the n lowest rest-of-season points
   const cands = T.ps.filter((r) => r.p && lg.slot[r.id] !== 13 && !keep.has(normName(r.n)))
     .map((r) => ({r, tot: seasonLine(r.p).tot})).sort((a, b) => a.tot - b.tot);
-  const pick = SP.pick || new Set(cands.slice(0, SP.n).map((c) => c.r.id));
+  // your own ticks are remembered in this browser (per league + team); players no
+  // longer on the roster drop out of the list, and with none left it's the default
+  const sv = spSaved(), mine = sv ? new Set(sv.filter((id) => cands.some((c) => c.r.id === id))) : null;
+  const pick = mine && mine.size ? mine : new Set(cands.slice(0, SP.n).map((c) => c.r.id));
   const mem = T.ps.map((r) => ({id: r.id, n: r.n, p: r.p, elig: r.elig, dv: r.days, w: r.days.map(W),
     from: 0, to: nd, orig: true, ok: pick.has(r.id)}));
   const all = PLAYERS.filter((p) => lg.owner[p.id] == null && !lg.wv[p.id] && p.s && !isAbsent(p) && !benched(p))
@@ -1757,7 +1762,7 @@ function renderPlanner() {
   const lg = LGRES[L.id];
   if (lg && !lg._spRet) { lg._spRet = 1; loadReturns(lg).then(() => { SP.key = null; renderPlanner(); }); }
   const locked = dayLocked(todayET());
-  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.metric, SP.from, SP.pick ? [...SP.pick] : null, DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length]);
+  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.metric, SP.from, spSaved(), DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length]);
   const tb = document.querySelector('#sp-from .chip[data-f="0"]');
   if (tb) {
     tb.disabled = locked;
@@ -1870,10 +1875,11 @@ function renderPlanner() {
       : `<p class="msg info">No pickup adds at least ${isG ? "0.3 starts" : "2 points"} with ${SP.n ? "these drops" : "no drops"}${P.addsLeft ? "" : " (no adds left this matchup)"}.</p>`) +
     (tlist.length ? `<div class="sp-teams"><span class="lbl" title="${esc("NBA teams with the most games on nights you have open slots: " + openDays.map((x) => dn(P.days[x.i])).join(", "))}">Short nights</span>` +
       tlist.map((t) => `<span class="sp-team name" data-id="${t.best.id}" title="${esc(`${t.tm}: ${t.d.size} game${t.d.size > 1 ? "s" : ""} on your short nights · best free agent ${t.best.n}`)}">${teamLogo(t.tm)}<b>${esc(t.tm)}</b> ${t.d.size}</span>`).join("") + "</div>" : "") +
-    `<details class="sp-dropbox"><summary class="note">Who can be dropped (${P.pick.size} ticked)</summary>` +
+    `<details class="sp-dropbox"${SP.dropOpen ? " open" : ""}><summary class="note">Who can be dropped (${P.pick.size} ticked${spSaved() ? ", your choice" : ""})</summary>` +
     '<div class="sp-drops">' + P.cands.map((c) => `<label><input type="checkbox" data-spd="${c.r.id}"${P.pick.has(c.r.id) ? " checked" : ""}> ${esc(c.r.n)} ` +
       `<span class="dim">${fx(c.tot, 0)} ROS pts</span></label>`).join("") + "</div>" +
-    `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list excluded. Tick more to let the planner choose.</p></details>`;
+    `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list excluded. Tick more to let the planner choose. ` +
+    `Your ticks are remembered in this browser.${spSaved() ? ' <button type="button" class="linkbtn" data-sprst>Back to the default</button>' : ""}</p></details>`;
 }
 function bindPlanner() {
   const chips = (id, attr, fn) => document.querySelectorAll(`#${id} .chip`).forEach((c) => c.addEventListener("click", () => {
@@ -1881,7 +1887,7 @@ function bindPlanner() {
     document.querySelectorAll(`#${id} .chip`).forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
     renderPlanner();
   }));
-  chips("sp-n", "n", (v) => { SP.n = +v; SP.pick = null; });
+  chips("sp-n", "n", (v) => { SP.n = +v; });
   chips("sp-metric", "m", (v) => { SP.metric = v; });
   chips("sp-from", "f", (v) => { SP.from = v; });
   $("sp-out").addEventListener("change", (e) => {
@@ -1889,10 +1895,15 @@ function bindPlanner() {
     if (!cb) return;
     const s = new Set([...SP.plan.pick]);
     if (cb.checked) s.add(+cb.dataset.spd); else s.delete(+cb.dataset.spd);
-    SP.pick = s;
+    lsSet(spPickKey(), [...s]);
+    SP.dropOpen = true;
     renderPlanner();
   });
+  $("sp-out").addEventListener("toggle", (e) => {
+    if (e.target.classList && e.target.classList.contains("sp-dropbox")) SP.dropOpen = e.target.open;
+  }, true);
   $("sp-out").addEventListener("click", (e) => {
+    if (e.target.closest("[data-sprst]")) { lsSet(spPickKey(), null); SP.dropOpen = true; renderPlanner(); return; }
     const o = e.target.closest("[data-sp]");
     if (o) { SP.sel = +o.dataset.sp; renderPlanner(); return; }
     const n = e.target.closest(".name[data-id]");
