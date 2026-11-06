@@ -92,7 +92,7 @@ const espnBase = () => `https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/
 function espnLeague(lg) {
   if (!lg || lg.platform !== "espn" || !/^\d+$/.test(lg.id || "")) return Promise.resolve(null);
   if (!LGDATA[lg.id]) {
-    LGDATA[lg.id] = fetch(espnBase() + lg.id + "?view=mTeam&view=mRoster").then((r) => {
+    LGDATA[lg.id] = fetch(espnBase() + lg.id + "?view=mTeam&view=mRoster", {cache: "no-store"}).then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }).then((j) => {
@@ -112,13 +112,13 @@ function espnLeague(lg) {
           }
         });
       });
-      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {},
+      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {}, at: Date.now(),
         byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
       // second, optional call: which unrostered players are on waivers (not free agents)
       // ESPN answers 400 to this filter without a sort clause
       const flt = JSON.stringify({players: {filterStatus: {value: ["WAIVERS"]}, limit: 2000,
                                             sortPercOwned: {sortPriority: 1, sortAsc: false}}});
-      return fetch(espnBase() + lg.id + "?view=kona_player_info", {headers: {"x-fantasy-filter": flt}})
+      return fetch(espnBase() + lg.id + "?view=kona_player_info", {headers: {"x-fantasy-filter": flt}, cache: "no-store"})
         .then((r) => (r.ok ? r.json() : {players: []})).catch(() => ({players: []}))
         .then((k) => {
           (k.players || []).forEach((p) => { if (p && p.id != null && d.owner[p.id] == null) d.wv[p.id] = 1; });
@@ -152,7 +152,7 @@ function fillTeamPicker() {
 }
 function refreshLeagueData() {
   const lg = STORE.list[STORE.active];
-  espnLeague(lg).then((d) => {
+  return espnLeague(lg).then((d) => {
     if (!d || STORE.list[STORE.active] !== lg) return;
     lg.tl = d.teams.map((t) => [t.id, t.name, t.ab]);
     if (lg.my_team != null && !d.byId[lg.my_team]) delete lg.my_team;
@@ -1359,12 +1359,14 @@ function renderWaivers() {
     `<tr><td class="l dim" colspan="14">No ${WV.avail ? "available " : ""}players have a game in this window.</td></tr>`;
   const wl = windowLabel();
   $("wv-count").textContent = `${list.length} of ${rows.length} with a game ${wl}`;
-  $("wv-lede").innerHTML = !days.length ? "No fantasy week left in the schedule for this window. " : `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
+  const shut = days.includes(META.asof) && META.asof === todayET() && dayLocked(META.asof);
+  $("wv-lede").innerHTML = (shut ? `<b>Today&rsquo;s pickups are closed</b> (first tip-off${tipClock(META.asof) ? " " + esc(tipClock(META.asof)) : ""}): anyone you add now plays from tomorrow. ` : "") +
+    (!days.length ? "No fantasy week left in the schedule for this window. " : `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
     (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
       : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ")) +
     `Players out are left off, using the <strong>official NBA injury report</strong>${OFF.as_of ? ` (as of ${esc(OFF.as_of)})` : ""} first and ESPN&rsquo;s status otherwise: ` +
     `a player listed out on his team&rsquo;s last two or more reports is dropped entirely, a one-night Out removes just that game, and Doubtful / Questionable are tagged. ` +
-    `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`;
+    `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`);
   const sk = (rows.skipped || []).sort((a, b) => fpg(b.s, b.bp) - fpg(a.s, a.bp));
   $("wv-note").innerHTML = (sk.length ? `<strong>Left off — not in the rotation</strong> (healthy, but no minutes in any of their team&rsquo;s last 5 games; they come back the day they play): ` +
     sk.slice(0, 12).map((p) => `<span class="name" data-id="${p.id}">${esc(p.n)}</span> <span class="dim">${esc(p.tm)}</span>`).join(", ") + (sk.length > 12 ? ` and ${sk.length - 12} more` : "") + ".<br><br>" : "") +
@@ -1425,6 +1427,28 @@ function bindWaivers() {
 // against each other until the total stops improving. (A one-move-at-a-time
 // greedy missed pairs that only pay together: Thu-Fri streamer, then a
 // Sat-Sun one.) Free agents only: a waiver claim doesn't clear in time.
+// ---- pickup lock: once the day's first NBA game tips off, ESPN no longer lets
+// an add play that day. Tip times come from ESPN's live scoreboard (the
+// published schedule has dates only); a game already under way also locks it.
+const LOCK = {};                          // ET date -> {tip: ms|null, live: bool} | "pending"
+function loadTip(d) {
+  if (LOCK[d]) return;
+  LOCK[d] = "pending";
+  espnSite("scoreboard", "dates=" + d.replace(/-/g, "")).then((sb) => {
+    const ev = (sb && sb.events) || [];
+    const tips = ev.map((e) => Date.parse(e.date)).filter((t) => !isNaN(t));
+    LOCK[d] = {tip: tips.length ? Math.min(...tips) : null, live: ev.some((e) => ((e.status || {}).type || {}).state !== "pre"), ok: !!sb};
+    const t = LOCK[d].tip;
+    if (t && t > Date.now()) setTimeout(() => { if (!$("tab-wire").hidden) renderWaivers(); }, t - Date.now() + 1000);
+    if (!$("tab-wire").hidden) renderWaivers();
+  });
+}
+function dayLocked(d) {
+  const x = LOCK[d];
+  if (!x) { loadTip(d); return false; }
+  return x !== "pending" && (x.live || (x.tip != null && Date.now() >= x.tip));
+}
+const tipClock = (d) => { const x = LOCK[d]; return x && x.tip ? new Date(x.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit", timeZoneName: "short"}) : ""; };
 const SP = {n: 1, metric: "games", from: "0", pick: null, key: null, plan: null};
 const SP_PTW = 1 / 200;                   // "Most games": one projected point = 1/200 of a start
 const SP_POOL = 40;                       // free agents considered: the best 40 over the window + 6 per day
@@ -1435,7 +1459,8 @@ function planStream(inner) {
   const today = todayET();
   const PER = matchupPeriods().find((p) => p.start <= today && today <= p.end);
   if (!PER) return {err: "No matchup is in progress."};
-  const d0 = SP.from === "1" ? addDays(today, 1) : today;
+  // adds made after the day's first tip-off only count from tomorrow (ESPN locks the day)
+  const d0 = SP.from === "1" || dayLocked(today) ? addDays(today, 1) : today;
   const days = [];
   for (let d = d0; d <= PER.end; d = addDays(d, 1)) days.push(d);
   if (!days.length) return {err: "This matchup ends today."};
@@ -1637,7 +1662,21 @@ function renderPlanner() {
   if (!box) return;
   const lg = LGRES[L.id];
   if (lg && !lg._spRet) { lg._spRet = 1; loadReturns(lg).then(() => { SP.key = null; renderPlanner(); }); }
-  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.metric, SP.from, SP.pick ? [...SP.pick] : null, DATA_V, !!lg, Object.keys(OFF.players || {}).length]);
+  const locked = dayLocked(todayET());
+  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.metric, SP.from, SP.pick ? [...SP.pick] : null, DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length]);
+  const tb = document.querySelector('#sp-from .chip[data-f="0"]');
+  if (tb) {
+    tb.disabled = locked;
+    tb.title = locked ? `Today's pickups closed when the first game tipped off${tipClock(todayET()) ? " (" + tipClock(todayET()) + ")" : ""}: planning from tomorrow` : "Plan from today (before the first tip-off)";
+    document.querySelectorAll("#sp-from .chip").forEach((c) => c.setAttribute("aria-pressed", String(locked ? c.dataset.f === "1" : c.dataset.f === SP.from)));
+  }
+  const lockNote = $("sp-lock");
+  if (lockNote) {
+    const t = tipClock(todayET());
+    lockNote.innerHTML = (locked ? `<b>Today&rsquo;s pickups are closed</b> — the first game tipped off${t ? " at " + esc(t) : ""}, so the plan starts tomorrow. `
+      : t ? `Today&rsquo;s pickups close at the first tip-off, <b>${esc(t)}</b>; after that the plan moves to tomorrow. ` : "") +
+      (lg ? `Rosters and adds used as of ${new Date(lg.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})} — press <b>Refresh</b> after you make a move.` : "");
+  }
   if (key !== SP.key) { SP.key = key; SP.plan = planStream(); SP.sel = 0; }
   const P = SP.plan;
   if (P.err) { box.innerHTML = `<p class="note">${esc(P.err)}</p>`; $("sp-sum").textContent = ""; return; }
@@ -3065,10 +3104,12 @@ function reloadData() {
     GAMES = GAMES_P = null; RECAP = RECAP_P = null; LIVE_AT = {};
     Object.keys(LGDATA).forEach((k) => delete LGDATA[k]);
     Object.keys(LGRES).forEach((k) => delete LGRES[k]);
+    Object.keys(LOCK).forEach((k) => delete LOCK[k]);
+    SP.pick = null; SP.key = null;                     // drop candidates re-picked from the new roster
     Object.assign(WK, {mm: null, mmP: null});
     renderAll();
-    refreshLeagueData();
     loadReturns2().then(renderAll);
+    return refreshLeagueData();                        // rosters + adds used, so "Updated" means they are in
   });
 }
 function startRebuild(tok) {
@@ -3103,7 +3144,7 @@ function bindRefresh() {
     btn.disabled = true;
     refMsg("Refreshing &hellip;");
     reloadData().then(() => {
-      refMsg(`Updated ${clock()}${OFF.as_of ? " · injuries " + esc(OFF.as_of.slice(11)) : ""}`);
+      refMsg(`Updated ${clock()}${LGRES[L.id] ? " · rosters &amp; adds" : ""}${OFF.as_of ? " · injuries " + esc(OFF.as_of.slice(11)) : ""}`);
       const tok = ghToken();
       if (!tok) return;
       return startRebuild(tok).then(() => reloadData())
@@ -3173,7 +3214,7 @@ fetchData(false)
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
-    window.FNBA_DEBUG = {rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+    window.FNBA_DEBUG = {lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
         return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, free: P.free, n: SP.n, metric: SP.metric,

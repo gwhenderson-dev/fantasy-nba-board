@@ -82,6 +82,9 @@ select { -webkit-appearance: none; appearance: none; padding-right: 2rem; backgr
 input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: .3rem; }
 .chip { border: 1px solid var(--rule2); background: var(--paper); border-radius: 999px; padding: .3rem .75rem; font-size: .82rem; cursor: pointer; min-height: 2.1rem; }
+.chip:disabled { opacity: .45; cursor: not-allowed; text-decoration: line-through; }
+.sp-lock { margin: .2rem 0 .6rem; }
+.sp-lock:empty { display: none; }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .btn { border: 1px solid var(--rule2); background: var(--paper); border-radius: 8px; padding: .42rem .9rem; font-size: .86rem; font-weight: 560; cursor: pointer; min-height: 2.1rem; }
 .btn:hover { border-color: var(--ink2); }
