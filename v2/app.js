@@ -520,10 +520,20 @@ const posGroups = (pos) => {
 };
 function computeBoosts() {
   if (BC) return BC;
-  const P = META.opp, by = {}, abs = {};
-  if (!P) return (BC = {by, abs});
+  const P = META.opp, by = {}, abs = {}, skip = {};
+  if (!P) return (BC = {by, abs, skip});
   const byTeam = {};
   PLAYERS.forEach((p) => { (byTeam[p.tm] = byTeam[p.tm] || []).push(p); });
+  // rotation players listed out somewhere who hand out NO boost, and why
+  PLAYERS.forEach((p) => {
+    const o = off(p), espn = OUT_SET.includes(p.inj), mK = Math.max(p.rec || 0, p.mpg || 0);
+    if (!(isAbsent(p) || espn || (o && o[0] === "Out")) || mK < 15) return;
+    let why = null;
+    if (!isAbsent(p)) why = o && o[0] === "Out" ? "one" : offCleared(p) ? "cleared" : "status";
+    else if (!p.fresh) why = "stale";
+    else if (mK < P.key_min) why = "minutes";
+    if (why) skip[p.id] = {p, why, mK};
+  });
   Object.entries(byTeam).forEach(([tm, roster]) => {
     const keys = roster.filter((p) => isAbsent(p) && p.fresh && Math.max(p.rec || 0, p.mpg || 0) >= P.key_min);
     if (!keys.length) return;
@@ -532,7 +542,10 @@ function computeBoosts() {
     keys.forEach((k) => {
       // no remaining team game before his return -> nothing to hand out
       const win = absWindow(k);
-      if (!(META.sched[k.tm] || []).some((g) => g[0] > last && g[0] < win.ret)) return;
+      if (!(META.sched[k.tm] || []).some((g) => g[0] > last && g[0] < win.ret)) {
+        skip[k.id] = {p: k, why: "back", mK: Math.max(k.rec || 0, k.mpg || 0), ret: win.ret};
+        return;
+      }
       const kg = posGroups(k.pos), center = !!kg.C && !kg.G;
       const b = center ? P.b_center : P.b_gf, mK = Math.max(k.rec || 0, k.mpg || 0);
       const ws = mates.map((p) => {
@@ -561,7 +574,7 @@ function computeBoosts() {
       abs[k.id].mates.sort((a, b2) => b2.fp - a.fp);
     });
   });
-  return (BC = {by, abs});
+  return (BC = {by, abs, skip});
 }
 // extra minutes / fantasy points for player p on date d
 function boostMin(p, d) {
@@ -637,6 +650,18 @@ function renderBoostPanel(cid) {
       `<td class="l" style="white-space:normal;min-width:14rem">${top || '<span class="dim">no healthy teammates with a role</span>'}</td></tr>`;
   }).join("");
   const manualOnly = mo.filter((id) => BYID[id] && !B.abs[id]);
+  // listed-out rotation players (24+ min) who hand out no minutes, grouped by reason
+  const WHY = {
+    stale: "Out 5+ straight games: the model only moves minutes for a fresh absence (he played in one of his team&rsquo;s last 5). After that his teammates&rsquo; own minutes since he went out are taken as their role",
+    back: "Expected back before his team&rsquo;s next game",
+    one: "Listed Out for one game only (rest or a short knock): his other games count as normal",
+    cleared: "Not on the official report for his team&rsquo;s next game, so treated as available (ESPN may still say out)",
+    status: "Not counted as out (official report: questionable / probable, or ESPN only day-to-day)"};
+  const sk = Object.values(B.skip || {}).filter((x) => x.mK >= (META.opp || {}).key_min);
+  const grp = {};
+  sk.forEach((x) => { (grp[x.why] = grp[x.why] || []).push(x); });
+  const left = Object.keys(WHY).filter((k) => grp[k]).map((k) => `<li><b>${WHY[k]}:</b> ` +
+    grp[k].sort((a, b) => b.mK - a.mK).map((x) => `<span class="name" data-id="${x.p.id}">${esc(x.p.n)}</span> <span class="dim">${esc(x.p.tm)}${x.p.missed ? ", missed " + x.p.missed : ""}${x.ret ? ", back " + x.ret.slice(5) : ""}</span>`).join(" · ") + "</li>").join("");
   el.innerHTML = `<details class="card"${BUI.open[cid] ? " open" : ""} data-bp="${cid}" style="margin:1rem 0">` +
     `<summary><strong>Injury boosts</strong> <span class="dim">&mdash; ${ab.length} rotation player${ab.length === 1 ? "" : "s"} out, their minutes go to teammates</span></summary>` +
     `<p class="note">When a player who has been playing 24+ minutes is out, about 60% of his minutes go to healthy teammates, more to the same position and to players with more room to grow (tested on 7,669 past absences: the top beneficiary gained +3.3 minutes against +3.7 predicted; a lone backup centre gains at least +4.8). ` +
@@ -646,6 +671,7 @@ function renderBoostPanel(cid) {
     (rows ? '<div class="tablewrap" style="max-height:26rem"><table><thead><tr><th class="l">Out</th><th class="l">Tm</th><th title="Minutes he had been playing">Min</th><th title="His usage per minute (shots + 0.44 free-throw trips + turnovers) against a typical key player&rsquo;s 0.53">Usage</th>' +
       '<th class="l">Back about</th><th title="Override: weeks he will be out">Weeks out</th><th class="l">Biggest gains (+FP per game: minutes + usage)</th></tr></thead><tbody>' + rows + "</tbody></table></div>"
       : '<p class="note">No rotation players are out right now.</p>') +
+    (left ? `<details class="bp-left"><summary class="dim">Left out: ${sk.length} rotation player${sk.length === 1 ? "" : "s"} listed out who hand out no minutes, and why</summary><ul>${left}</ul></details>` : "") +
     `<div class="controls" style="margin-top:.7rem"><div class="ctl"><label for="${cid}-add">Mark a player out (news ESPN hasn&rsquo;t caught up with)</label>` +
     `<input id="${cid}-add" list="${cid}-dl" type="search" placeholder="player name" autocomplete="off" style="min-width:14rem"></div>` +
     `<button class="btn" data-addout="${cid}">Mark out</button>` +
@@ -2414,7 +2440,7 @@ function renderWeek() {
       "\n" + dvpTip(opp, pc);
     return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip + "\n" + mtip)}">` +
       `<input type="checkbox" class="gcb" data-tid="${tid}" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
-      (x.st && x.slot != null || big ? `<span class="slt">${x.st && x.slot != null ? ESPN_SLOT[x.slot] : ""}` +
+      (x.st && x.slot != null || big ? `<span class="slt">${x.st && x.slot != null ? ESPN_SLOT[x.slot] + (big ? " " : "") : ""}` +
         (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length + (r.manual ? 1 : 0), 0);
@@ -3335,7 +3361,7 @@ fetchData(false)
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
-    window.FNBA_DEBUG = {lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+    window.FNBA_DEBUG = {boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
         return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, free: P.free, n: SP.n, metric: SP.metric,
