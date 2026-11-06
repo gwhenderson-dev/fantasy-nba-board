@@ -89,18 +89,37 @@ function setActive(key) {
 // per visit. Rosters are TODAY's: the recap marks who owns a player now.
 const LGDATA = {}, LGRES = {};
 const espnBase = () => `https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${parseInt(META.season.slice(0, 4), 10) + 1}/segments/0/leagues/`;
+// After the day's first tip-off ESPN files every add, drop and IR move under the
+// NEXT scoring period (one per calendar day from opening night), so its current
+// roster no longer shows them: read the roster of the day moves now land in.
 function espnLeague(lg) {
   if (!lg || lg.platform !== "espn" || !/^\d+$/.test(lg.id || "")) return Promise.resolve(null);
   if (!LGDATA[lg.id]) {
-    LGDATA[lg.id] = fetch(espnBase() + lg.id + "?view=mTeam&view=mRoster", {cache: "no-store"}).then((r) => {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    }).then((j) => {
+    const today = todayET();
+    LGDATA[lg.id] = Promise.all([
+      fetch(espnBase() + lg.id + "?view=mTeam&view=mRoster", {cache: "no-store"}).then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }),
+      tipPromise(today),
+    ]).then(([j]) => {
+      // the scoring period moves land in: today's, or tomorrow's once today has tipped
+      // off (periods count calendar days from opening night). ESPN's own current
+      // period can lag past midnight ET, so ask whenever it is behind.
+      const first = Object.values(META.sched).reduce((m, gs) => (gs.length && gs[0][0] < m ? gs[0][0] : m), "9999");
+      const want = dayLocked(today) ? addDays(today, 1) : today;
+      const target = Math.round((Date.parse(want) - Date.parse(first)) / 864e5) + 1;
+      const next = target > (j.scoringPeriodId || 0);
+      if (!next) return [j, j, null];
+      return fetch(espnBase() + lg.id + "?view=mRoster&scoringPeriodId=" + target, {cache: "no-store"})
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        .then((n) => (n && (n.teams || []).length ? [j, n, target] : [j, j, null]));
+    }).then(([j, rj, period]) => {
       const teams = (j.teams || []).map((t) => ({id: t.id, ab: t.abbrev || "",
         name: (t.name || [t.location, t.nickname].filter(Boolean).join(" ") || "Team " + t.id).trim()}));
       const owner = {}, slot = {}, name = {}, elig = {}, inj = {}, pro = {}, tx = {};
-      (j.teams || []).forEach((t) => {
-        tx[t.id] = ((t.transactionCounter || {}).matchupAcquisitionTotals) || {};
+      (j.teams || []).forEach((t) => { tx[t.id] = ((t.transactionCounter || {}).matchupAcquisitionTotals) || {}; });
+      (rj.teams || []).forEach((t) => {
         ((t.roster || {}).entries || []).forEach((e) => {
           owner[e.playerId] = t.id; slot[e.playerId] = e.lineupSlotId;
           const pl = (e.playerPoolEntry || {}).player;
@@ -112,7 +131,7 @@ function espnLeague(lg) {
           }
         });
       });
-      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {}, at: Date.now(),
+      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {}, at: Date.now(), next: period,
         byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
       // second, optional call: which unrostered players are on waivers (not free agents)
       // ESPN answers 400 to this filter without a sort clause
@@ -1431,15 +1450,20 @@ function bindWaivers() {
 // an add play that day. Tip times come from ESPN's live scoreboard (the
 // published schedule has dates only); a game already under way also locks it.
 const LOCK = {};                          // ET date -> {tip: ms|null, live: bool} | "pending"
+const TIPP = {};
+function tipPromise(d) { loadTip(d); return TIPP[d] || Promise.resolve(); }
 function loadTip(d) {
   if (LOCK[d]) return;
   LOCK[d] = "pending";
-  espnSite("scoreboard", "dates=" + d.replace(/-/g, "")).then((sb) => {
+  TIPP[d] = espnSite("scoreboard", "dates=" + d.replace(/-/g, "")).then((sb) => {
     const ev = (sb && sb.events) || [];
     const tips = ev.map((e) => Date.parse(e.date)).filter((t) => !isNaN(t));
     LOCK[d] = {tip: tips.length ? Math.min(...tips) : null, live: ev.some((e) => ((e.status || {}).type || {}).state !== "pre"), ok: !!sb};
     const t = LOCK[d].tip;
-    if (t && t > Date.now()) setTimeout(() => { if (!$("tab-wire").hidden) renderWaivers(); }, t - Date.now() + 1000);
+    if (t && t > Date.now()) setTimeout(() => {      // tip-off: moves now land on tomorrow's roster
+      Object.keys(LGDATA).forEach((k) => delete LGDATA[k]);
+      refreshLeagueData();
+    }, t - Date.now() + 1000);
     if (!$("tab-wire").hidden) renderWaivers();
   });
 }
@@ -1675,7 +1699,7 @@ function renderPlanner() {
     const t = tipClock(todayET());
     lockNote.innerHTML = (locked ? `<b>Today&rsquo;s pickups are closed</b> — the first game tipped off${t ? " at " + esc(t) : ""}, so the plan starts tomorrow. `
       : t ? `Today&rsquo;s pickups close at the first tip-off, <b>${esc(t)}</b>; after that the plan moves to tomorrow. ` : "") +
-      (lg ? `Rosters and adds used as of ${new Date(lg.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})} — press <b>Refresh</b> after you make a move.` : "");
+      (lg ? `Rosters${lg.next ? " (incl. adds and drops made after tip-off)" : ""} and adds used as of ${new Date(lg.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})} — press <b>Refresh</b> after you make a move.` : "");
   }
   if (key !== SP.key) { SP.key = key; SP.plan = planStream(); SP.sel = 0; }
   const P = SP.plan;
@@ -3105,6 +3129,7 @@ function reloadData() {
     Object.keys(LGDATA).forEach((k) => delete LGDATA[k]);
     Object.keys(LGRES).forEach((k) => delete LGRES[k]);
     Object.keys(LOCK).forEach((k) => delete LOCK[k]);
+    Object.keys(TIPP).forEach((k) => delete TIPP[k]);
     SP.pick = null; SP.key = null;                     // drop candidates re-picked from the new roster
     Object.assign(WK, {mm: null, mmP: null});
     renderAll();
