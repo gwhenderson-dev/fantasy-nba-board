@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fantasy NBA Model</title>
-<link rel="stylesheet" href="app.css?v=b25513f1e6">
+<link rel="stylesheet" href="app.css?v=aba9979718">
 </head>
 <body>
 <header class="top">
@@ -26,6 +26,7 @@
     <button class="tab" role="tab" data-tab="week">My week</button>
     <button class="tab" role="tab" data-tab="trade">Trade analyzer</button>
     <button class="tab" role="tab" data-tab="sched">Schedule</button>
+    <button class="tab" role="tab" data-tab="def">Team defence</button>
     <button class="tab" role="tab" data-tab="how">How it works</button>
   </nav>
 </header>
@@ -278,6 +279,16 @@
       <span class="lg-i"><span class="sc-lt">7</span> lightest night of the week</span><span class="lg-i">striped columns = start of next week</span></div>
     <div class="tablewrap" style="max-height:none"><table id="sc-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="sc-note"></p>
+  </section>
+
+  <section class="panel" id="tab-def" hidden>
+    <h1>Team defence vs position</h1>
+    <p class="lede" id="df-lede"></p>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="dvp dvp-g">28th</span> easier matchup (the 15 teams that give up the most)</span>
+      <span class="lg-i"><span class="dvp dvp-n">13th</span> middle</span><span class="lg-i"><span class="dvp dvp-r">3rd</span> tough (the 10 that give up the least)</span>
+      <span class="lg-i"><b>%</b> fantasy points allowed vs the league average</span></div>
+    <div class="tablewrap" style="max-height:none"><table id="df-table" class="dvp-t"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="df-note"></p>
   </section>
 
   <section class="panel prose" id="tab-how" hidden>
@@ -566,6 +577,11 @@ past trades:
     <p>Every NBA team&rsquo;s games in the chosen fantasy week (Monday to Sunday), plus next week&rsquo;s Monday and Tuesday:
       &ldquo;@ORL&rdquo; is a game at Orlando, &ldquo;ORL&rdquo; a home game against Orlando. The top row counts the games each day;
       &ldquo;Plays on&rdquo; keeps only the teams that play on every day you pick. From the official NBA schedule in this morning&rsquo;s build.</p>
+    <h3>Team defence tab</h3>
+    <p>Fantasy points each team gives up per game to guards, forwards and centres (position = a player&rsquo;s first ESPN position), season
+      to date, ranked 1 (gives up the fewest, toughest) to 30 (the most, easiest): green = the 15 easiest, red = the 10 toughest. Pace and
+      opponents&rsquo; FG% are shown alongside. The same rank appears on every Waivers game chip against the player&rsquo;s position. The ranks are
+      for reading; the &plusmn;FP matchup number is the tested adjustment (position, pace, FG% allowed, home court).</p>
 
     <h2 id="how-good">12. How good is it?</h2>
     <ul class="plan">
@@ -596,6 +612,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=bcfe66fa07"></script>
+<script src="app.js?v=75c03b7784"></script>
 </body>
 </html>

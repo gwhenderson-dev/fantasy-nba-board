@@ -632,3 +632,16 @@ td img.pth { width: 20px; height: 20px; margin-right: .3rem; }
   img.pth { width: 19px; height: 19px; margin-right: .3rem; }
   .dh-hs { width: 64px; height: 47px; }
 }
+
+/* ---- defence vs position ranks (Waivers) */
+.dvp { display: inline-block; font-size: .68rem; font-weight: 750; border-radius: 5px; padding: 0 .3rem; margin-left: .3rem; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.dvp.dvp-g { background: var(--good-bg); color: var(--good); }
+.dvp.dvp-r { background: var(--red-bg); color: var(--red); }
+.dvp.dvp-n { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--rule2); }
+table.dvp-t td, table.dvp-t th { text-align: center; }
+table.dvp-t td.l, table.dvp-t th.l { text-align: left; }
+table.dvp-t .sp-logo { width: 20px; height: 20px; margin-right: .45rem; vertical-align: -5px; }
+table.dvp-t td.df-team { font-weight: 620; white-space: nowrap; }
+table.dvp-t td.df-team .name { cursor: default; }
+table.dvp-t th[data-k] { cursor: pointer; }
+table.dvp-t td .dvp { margin-left: 0; min-width: 2.3rem; text-align: center; }

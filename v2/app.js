@@ -1241,6 +1241,41 @@ const posCls = (pos) => {
   const t = String(pos || "").split(/[,/ ]+/)[0];
   return t === "C" ? "C" : (t === "SF" || t === "PF" || t === "F") ? "F" : "G";
 };
+// ---- defence vs position: each team ranked by fantasy points it allows per game
+// to guards / forwards / centres (META.mf, season to date, teams with 5+ games).
+// 1 = allows the fewest (toughest), N = the most (easiest), as ESPN's football
+// matchup ranks. Owner's colours: the 15 easiest green, the 10 toughest red.
+const DVP_GREEN = 15, DVP_RED = 10;
+const CLS_NAME = {G: "guards", F: "forwards", C: "centres"};
+let DVP = null;
+function dvpRanks() {
+  if (DVP && DVP.mf === META.mf) return DVP;
+  DVP = {mf: META.mf, n: 0};
+  const T = Object.keys(META.mf || {});
+  ["G", "F", "C"].forEach((c) => {
+    DVP[c] = {};
+    T.filter((t) => META.mf[t][c] != null).sort((a, b) => META.mf[a][c] - META.mf[b][c])
+      .forEach((t, i) => { DVP[c][t] = i + 1; });
+  });
+  DVP.n = T.length;
+  return DVP;
+}
+const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
+function dvpCls(rank) {
+  const R = dvpRanks();
+  return rank > R.n - DVP_GREEN ? "dvp-g" : rank <= DVP_RED ? "dvp-r" : "dvp-n";
+}
+function dvpBadge(opp, c) {
+  const R = dvpRanks(), k = (R[c] || {})[opp];
+  if (!k) return "";
+  return `<span class="dvp ${dvpCls(k)}">${ordinal(k)}</span>`;
+}
+function dvpTip(opp, c) {
+  const R = dvpRanks(), k = (R[c] || {})[opp], f = (META.mf[opp] || {})[c];
+  if (!k) return `${opp}: fewer than 5 games, no rank yet`;
+  return `${opp} vs ${CLS_NAME[c]}: ${ordinal(k)} of ${R.n} (1st = allows the fewest fantasy points)\n` +
+    `allows ${Math.round(f * 100)}% of the league-average FP to ${CLS_NAME[c]}, over ${META.mf[opp].n} games`;
+}
 function windowDays() {
   const d0 = META.asof;
   if (WV.win === "0") return [d0];
@@ -1358,8 +1393,9 @@ function renderWaivers() {
       g.rf < 1 ? `Back from a layoff: about ${Math.round(g.rf * 100)}% of his usual minutes in this game (first two games back)` : "",
       g.second ? `2nd night of a back-to-back: ${Math.round(r.psit * 100)}% chance he sits` + (r.p.b2b ? ` (sat ${r.p.b2b[0]} of ${r.p.b2b[1]} second nights)` : "") +
         `, so this game counts ${Math.round(g.play / (g.sp || 1) * 100)}%` : ""].filter(Boolean).join("\n");
-    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}${g.sp < 0.6 ? " st" : ""}" title="${esc(chipTip(g))}">` +
-      `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}` +
+    const pc = posCls(p.pos);
+    const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}${g.sp < 0.6 ? " st" : ""}" title="${esc(dvpTip(g.opp, pc) + "\n" + chipTip(g))}">` +
+      `${days.length > 1 ? dname(g.d) + " " : ""}${g.home ? "vs" : "@"} ${esc(g.opp)}${dvpBadge(g.opp, pc)}` +
       `<span class="m ${g.adj >= 1 ? "pos-up" : g.adj <= -1 ? "pos-dn" : "dim"}">${g.tip ? sg(g.adj) : ""}</span>` +
       (g.bst > 0.05 ? `<span class="m pos-up">▲${g.bst.toFixed(1)}</span>` : "") + "</span>").join("");
     const b2 = r.p.b2b;
@@ -2891,6 +2927,57 @@ function bindTrade() {
   });
 }
 
+// =========================================================== TEAM DEFENCE
+// Every team's fantasy points allowed to guards / forwards / centres (META.mf,
+// season to date), ranked 1 = toughest .. N = easiest, plus pace and opponents'
+// FG% — the same factors behind the Waivers matchup adjustment.
+const DF = {sort: "tm", dir: 1};
+function renderDefence() {
+  const R = dvpRanks(), mf = META.mf || {}, T = Object.keys(mf), today = todayET();
+  const rk = (c) => { const o = {}; T.slice().sort((a, b) => mf[a][c] - mf[b][c]).forEach((t, i) => { o[t] = i + 1; }); return o; };
+  const RP = rk("pace"), RF = rk("fgp");                           // 1 = slowest / stingiest
+  const nxt = {};
+  Object.entries(META.sched || {}).forEach(([tm, gs]) => { const g = gs.find((x) => x[0] >= today); if (g) nxt[tm] = g; });
+  const val = (t, k) => k === "tm" ? (TEAM_NAMES[t] || t) : k === "n" ? mf[t].n : k === "pace" ? mf[t].pace : k === "fgp" ? mf[t].fgp : R[k][t];
+  const rows = T.slice().sort((a, b) => { const x = val(a, DF.sort), y = val(b, DF.sort);
+    return DF.dir * (typeof x === "string" ? x.localeCompare(y) : x - y) || a.localeCompare(b); });
+  const on = (k) => (DF.sort === k ? ` on${DF.dir > 0 ? " asc" : ""}` : "");
+  const H = (k, lbl, cls = "", tip = "") => `<th data-k="${k}" class="${cls}${on(k)}"${tip ? ` title="${esc(tip)}"` : ""}>${lbl}</th>`;
+  $("df-table").querySelector("thead").innerHTML = "<tr>" + H("tm", "Team", "l") +
+    H("G", "vs Guards", "grp", "Rank vs guards: 1 = allows the fewest fantasy points") + H("F", "vs Forwards", "", "Rank vs forwards") + H("C", "vs Centres", "", "Rank vs centres") +
+    H("pace", "Pace", "grp", "Possessions per 48 minutes in their games vs the league (100% = average); faster = more chances for everyone") +
+    H("fgp", "Opp FG%", "", "Field-goal % opponents shoot against them vs the league (100% = average); higher = softer") +
+    '<th class="l grp">Next game</th>' + H("n", "Games") + "</tr>";
+  const cell = (t, c) => { const k = R[c][t]; return `<td class="${c === "G" ? "grp" : ""}" title="${esc(dvpTip(t, c))}"><span class="dvp ${dvpCls(k)}">${ordinal(k)}</span> <span class="dim">${Math.round(mf[t][c] * 100)}%</span></td>`; };
+  const pct = (v) => Math.round(v * 1000) / 10 + "%";
+  $("df-table").querySelector("tbody").innerHTML = rows.map((t) => {
+    const g = nxt[t];
+    return `<tr><td class="l df-team">${teamLogo(t)}<span class="name"><span class="sc-full">${esc(TEAM_NAMES[t] || t)}</span><span class="sc-ab">${esc(t)}</span></span></td>` +
+      cell(t, "G") + cell(t, "F") + cell(t, "C") +
+      `<td class="grp" title="${ordinal(RP[t])} slowest of ${T.length}">${pct(mf[t].pace)}</td>` +
+      `<td title="${ordinal(RF[t])} stingiest of ${T.length}" class="${mf[t].fgp >= 1.03 ? "pos-up" : mf[t].fgp <= 0.97 ? "pos-dn" : ""}">${pct(mf[t].fgp)}</td>` +
+      `<td class="l grp dim">${g ? `${g[0] === today ? "Tonight" : new Date(g[0] + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"})} ${g[2] ? "vs" : "@"} ${esc(g[1])}` : ""}</td>` +
+      `<td class="dim">${mf[t].n}</td></tr>`;
+  }).join("");
+  const missing = Object.keys(TEAM_NAMES).filter((t) => !mf[t]);
+  $("df-lede").innerHTML = `Fantasy points each team gives up per game to <strong>guards</strong>, <strong>forwards</strong> and <strong>centres</strong>, ` +
+    `scored under the default league, season to date. Rank 1 = gives up the fewest (toughest matchup), ${R.n} = the most (easiest). ` +
+    `The Waivers tab shows the same rank on every game chip, against the player&rsquo;s position.`;
+  $("df-note").innerHTML = `Position = each player&rsquo;s first ESPN position (PG/SG guards, SF/PF forwards, C centres). ` +
+    `Teams need 5 games to be ranked${missing.length ? ` (${missing.join(", ")} not yet)` : ""}. Early in the season one big night moves a team a lot. ` +
+    `These ranks are for reading; the matchup number on Waivers / My week (±FP) is the tested adjustment that combines position, pace, opponents&rsquo; FG% and home court.`;
+}
+function bindDefence() {
+  $("df-table").querySelector("thead").addEventListener("click", (e) => {
+    const th = e.target.closest("th[data-k]");
+    if (!th) return;
+    const k = th.dataset.k;
+    DF.dir = DF.sort === k ? -DF.dir : (k === "tm" ? 1 : -1);
+    DF.sort = k;
+    renderDefence();
+  });
+}
+
 // =============================================================== SCHEDULE
 // Every NBA team's games in one fantasy week (Mon-Sun): "@ORL" = at Orlando,
 // "ORL" = home vs Orlando; plus the next week's Monday and Tuesday, as on
@@ -2965,7 +3052,7 @@ function bindSchedule() {
 }
 
 // ================================================================ ROUTING
-const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "sched", "how"];
+const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "sched", "def", "how"];
 function showTab(t) {
   if (!TABS.includes(t)) t = "proj";
   document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
@@ -2979,6 +3066,7 @@ function showTab(t) {
   if (t === "week") renderWeek();
   if (t === "trade") renderTrade();
   if (t === "sched") renderSchedule();
+  if (t === "def") renderDefence();
   setTimeout(() => { markSticky(); fitLedes(); });   // a panel just shown has real heights now
 }
 function renderAll() {
@@ -3000,7 +3088,7 @@ function renderAll() {
 // cell or small label holding a team code ("LAL", "LAL · PF") gets the logo.
 // Cards that draw their own pictures (planner, start/sit) and the schedule
 // grid are left alone.
-const PIC_SKIP = ".sp-card, .ss-card, #sc-table, .sp-alt, .sp-team";
+const PIC_SKIP = ".sp-card, .ss-card, #sc-table, .sp-alt, .sp-team, #df-table";
 function addPics(root) {
   root.querySelectorAll(".name:not([data-pic]), .nm:not([data-pic])").forEach((el) => {
     el.dataset.pic = "1";
@@ -3235,6 +3323,7 @@ fetchData(false)
     bindWeek();
     bindTrade();
     bindSchedule();
+    bindDefence();
     bindRefresh();
     initTips();
     initPhone();
