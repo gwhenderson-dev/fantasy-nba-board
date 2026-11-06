@@ -1876,8 +1876,8 @@ function renderPlanner() {
     (tlist.length ? `<div class="sp-teams"><span class="lbl" title="${esc("NBA teams with the most games on nights you have open slots: " + openDays.map((x) => dn(P.days[x.i])).join(", "))}">Short nights</span>` +
       tlist.map((t) => `<span class="sp-team name" data-id="${t.best.id}" title="${esc(`${t.tm}: ${t.d.size} game${t.d.size > 1 ? "s" : ""} on your short nights · best free agent ${t.best.n}`)}">${teamLogo(t.tm)}<b>${esc(t.tm)}</b> ${t.d.size}</span>`).join("") + "</div>" : "") +
     `<details class="sp-dropbox"${SP.dropOpen ? " open" : ""}><summary class="note">Who can be dropped (${P.pick.size} ticked${spSaved() ? ", your choice" : ""})</summary>` +
-    '<div class="sp-drops">' + P.cands.map((c) => `<label><input type="checkbox" data-spd="${c.r.id}"${P.pick.has(c.r.id) ? " checked" : ""}> ${esc(c.r.n)} ` +
-      `<span class="dim">${fx(c.tot, 0)} ROS pts</span></label>`).join("") + "</div>" +
+    '<div class="sp-drops">' + P.cands.map((c) => `<label class="sp-dp${P.pick.has(c.r.id) ? " on" : ""}"><input type="checkbox" data-spd="${c.r.id}"${P.pick.has(c.r.id) ? " checked" : ""}>` +
+      `<span class="sp-dn" title="${esc(c.r.n)}">${esc(c.r.n)}</span><span class="sp-dt" title="rest-of-season points">${fx(c.tot, 0)} pts</span></label>`).join("") + "</div>" +
     `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list excluded. Tick more to let the planner choose. ` +
     `Your ticks are remembered in this browser.${spSaved() ? ' <button type="button" class="linkbtn" data-sprst>Back to the default</button>' : ""}</p></details>`;
 }
