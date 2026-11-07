@@ -82,11 +82,17 @@ button, input, select { font: inherit; color: inherit; }
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 .lgpick select:focus-visible { outline: 2px solid var(--top-acc); outline-offset: 1px; }
 .lgpick select option { color: var(--ink); background: var(--paper); }
-.top .tab { color: rgba(255, 255, 255, .7); }
-.top .tab:hover { color: #fff; }
-.top .tab[aria-selected="true"] { color: #fff; border-bottom: 3px solid var(--top-acc); }
-.top .tab:focus-visible { outline: 2px solid var(--top-acc); outline-offset: -2px; }
-.top .tab .soon { color: rgba(255, 255, 255, .55); }
+/* two bars: the navy logo band scrolls away; the tab bar below it stays pinned */
+.top { position: static; }
+.top-in { padding: 1.05rem 16px 1rem; }
+.brand { font-size: 1.6rem; letter-spacing: -.03em; }
+.logo { gap: .65rem; }
+.logo svg { width: 2.15rem; }
+.logo .tg { font-size: .72rem; margin-left: .3rem; }
+.brand small, .brand .refbtn { align-self: center; }
+.tabbar { position: sticky; top: 0; z-index: 20; background: var(--paper); border-bottom: 1px solid var(--rule); box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
+.tabbar .tab { padding: .7rem .8rem .65rem; border-bottom-width: 3px; }
+.tabbar .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .tab .soon { font-size: .62rem; color: var(--muted); font-weight: 500; margin-left: .25rem; }
 
 main { max-width: 1400px; margin: 0 auto; padding: 1.4rem 16px 4rem; }
@@ -442,7 +448,10 @@ select { max-width: 100%; }
 .ledemore { display: block; border: 0; background: none; padding: 0; margin: -.8rem 0 1rem; color: var(--accent); font-size: .82rem; font-weight: 600; cursor: pointer; }
 .lg-head { display: none; }
 @media (max-width: 640px) {
-  .top-in { gap: .45rem .6rem; padding-top: .55rem; }
+  .top-in { gap: .45rem .6rem; padding-top: .8rem; padding-bottom: .75rem; }
+  .brand { font-size: 1.3rem; }
+  .logo svg { width: 1.75rem; }
+  .logo .tg { font-size: .62rem; }
   .brand { flex-basis: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: .2rem 0; }
   .lgpick { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: stretch; gap: .1rem; font-size: .7rem; }
   .lgpick select { min-width: 0; width: 100%; font-size: .85rem; }
