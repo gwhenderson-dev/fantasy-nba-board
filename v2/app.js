@@ -2313,9 +2313,12 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
 // Out = on the IR slot that day, or missed his team's last two games before the
 // week (knowable then). Not included (not knowable after the fact): injury
 // boosts, game-day statuses, return ramps. Matchup factors are today's.
+// ESPN scoring period of a date (1 = opening night). Days before opening night
+// are clamped to 1: period 0 is NOT the opening roster (it returned unrelated
+// rosters for week 1, which starts the Monday before opening night).
 const espnPeriod = (d) => {
   const first = Object.values(META.sched).reduce((m, gs) => (gs.length && gs[0][0] < m ? gs[0][0] : m), "9999");
-  return Math.round((Date.parse(d) - Date.parse(first)) / 864e5) + 1;
+  return Math.max(1, Math.round((Date.parse(d) - Date.parse(first)) / 864e5) + 1);
 };
 function weekRoster(lg, ws) {
   lg.wsr = lg.wsr || {};
@@ -2541,6 +2544,7 @@ function renderWeek() {
     $("ss-box").hidden = false;
     renderStartSit(lg, TW[mt], days, today, SLOTS, oppId != null && TW[oppId] ? TW[mt].final - TW[oppId].final : null);
   } else $("ss-box").hidden = true;
+  renderAccuracy(lg, SLOTS, today);
   $("wk-cards").innerHTML = cards || '<p class="note">No matchups found for this week (a bye week, or this league&rsquo;s matchup periods don&rsquo;t follow this calendar).</p>';
   // ---- detail: both teams of the chosen matchup
   const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
@@ -2612,6 +2616,69 @@ function renderWeek() {
     (myM ? "" : "");
   $("wk-note").innerHTML = "Win chance is rough: it treats each remaining game as independent, with each player&rsquo;s game-to-game spread (the same one behind the Waivers ceiling). " +
     "While tonight&rsquo;s games are being played, players already in action count twice (in the live score and the projection) until the next morning&rsquo;s build. Rosters, injuries, live scores and adds are read from ESPN; projections are from this morning.";
+}
+// ---- SEASON ACCURACY of the start-of-week projection --------------------------
+// Every finished matchup: each team's start-of-week projection (startWeek on that
+// week's opening roster) against its ESPN final. Lazy: one roster call per week.
+function renderAccuracy(lg, SLOTS, today) {
+  const box = $("acc-box");
+  const fin = matchupPeriods().filter((p) => p.end < today);
+  const ms = (p) => (WK.mm || []).filter((m) => m.matchupPeriodId === p.id && m.home && m.away);
+  const done = fin.filter((p) => ms(p).length);
+  if (!done.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const ready = GAMES && done.every((p) => lg.wsr && lg.wsr[p.start] && !(lg.wsr[p.start] instanceof Promise));
+  if (!ready) {
+    box.innerHTML = '<summary><strong>How accurate is the start-of-week projection?</strong> <span class="dim">loading finished weeks&hellip;</span></summary>';
+    if (!WK.accP) WK.accP = Promise.all([loadGames(), ...done.map((p) => weekRoster(lg, p.start))]).then(() => { WK.accP = null; renderWeek(); });
+    return;
+  }
+  const rows = [], games = [];
+  done.forEach((p) => {
+    const R = lg.wsr[p.start];
+    if (R.fail) return;
+    const days = [];
+    for (let d = p.start; d <= p.end; d = addDays(d, 1)) days.push(d);
+    ms(p).forEach((m) => {
+      const one = (sd) => ({wk: p, tid: sd.teamId, start: startWeek(R, sd.teamId, days, p.start, SLOTS, today).tot, final: sd.totalPoints || 0});
+      const a = one(m.away), h = one(m.home);
+      rows.push(a, h);
+      if (a.final !== h.final) games.push({wk: p, hit: (a.start > h.start) === (a.final > h.final)});
+    });
+  });
+  if (!rows.length) { box.hidden = true; return; }
+  const stats = (rs) => { const n = rs.length, e = rs.map((r) => r.final - r.start);
+    return {n, mae: e.reduce((a, x) => a + Math.abs(x), 0) / n, bias: e.reduce((a, x) => a + x, 0) / n,
+      pct: rs.reduce((a, r) => a + Math.abs(r.final - r.start) / Math.max(1, r.start), 0) / n,
+      in10: rs.filter((r) => Math.abs(r.final - r.start) <= 0.1 * r.start).length}; };
+  const S = stats(rows), hits = games.filter((g) => g.hit).length;
+  const kpi = (v, k, tip) => `<div class="sp-kpi"${tip ? ` title="${esc(tip)}"` : ""}><b>${v}</b><span>${k}</span></div>`;
+  const mt = myTeam();
+  const byWk = done.filter((p) => rows.some((r) => r.wk === p)).map((p) => {
+    const st = stats(rows.filter((r) => r.wk === p)), g = games.filter((x) => x.wk === p);
+    return `<tr><td class="l">${esc(p.label)} <span class="dim">${p.start.slice(5)} to ${p.end.slice(5)}</span></td><td>${st.n}</td><td>${fx(st.mae, 0)} <span class="dim">${Math.round(st.pct * 100)}%</span></td>` +
+      `<td class="${st.bias >= 0 ? "pos-up" : "pos-dn"}">${sg(st.bias, 0)}</td><td>${st.in10} / ${st.n}</td><td>${g.filter((x) => x.hit).length} / ${g.length}</td></tr>`;
+  }).join("");
+  const teams = lg.teams.map((t) => { const rs = rows.filter((r) => r.tid === t.id);
+    if (!rs.length) return null;
+    const d = rs.map((r) => r.final - r.start);
+    return {t, n: rs.length, start: rs.reduce((a, r) => a + r.start, 0) / rs.length, final: rs.reduce((a, r) => a + r.final, 0) / rs.length,
+      diff: d.reduce((a, x) => a + x, 0) / rs.length, beat: d.filter((x) => x > 0).length};
+  }).filter(Boolean).sort((a, b) => b.diff - a.diff);
+  const byTeam = teams.map((o) => `<tr class="${o.t.id === mt ? "mine" : ""}"><td class="l">${esc(o.t.name)}${o.t.id === mt ? ' <span class="tag rk">YOU</span>' : ""}</td><td>${o.n}</td>` +
+    `<td>${fx(o.start, 0)}</td><td>${fx(o.final, 0)}</td><td class="${o.diff >= 0 ? "pos-up" : "pos-dn"}"><b>${sg(o.diff, 0)}</b></td><td>${o.beat} / ${o.n}</td></tr>`).join("");
+  box.innerHTML = `<summary><strong>How accurate is the start-of-week projection?</strong> <span class="dim">${done.length} finished week${done.length > 1 ? "s" : ""}: ` +
+    `typical miss ${fx(S.mae, 0)} (${Math.round(S.pct * 100)}%) · winner called ${hits} of ${games.length}</span></summary>` +
+    `<div class="sp-kpis">${kpi(S.n, "team-weeks", "Every team in every finished matchup")}` +
+    kpi(fx(S.mae, 0), "typical miss", `Average gap between the start-of-week projection and the final score, either direction: ${Math.round(S.pct * 100)}% of the projection`) +
+    kpi(sg(S.bias, 0), "lean", "Average final minus projection: + means teams scored more than projected (pickups and streaming help), − less") +
+    kpi(`${S.in10}/${S.n}`, "within 10%", "Team-weeks whose final landed within 10% of the start-of-week projection") +
+    kpi(`${hits}/${games.length}`, "winners called", "Matchups where the team projected higher at the start of the week won") + "</div>" +
+    `<div class="grid2 acc-cols"><div><h3>By week</h3><div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Week</th><th>Teams</th><th title="Average miss, either direction (% of the projection)">Typical miss</th><th title="Average final minus projection">Lean</th><th>Within 10%</th><th>Winners called</th></tr></thead><tbody>${byWk}</tbody></table></div></div>` +
+    `<div><h3>By team</h3><div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Team</th><th>Weeks</th><th>Projected</th><th>Final</th><th title="Average final minus start-of-week projection">vs projection</th><th title="Weeks the team beat its start-of-week projection">Beat it</th></tr></thead><tbody>${byTeam}</tbody></table></div></div></div>` +
+    `<p class="note">Each team&rsquo;s projection uses its roster on the first day of that week and only games played before it (see How it works). ` +
+    `It can&rsquo;t know about pickups, so a team that streams well beats it and one that leaves injured players in its lineup falls short: the By team table is partly a measure of management. ` +
+    `${S.n < 40 ? "Still a small sample; the numbers firm up as weeks finish." : ""}</p>`;
 }
 // ============================================================ START / SIT
 // Nights when more of your players play than you have starter slots. Each
