@@ -2212,6 +2212,17 @@ function loadReturns(lg) {
         lg.ret[pl.id] = `${d[0]}-${String(d[1]).padStart(2, "0")}-${String(d[2]).padStart(2, "0")}`;
     }));
 }
+// the tested matchup adjustment for one game (pace, FP allowed to his position,
+// FG% allowed, home), in the active league's points via scale
+function mAdj(p, g, scale) {
+  const mf = g && META.mf[g[1]];
+  if (!mf || !p) return {adj: 0, parts: null};
+  const c = posCls(p.pos), b = META.mfb;
+  const parts = {pace: b.pace * (mf.pace - 1) * scale, dvp: b.dvp * ((mf[c] || 1) - 1) * scale,
+                 fgp: b.fgp * ((mf.fgp || 1) - 1) * scale, home: b.home * (g[2] ? 0.5 : -0.5) * scale,
+                 f: {pace: mf.pace, dvp: mf[c] || 1, fgp: mf.fgp || 1, c, n: mf.n}};
+  return {adj: parts.pace + parts.dvp + parts.fgp + parts.home, parts};
+}
 // a player's projected value on each of these days (the Waivers formula: ROS
 // FP/G + injury boost, return ramp, matchup, back-to-back and game-day status
 // odds). ok(d, statusPlayChance) says whether that game can count at all;
@@ -2232,15 +2243,7 @@ function dayVals(p, days, own, ok) {
     if (g && ok(d, sp)) {
       const second = teamDays.has(addDays(d, -1));
       play = (second ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1) * (own ? 1 : sp);
-      const mf = META.mf[g[1]];
-      let adj = 0, parts = null;
-      if (mf) {
-        const c = posCls(p.pos), b = META.mfb;
-        parts = {pace: b.pace * (mf.pace - 1) * scale, dvp: b.dvp * ((mf[c] || 1) - 1) * scale,
-                 fgp: b.fgp * ((mf.fgp || 1) - 1) * scale, home: b.home * (g[2] ? 0.5 : -0.5) * scale,
-                 f: {pace: mf.pace, dvp: mf[c] || 1, fgp: mf.fgp || 1, c, n: mf.n}};
-        adj = parts.pace + parts.dvp + parts.fgp + parts.home;
-      }
+      const {adj, parts} = mAdj(p, g, scale);
       const bst = boostFP(p, d), rf = ramp(d), v = (fp + bst) * rf + adj, sg2 = sd * rf;
       val = Math.max(0, play * v);
       avail = true;
@@ -2300,6 +2303,88 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
   out.rem = ps.reduce((a, r) => a + r.pts, 0);
   out.var = ps.reduce((a, r) => a + r.var, 0);
   return out;
+}
+// ---- START-OF-WEEK PROJECTION ----------------------------------------------
+// What each team was projected to score over the whole matchup on the morning it
+// began: that day's ESPN roster (view=mRoster&scoringPeriodId = the week's first
+// day), each player's in-season projection re-run on games BEFORE the week
+// (rosAt), the week's schedule with the tested matchup and back-to-back
+// adjustments, and the same exact best-lineup assignment as the live projection.
+// Out = on the IR slot that day, or missed his team's last two games before the
+// week (knowable then). Not included (not knowable after the fact): injury
+// boosts, game-day statuses, return ramps. Matchup factors are today's.
+const espnPeriod = (d) => {
+  const first = Object.values(META.sched).reduce((m, gs) => (gs.length && gs[0][0] < m ? gs[0][0] : m), "9999");
+  return Math.round((Date.parse(d) - Date.parse(first)) / 864e5) + 1;
+};
+function weekRoster(lg, ws) {
+  lg.wsr = lg.wsr || {};
+  if (!(ws in lg.wsr)) {
+    lg.wsr[ws] = fetch(espnBase() + L.id + "?view=mRoster&scoringPeriodId=" + espnPeriod(ws))
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .then((j) => {
+        if (!j || !(j.teams || []).length) return (lg.wsr[ws] = {fail: true});
+        const R = {owner: {}, slot: {}, elig: {}};
+        j.teams.forEach((t) => ((t.roster || {}).entries || []).forEach((e) => {
+          R.owner[e.playerId] = t.id; R.slot[e.playerId] = e.lineupSlotId;
+          R.elig[e.playerId] = ((e.playerPoolEntry || {}).player || {}).eligibleSlots || [];
+        }));
+        return (lg.wsr[ws] = R);
+      });
+  }
+  return lg.wsr[ws];
+}
+// missed his team's last two games before T (team played, he did not)
+function outAt(p, T) {
+  const C = GAMES.C, mine = new Set((GAMES.byP[p.id] || []).map((r) => r[C.d]));
+  const team = (META.sched[p.tm] || []).map((g) => g[0]).filter((d) => d < T);
+  if (team.length < 2) return false;
+  return team.slice(-2).every((d) => !mine.has(d));
+}
+const RA = {};                       // rosAt cache: id|date -> line
+const rosAtC = (p, T) => (RA[p.id + "|" + T] = RA[p.id + "|" + T] || rosAt(p, T));
+function startWeek(R, tid, days, ws, SLOTS, today) {
+  const B = META.b2b;
+  const rows = Object.keys(R.owner).map(Number).filter((id) => R.owner[id] === tid).map((id) => {
+    const p = BYID[id];
+    if (!p) return null;
+    const at = rosAtC(p, ws), fp = at.fp;
+    const fpd = fpgUnder(META.league, at.sl, at.bp) || fp, scale = fpd > 0 ? fp / fpd : 1;
+    const out = R.slot[id] === 13 || outAt(p, ws);
+    const teamDays = new Set((META.sched[p.tm] || []).map((g) => g[0]));
+    const psit = p.b2b ? p.b2b[2] : B.base;
+    const elig = (R.elig[id] && R.elig[id].length ? R.elig[id] : eligFromPos(p.pos)).filter((s) => SLOTS.includes(s));
+    const vals = days.map((d) => {
+      const g = (META.sched[p.tm] || []).find((x) => x[0] === d);
+      if (!g || out) return 0;
+      const play = teamDays.has(addDays(d, -1)) ? Math.max(0, 1 - Math.max(0, psit - B.other)) : 1;
+      return Math.max(0, play * (fp + mAdj(p, g, scale).adj));
+    });
+    return {id, p, fp, out, elig, vals};
+  }).filter(Boolean);
+  let tot = 0, past = 0;
+  days.forEach((d, i) => {
+    const av = rows.filter((r) => r.vals[i] > 0);
+    const res = assignMax(av.map((r) => SLOTS.map((s) => (r.elig.includes(s) ? r.vals[i] : 0))));
+    const pts = av.reduce((a, r, k) => a + (res.rc[k] >= 0 ? r.vals[i] : 0), 0);
+    tot += pts; if (d < today) past += pts;
+  });
+  return {tot, past, rem: tot - past, rows};
+}
+// a player's games this week so far vs what the start-of-week projection
+// expected from each of those games (his projection then + that game's matchup)
+function weekVsProj(p, ws, today) {
+  if (!GAMES || !p) return null;
+  const C = GAMES.C, at = rosAtC(p, ws);
+  const fpd = fpgUnder(META.league, at.sl, at.bp) || at.fp, scale = fpd > 0 ? at.fp / fpd : 1;
+  const gs = (GAMES.byP[p.id] || []).filter((r) => r[C.d] >= ws && r[C.d] < today);
+  if (!gs.length) return null;
+  let act = 0, exp = 0;
+  gs.forEach((r) => {
+    act += fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]);
+    exp += at.fp + mAdj(p, (META.sched[p.tm] || []).find((x) => x[0] === r[C.d]), scale).adj;
+  });
+  return {n: gs.length, act, exp, pg: at.fp};
 }
 // colour-coded status for a My week row: official report > IR slot > live ESPN
 function statusTag(r, lg) {
@@ -2398,6 +2483,15 @@ function renderWeek() {
   const liveOf = (tid) => { const m = (WK.mm || []).find((x) => x.matchupPeriodId === wk && x.home && x.away && (x.home.teamId === tid || x.away.teamId === tid));
     if (!m) return 0; const sd = m.home.teamId === tid ? m.home : m.away; return (sd.totalPointsLive != null ? sd.totalPointsLive : sd.totalPoints) || 0; };
   Object.entries(TW).forEach(([tid, T]) => { T.final = liveOf(+tid) + T.rem; });
+  // start-of-week projection: needs that day's rosters (ESPN) and the game logs
+  let SW = null, swNote = "";
+  if (ws <= today) {
+    const R = lg.wsr && lg.wsr[ws];
+    if (R && !(R instanceof Promise) && !R.fail && GAMES)
+      SW = Object.fromEntries(lg.teams.map((t) => [t.id, startWeek(R, t.id, days, ws, SLOTS, today)]));
+    else if (R && R.fail) swNote = "ESPN did not return this week's opening rosters";
+    else if (!WK.swP) WK.swP = Promise.all([weekRoster(lg, ws), loadGames()]).then(() => { WK.swP = null; renderWeek(); });
+  }
   const lim = PER.adds;
   const addsLeft = (id) => (lim == null ? null : Math.max(0, lim - ((lg.tx[id] || {})[String(wk)] || 0)));
   const addsTip = L.adds_day
@@ -2423,12 +2517,15 @@ function renderWeek() {
     const sd = Math.sqrt(a.var + h.var);
     const pa = sd > 0 ? normCdf((ap - hp) / sd) : (ap > hp ? 1 : ap < hp ? 0 : 0.5);
     const isMine = A.teamId === mt || H.teamId === mt, sel = WK.pair.join() === [A.teamId, H.teamId].join();
+    const swv = (tid) => { if (!SW) return `<span class="lv sw0" title="${esc(swNote || "Loading the start-of-week projection")}">${ws <= today ? "…" : ""}</span>`;
+      const v = SW[tid].tot, now = over ? liveOf(tid) : TW[tid].final;
+      return `<span class="lv sw0" title="${esc(`Projected at the start of the week: ${fx(v, 0)} (opening-day roster and projections, whole week).\n${over ? "Final" : "Projected now"}: ${fx(now, 0)}, ${sg(now - v, 0)} vs the start of the week`)}">${fx(v, 0)}</span>`; };
     const side = (s, t, l, pr, p) => `<span class="tn${s.teamId === mt ? " mine" : ""}" title="${esc(lg.byId[s.teamId].name)}"><i class="sw ${s === A ? "a" : "h"}"></i>${esc(lg.byId[s.teamId].name)}</span>` +
-      `<span class="lv" title="${over ? "" : "Live score"}">${over ? "" : fx(l, 0)}</span><span class="pf" title="${over ? "Final score" : "Projected final: live score + best lineup on each remaining day"}">${fx(pr, 0)}</span>`;
+      swv(s.teamId) + `<span class="lv" title="${over ? "" : "Live score"}">${over ? "" : fx(l, 0)}</span><span class="pf" title="${over ? "Final score" : "Projected final: live score + best lineup on each remaining day"}">${fx(pr, 0)}</span>`;
     const st = (t) => t.days.filter((D) => !D.past).reduce((x, D) => x + D.started, 0);
     return `<div class="card mcard${isMine ? " minem" : ""}${sel ? " sel" : ""}" data-a="${A.teamId}" data-h="${H.teamId}">` +
       (isMine ? '<span class="yours">YOUR MATCHUP</span>' : "") +
-      `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span class="dim" style="font-size:.7rem">${over ? "" : "LIVE"}</span><span class="dim" style="font-size:.7rem">${over ? "FINAL" : "PROJ"}</span>` +
+      `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span class="dim" style="font-size:.7rem" title="Projected for the whole week on the morning it started">${ws <= today ? "START" : ""}</span><span class="dim" style="font-size:.7rem">${over ? "" : "LIVE"}</span><span class="dim" style="font-size:.7rem">${over ? "FINAL" : "PROJ"}</span>` +
       side(A, a, al, ap, pa) + side(H, h, hl, hp, 1 - pa) + "</div>" +
       (over ? `<div class="mres">${ap > hp ? esc(lg.byId[A.teamId].name) + " won" : hp > ap ? esc(lg.byId[H.teamId].name) + " won" : "Tie"} by ${fx(Math.abs(ap - hp), 0)}</div></div>` :
       `<div class="wrow" title="Rough win chance: projected margin against the week's game-to-game spread"><b class="wa">${Math.round(pa * 100)}%</b>` +
@@ -2471,22 +2568,34 @@ function renderWeek() {
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length + (r.manual ? 1 : 0), 0);
   return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
     `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
+    (SW ? (() => { const S = SW[tid], lv = liveOf(tid), now = over ? lv : T.final, dlt = now - S.tot;
+      const sofar = lv - S.past, rest = over ? 0 : T.rem - S.rem;
+      return `<span class="count wk-sw" title="${esc(`Projected at the start of the week: ${fx(S.tot, 0)} for the whole week (opening-day roster, projections from games before ${ws}).` +
+        `\nScored so far: ${fx(lv, 0)} vs ${fx(S.past, 0)} expected by now` + (over ? "" : ` (days before today; tonight's games count once they start)\nRest of the week: ${fx(T.rem, 0)} projected now vs ${fx(S.rem, 0)} at the start (injuries, roster moves, lineup choices)`))}">` +
+        `start of week ${fx(S.tot, 0)} <b class="${dlt >= 0 ? "pos-up" : "pos-dn"}">${sg(dlt, 0)}</b>` +
+        ` <span class="dim">· so far ${sg(sofar, 0)}${over ? "" : ` · rest of week ${sg(rest, 0)}`}</span></span>`; })() : "") +
     (nPicks ? `<button class="btn" data-reset="${tid}">Reset lineup choices (${nPicks})</button>` : "") + "</div>" +
     '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
     days.map((d, i) => { const D = T.days[i];
       return `<th class="dcol${i % 2 ? " alt" : ""}${D.past ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`; }).join("") +
-    '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th><th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
+    '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th>' +
+    `<th title="His fantasy points in this week's games so far minus what the start-of-week projection expected from those games (his projection then + each game's matchup). Green = over, red = under">Wk vs proj</th>` +
+    '<th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
       `<td class="l">${statusTag(r, lg)}<span class="dim" style="font-size:.76rem">` +
       `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? ` · <span title="${esc(r.plays ? "You ticked his Plays box for this week, so he counts even though the page had him out" : "You unticked his Plays box for this week, so none of his games count")}. Saved in this browser; Reset lineup choices undoes it.">set by you</span>` : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i).replace('<td class="dg', `<td class="dg${i % 2 ? " alt" : ""}`)).join("") +
-      `<td class="grp">${r.games} / ${r.starts}</td><td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
+      `<td class="grp">${r.games} / ${r.starts}</td>` + (() => { const v = ws <= today ? weekVsProj(r.p, ws, today) : null;
+        if (!v) return '<td class="dim"></td>';
+        const d = v.act - v.exp;
+        return `<td class="${d >= 0 ? "pos-up" : "pos-dn"}" title="${esc(`${v.n} game${v.n > 1 ? "s" : ""} this week: ${fx(v.act)} FP vs ${fx(v.exp)} expected at the start of the week (${fx(v.pg)} FP/G then, plus each game's matchup)`)}">${sg(d)}<small class="dim"> ${v.n}g</small></td>`; })() +
+      `<td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
     `<tr class="open"><td></td><td class="l" colspan="2" title="Players in a starter slot each day, out of ${SLOTS.length}. The small letters are the slots still empty: nights to stream a free agent">Filled starter slots</td>` +
     T.days.map((D, i) => `<td class="dg${i % 2 ? " alt" : ""}${D.past ? " past" : ""}${D.over ? " pos-dn" : D.open && !D.past ? " part" : ""}" title="${esc(D.over ? D.over + " started player(s) don't fit a slot" : D.open ? "Empty: " + D.openSlots.join(", ") : "All " + SLOTS.length + " filled")}">` +
       (!D.playing ? '<span class="dim">no games</span>' : `${D.started}<small>/${SLOTS.length}</small>${D.over ? " !" : ""}` +
       (D.open && !D.past && D.open <= 5 ? `<span class="slt">${esc(D.openSlots.join(" "))}</span>` : "")) + "</td>").join("") +
-    `<td class="grp"></td><td>${fx(T.rem, 0)}</td></tr>` +
+    `<td class="grp"></td><td></td><td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>";
   };
   $("wk-detail").innerHTML = (over ? `<p class="note">Week ${wk} is over: scores are ESPN&rsquo;s finals. The grid below uses <em>today&rsquo;s</em> rosters, so it shows what the best lineup would have been, not what was played.</p>` : "") +
@@ -2862,7 +2971,7 @@ function rosAt(p, T) {
   const before = sched.filter((d) => d < T).length, left = sched.filter((d) => d >= T).length;
   const av0 = p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
   const av = Math.min(1, (av0 * 20 + gp) / (20 + before));
-  return {fp: fpg(sl, bp), av, left, tot: fpg(sl, bp) * av * left, approx};
+  return {fp: fpg(sl, bp), av, left, tot: fpg(sl, bp) * av * left, approx, sl, bp};
 }
 function sinceFP(p, T) {
   const C = GAMES.C;
@@ -3386,7 +3495,7 @@ fetchData(false)
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
-    window.FNBA_DEBUG = {boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+    window.FNBA_DEBUG = {sw: () => ({lg: LGRES[L.id], startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
         return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, free: P.free, n: SP.n, metric: SP.metric,

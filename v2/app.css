@@ -277,7 +277,10 @@ table.tbrk td, table.tbrk th { white-space: normal; }
 .mcard .yours { position: absolute; top: -.6rem; left: .7rem; background: var(--gold); color: #fff; font-size: .6rem; font-weight: 750;
   letter-spacing: .06em; padding: .08rem .45rem; border-radius: 999px; }
 .stand .mcard { margin-top: .35rem; }
-.mside { display: grid; grid-template-columns: 1fr auto auto; gap: .1rem .6rem; align-items: baseline; font-size: .86rem; }
+.mside { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: .1rem .6rem; align-items: baseline; font-size: .86rem; }
+.mside .sw0 { color: var(--muted); }
+.wk-sw b { font-weight: 700; }
+.wk-sw .dim { font-size: .78rem; }
 .mside .tn { font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mside .tn.mine { color: var(--accent); }
 .mside .pf { font-size: 1.15rem; font-weight: 720; font-variant-numeric: tabular-nums; text-align: right; }

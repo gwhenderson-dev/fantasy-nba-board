@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=d120060eda">
+<link rel="stylesheet" href="app.css?v=be31a5e02c">
 </head>
 <body>
 <header class="top">
@@ -562,6 +562,18 @@ adds limit = adds per game day × game days in the matchup,
     <p>The assignment is exact (the Hungarian algorithm), so positions are filled properly, not just ten bodies; each start shows
       the slot it fills, and the open-slots row names the open positions. The win chance treats games as independent and is untested
       as a probability.</p>
+    <p><strong>Start of week</strong> is what each team was projected to score over the whole matchup on the morning it began, rebuilt
+      after the fact without hindsight: the team&rsquo;s roster on the matchup&rsquo;s first day (read from ESPN for that day), each
+      player&rsquo;s in-season projection re-run on only the games played before the week, the week&rsquo;s schedule with the same
+      matchup and back-to-back adjustments, and the same best-lineup assignment. A player on the IR slot that day, or who had missed his
+      team&rsquo;s last two games, counts as out for the week. Injury boosts, game-day statuses and return ramps are left out (they
+      can&rsquo;t be rebuilt for a past day), and the matchup factors are today&rsquo;s. Each team&rsquo;s header splits the change
+      since then into <em>so far</em> (points scored minus what the start-of-week lineup was expected to score on the days already
+      played) and <em>rest of week</em> (the projection for the remaining days now minus then: injuries, roster moves, lineup choices).
+      <strong>Wk vs proj</strong> is each player&rsquo;s points in this week&rsquo;s games minus his start-of-week projection for those
+      games. The start-of-week number doesn&rsquo;t know about pickups made during the week, so active streamers tend to beat it.
+      First read (weeks 1&ndash;2, 16 team-weeks): typical miss about 150 points on a ~1,400-point week, no consistent lean, winner
+      called in 5 of 8 matchups.</p>
 
     <h2 id="how-trade">11. Trade analyzer</h2>
     <div class="formula">V(roster) = Σ ROS points of its best 13 players,
@@ -618,6 +630,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=5532884194"></script>
+<script src="app.js?v=ab422ec902"></script>
 </body>
 </html>
