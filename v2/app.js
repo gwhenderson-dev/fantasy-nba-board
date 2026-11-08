@@ -3060,7 +3060,7 @@ function renderWeek() {
     days.map((d, i) => { const D = T.days[i];
       return `<th class="dcol${i % 2 ? " alt" : ""}${D.past ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`; }).join("") +
     '<th class="grp" title="Games this week / games in a starter slot">Games / starts</th>' +
-    `<th title="His fantasy points in this week's games so far minus what the start-of-week projection expected from those games (his projection then + each game's matchup). Green = over, red = under">Wk vs proj</th>` +
+    `<th class="wkvp" title="For the games he has played this week: the fantasy points he scored, compared with what we projected for those same games at the start of the week (his projection then, adjusted for each opponent). Green = he beat it, red = he fell short.">Scored vs expected<br><span class="th-sub">this week so far</span></th>` +
     '<th title="Projected points from his remaining starts">Proj left</th></tr></thead><tbody>' +
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
@@ -3070,7 +3070,9 @@ function renderWeek() {
       `<td class="grp">${r.games} / ${r.starts}</td>` + (() => { const v = ws <= today ? weekVsProj(r.p, ws, today) : null;
         if (!v) return '<td class="dim"></td>';
         const d = v.act - v.exp;
-        return `<td class="${d >= 0 ? "pos-up" : "pos-dn"}" title="${esc(`${v.n} game${v.n > 1 ? "s" : ""} this week: ${fx(v.act)} FP vs ${fx(v.exp)} expected at the start of the week (${fx(v.pg)} FP/G then, plus each game's matchup)`)}">${sg(d)}<small class="dim"> ${v.n}g</small></td>`; })() +
+        return `<td class="wkvp" title="${esc(`${v.n} game${v.n > 1 ? "s" : ""} played this week: he scored ${fx(v.act)} fantasy points; at the start of the week we expected ${fx(v.exp)} from those games (${fx(v.pg)} per game, adjusted for each opponent). ${d >= 0 ? "He's " + fx(d) + " ahead" : "He's " + fx(-d) + " behind"}.`)}">` +
+          `<b class="${d >= 0 ? "pos-up" : "pos-dn"}">${d >= 0 ? "+" : "−"}${fx(Math.abs(d), 0)}</b>` +
+          `<span class="sub">${fx(v.act, 0)} scored · ${fx(v.exp, 0)} expected · ${v.n} game${v.n > 1 ? "s" : ""}</span></td>`; })() +
       `<td class="big">${fx(r.pts, 0)}</td></tr>`).join("") +
     `<tr class="open"><td></td><td class="l" colspan="2" title="Players in a starter slot each day, out of ${SLOTS.length}. The small letters are the slots still empty: nights to stream a free agent">Filled starter slots</td>` +
     T.days.map((D, i) => `<td class="dg${i % 2 ? " alt" : ""}${D.past ? " past" : ""}${D.over ? " pos-dn" : D.open && !D.past ? " part" : ""}" title="${esc(D.over ? D.over + " started player(s) don't fit a slot" : D.open ? "Empty: " + D.openSlots.join(", ") : "All " + SLOTS.length + " filled")}">` +

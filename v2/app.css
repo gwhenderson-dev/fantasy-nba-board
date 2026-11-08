@@ -787,3 +787,10 @@ td.lk-cell { font-weight: 750; color: var(--accent); }
 .sc-score summary { cursor: pointer; }
 .sc-score .tablewrap { max-width: 40rem; }
 td .sub.slp { display: block; font-size: .7rem; color: var(--muted); white-space: nowrap; }
+
+/* My week: scored vs expected this week */
+#wk-detail th.wkvp { white-space: normal; line-height: 1.25; vertical-align: bottom; min-width: 7.5rem; }
+#wk-detail th.wkvp .th-sub { font-size: .62rem; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+#wk-detail td.wkvp { white-space: nowrap; }
+#wk-detail td.wkvp b { font-size: .9rem; }
+#wk-detail td.wkvp .sub { display: block; font-size: .68rem; color: var(--muted); }
