@@ -321,8 +321,11 @@ td.dg.bn { color: var(--gold); }
 td.dg.out { color: var(--warn); }
 td.dg.past, th.past { opacity: .45; }
 td.dg input.gcb { width: 1.05rem; height: 1.05rem; margin: 0; cursor: pointer; accent-color: var(--good); vertical-align: middle; }
-td.dg.man input.gcb { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
-td.dg.warn input.gcb { outline: 2px solid var(--red); accent-color: var(--red); }
+/* a rounded ring on a wrapper: outlines on native checkboxes draw square in some browsers */
+td.dg .gcw { display: inline-flex; border-radius: 5px; padding: 1px; vertical-align: middle; }
+td.dg.man .gcw { box-shadow: 0 0 0 2px var(--accent); }
+td.dg.warn .gcw { box-shadow: 0 0 0 2px var(--red); }
+td.dg.warn input.gcb { accent-color: var(--red); }
 tr.open td { background: var(--band); font-weight: 650; }
 tr.isout td:not(:first-child) { opacity: .5; }
 .name[data-id] { cursor: pointer; }
@@ -357,8 +360,8 @@ td.dg .slt { display: block; font-size: .6rem; font-weight: 650; letter-spacing:
 .legend .gch { margin-right: 0; }
 .lgbox { display: inline-block; width: .9rem; height: .9rem; border-radius: 3px; border: 1.5px solid var(--rule2); background: var(--paper); vertical-align: -2px; }
 .lgbox.on { background: var(--good); border-color: var(--good); }
-.lgbox.man { outline: 2px solid var(--accent); outline-offset: 1px; }
-.lgbox.warn { outline: 2px solid var(--red); outline-offset: 1px; background: var(--red); border-color: var(--red); }
+.lgbox.man { box-shadow: 0 0 0 1px var(--paper), 0 0 0 3px var(--accent); }
+.lgbox.warn { box-shadow: 0 0 0 1px var(--paper), 0 0 0 3px var(--red); background: var(--red); border-color: var(--red); }
 .legend .out-x { color: var(--warn); }
 .legend .slt-s { font-size: .62rem; letter-spacing: .02em; }
 .lgrow { background: var(--accent-bg); color: var(--ink); padding: .05rem .35rem; border-radius: 4px; font-weight: 600; }

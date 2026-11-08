@@ -3042,7 +3042,7 @@ function renderWeek() {
     const mtip = `${x.g[2] ? "vs" : "@"} ${opp}: matchup ${sg(adj)} FP` + (x.parts ? ` (pace ${sg(x.parts.pace)}, vs ${CLS_NAME[pc]} ${sg(x.parts.dvp)}, FG% ${sg(x.parts.fgp)}, ${x.g[2] ? "home" : "away"} ${sg(x.parts.home)})` : "") +
       "\n" + dvpTip(opp, pc);
     return `<td class="dg ${x.st ? "st" : "bn"}${x.pick != null ? " man" : ""}${x.noslot ? " warn" : ""}" title="${esc(tip + "\n" + mtip)}">` +
-      `<input type="checkbox" class="gcb" data-tid="${tid}" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}">` +
+      `<span class="gcw"><input type="checkbox" class="gcb" data-tid="${tid}" data-lpid="${r.id}" data-d="${x.d}"${x.st || x.pick === 1 ? " checked" : ""} aria-label="${esc(r.n)} plays ${x.d}"></span>` +
       (x.st && x.slot != null || big ? `<span class="slt">${x.st && x.slot != null ? ESPN_SLOT[x.slot] + (big ? " " : "") : ""}` +
         (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
