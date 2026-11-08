@@ -752,3 +752,20 @@ dialog.wel::backdrop { background: rgba(10, 12, 24, .55); }
   .wel-head h2 { font-size: 1.15rem; }
   .addlg { order: 3; }
 }
+
+/* ---- League tab: every saved league stays listed ----------------------- */
+.lg-listhead { display: flex; align-items: center; gap: .8rem; margin: 1.2rem 0 .6rem; }
+.lg-listhead h2 { margin: 0; }
+.lg-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .7rem; }
+.lgcard { background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r); padding: .75rem .9rem; display: grid; gap: .3rem; min-width: 0; }
+.lgcard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.lgcard.ed { background: var(--accent-bg); }
+.lgc-h { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .5rem; }
+.lgc-h strong { font-size: .98rem; min-width: 0; overflow-wrap: anywhere; }
+.lgc-plat { font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--rule2); border-radius: 4px; padding: 0 .35rem; }
+.lgc-sub { font-size: .84rem; color: var(--ink2); }
+.lgc-sc { font-size: .76rem; }
+.lgc-act { display: flex; gap: .5rem; align-items: center; margin-top: .2rem; flex-wrap: wrap; }
+.lgc-ed { font-size: .8rem; }
+#lg-form-h { margin-top: 1.6rem; }
+.btn.small { padding: .28rem .7rem; font-size: .8rem; min-height: 0; }

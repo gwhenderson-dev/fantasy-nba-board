@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=04faa386e8">
+<link rel="stylesheet" href="app.css?v=ab412492fa">
 </head>
 <body>
 <header class="top">
@@ -79,11 +79,13 @@
       public ESPN league to fill its rules automatically, or type them in. Leagues are saved in this
       browser only &mdash; nothing is sent anywhere. For a public ESPN league, pick which team is yours at the top
       (&ldquo;You are&rdquo;); the recap and the in-season tabs use it.</p>
+    <div class="lg-listhead"><h2>Your leagues</h2><button class="btn" id="lg-new">+ Add a league</button></div>
+    <div class="lg-list" id="lg-list"></div>
+    <h2 id="lg-form-h">League settings</h2>
     <div class="controls">
       <div class="ctl"><label for="lg-espn">ESPN league id</label>
         <input id="lg-espn" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 242568268"></div>
       <div class="ctl"><label>&nbsp;</label><button class="btn" id="lg-pull">Pull rules from ESPN</button></div>
-      <div class="ctl"><label>&nbsp;</label><button class="btn" id="lg-new">+ Add another league</button></div>
     </div>
     <div id="lg-msg"></div>
     <div class="grid2">
@@ -668,6 +670,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=3f7c01178d"></script>
+<script src="app.js?v=cdc839f510"></script>
 </body>
 </html>

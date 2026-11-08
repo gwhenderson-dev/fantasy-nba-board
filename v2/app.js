@@ -207,8 +207,31 @@ function renderLeagueForm() {
       (d.unmod.length > 1 ? "those" : "that") + ", so it is left out of every number here."
     : "";
   rosterNote();
-  $("lg-del").textContent = Object.keys(STORE.list).length > 1 ? "Delete this league" : "Reset to default";
+  $("lg-del").textContent = !STORE.list[d.key] ? "Discard this new league" : Object.keys(STORE.list).length > 1 ? "Delete this league" : "Reset to default";
   $("lg-state").textContent = STORE.list[d.key] ? (d.key === STORE.active ? "Active league" : "Saved") : "Not saved yet";
+  $("lg-form-h").innerHTML = `League settings: ${esc(d.name || "New league")}`;
+  renderLeagueList();
+}
+// every saved league stays on screen, whichever one the form below is editing
+const PLAT_LBL = {espn: "ESPN", sleeper: "Sleeper", fantrax: "Fantrax", yahoo: "Yahoo", custom: "Entered by hand"};
+function renderLeagueList() {
+  const all = Object.values(STORE.list);
+  if (DRAFT && !STORE.list[DRAFT.key]) all.push(DRAFT);
+  $("lg-list").innerHTML = all.map((lg) => {
+    const saved = !!STORE.list[lg.key], active = lg.key === STORE.active, editing = DRAFT && lg.key === DRAFT.key;
+    const sc = STATS.filter((k) => lg.w && lg.w[k]).slice(0, 6).map((k) => `${STAT_LBL[k]} ${lg.w[k]}`).join(" · ");
+    return `<div class="lgcard${active ? " on" : ""}${editing ? " ed" : ""}">` +
+      `<div class="lgc-h"><strong>${esc(lg.name || "New league")}</strong>` +
+      `<span class="lgc-plat">${PLAT_LBL[lg.platform] || "Entered by hand"}</span>` +
+      (active ? '<span class="tag rk" style="margin:0">ACTIVE</span>' : "") + (!saved ? '<span class="tag dtd" style="margin:0">NOT SAVED</span>' : "") + "</div>" +
+      `<div class="lgc-sub">${lg.teams || "?"} teams · ${starters(lg)} starters + ${(lg.slots && lg.slots.BE) || 0} bench` +
+      (lg.type && lg.type !== "points" ? ` · ${TYPES[lg.type]}` : "") + (lg.mode ? ` · ${lg.mode === "lockin" ? "Lock-In" : "Game Pick"}` : "") + `</div>` +
+      (sc ? `<div class="lgc-sc dim">${esc(sc)}${STATS.filter((k) => lg.w && lg.w[k]).length > 6 ? " · …" : ""}</div>` : "") +
+      `<div class="lgc-act">` +
+      (saved && !active ? `<button class="btn small primary" data-lguse="${esc(lg.key)}">Use this league</button>` : "") +
+      (editing ? '<span class="dim lgc-ed">Editing below</span>' : `<button class="btn small" data-lgedit="${esc(lg.key)}">Edit</button>`) +
+      "</div></div>";
+  }).join("");
 }
 function rosterNote() {
   const d = readForm(true);
@@ -490,13 +513,16 @@ function bindLeague() {
     if (e.target.closest("#lg-slots") || e.target.id === "lg-teams") rosterNote();
     $("lg-state").textContent = "Unsaved changes";
   });
-  $("lg-new").addEventListener("click", () => {
-    const d = clone(META.league);
-    d.key = "custom-" + Date.now(); d.id = ""; d.name = "New league"; d.unmod = [];
-    d.platform = "custom"; delete d.my_team; delete d.tl; d.keep = [];
-    DRAFT = d;
-    renderLeagueForm();
-    lgMsg("info", "New league started from the default rules. Pull an ESPN league id or edit the fields, then save.");
+  $("lg-new").addEventListener("click", openWelcome);
+  $("lg-list").addEventListener("click", (e) => {
+    const u = e.target.closest("[data-lguse]"), ed = e.target.closest("[data-lgedit]");
+    if (u) { setActive(u.dataset.lguse); lgMsg("ok", `Now using <strong>${esc(L.name)}</strong> everywhere on the site.`); }
+    if (ed) {
+      const k = ed.dataset.lgedit;
+      DRAFT = clone(STORE.list[k] || DRAFT);
+      renderLeagueForm(); lgMsg("", "");
+      $("lg-form-h").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"});
+    }
   });
   $("lg-save").addEventListener("click", () => {
     const d = readForm();
@@ -511,6 +537,9 @@ function bindLeague() {
       : "Saved for this visit, but this browser blocks storage, so it won't be remembered.");
   });
   $("lg-del").addEventListener("click", () => {
+    if (!STORE.list[DRAFT.key]) {                 // an unsaved new league: just drop the draft
+      DRAFT = clone(L); renderLeagueForm(); lgMsg("ok", "New league discarded."); return;
+    }
     const keys = Object.keys(STORE.list);
     if (keys.length > 1) {
       if (!confirm("Delete " + (DRAFT.name || "this league") + " from this browser?")) return;
