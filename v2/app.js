@@ -27,6 +27,14 @@ const ESPN_STAT = {0: "PTS", 1: "BLK", 2: "STL", 3: "AST", 4: "OREB", 5: "DREB",
   11: "TOV", 13: "FGM", 14: "FGA", 15: "FTM", 16: "FTA", 17: "FG3M", 37: "DD", 38: "TD", 39: "QD"};
 const ESPN_UNMOD = {7: "ejections", 8: "flagrant fouls", 9: "personal fouls", 10: "technical fouls",
   12: "disqualifications", 18: "3-point attempts", 19: "FG%", 20: "FT%", 21: "3P%", 40: "minutes"};
+// extra scoring rules (META.extras order): names for forms / columns, and how
+// each platform names them
+const X_LBL = {TF: "Technical fouls", FF: "Flagrant fouls", EJ: "Ejections", PF: "Personal fouls", DQ: "Fouled out (ESPN count)",
+  P40: "40-point game", P50: "50-point game", A15: "15-assist game", R20: "20-rebound game"};
+const X_COL = {TF: "Tech/g", FF: "Flag/g", EJ: "Ej/g", PF: "PF/g", DQ: "DQ/g", P40: "40+ pts", P50: "50+ pts", A15: "15+ ast", R20: "20+ reb"};
+const X_MILE = new Set(["P40", "P50", "A15", "R20"]);
+const ESPN_X = {7: "EJ", 8: "FF", 9: "PF", 10: "TF", 12: "DQ"};
+const SL_X = {tf: "TF", ff: "FF", pf: "PF", bonus_pt_40p: "P40", bonus_pt_50p: "P50", bonus_ast_15p: "A15", bonus_reb_20p: "R20"};
 const ESPN_SLOT = {0: "PG", 1: "SG", 2: "SF", 3: "PF", 4: "C", 5: "G", 6: "F", 7: "SG/SF",
   8: "G/F", 9: "PF/C", 10: "F/C", 11: "UTIL", 12: "BE", 13: "IR"};
 
@@ -54,9 +62,27 @@ const starters = (lg) => Object.entries(lg.slots).reduce((a, [k, v]) => a + (k =
 
 // fantasy points per game of a stat line under the ACTIVE league;
 // bp = [double-double, triple-double, quadruple-double] rates
+// the extra scoring rules (techs, flagrants, milestone bonuses...): META.extras
+// order, weights in L.x. A line carries its extras as line.x (expected per game
+// for projections, actual for a played game); fpg adds them under the active league.
+const xfp = (xv) => {
+  if (!xv || !L.x) return 0;
+  let v = 0;
+  (META.extras || []).forEach((k, i) => { v += (xv[i] || 0) * (L.x[k] || 0); });
+  return v;
+};
+const withX = (arr, x) => { if (arr) arr.x = x; return arr; };
+// a played game's actual extras: fouls from the box, milestones from its stats
+function boxX(box, fouls) {
+  const f = fouls || [0, 0, 0, 0, 0];
+  return [...f, +(box[SI.PTS] >= 40), +(box[SI.PTS] >= 50), +(box[SI.AST] >= 15), +(box[SI.REB] >= 20)];
+}
+const rowX = (r) => { const C = GAMES.C; return boxX(STATS.map((k) => r[C[k]]), ["TF", "FF", "EJ", "PF", "DQ"].map((k) => (C[k] != null ? r[C[k]] || 0 : 0))); };
+// fantasy points of one played game (games.json row), extras included
+const fpgRow = (r) => { const C = GAMES.C; return fpg(withX(STATS.map((k) => r[C[k]]), rowX(r)), [r[C.dd], r[C.td], r[C.qd]]); };
 function fpg(s, bp) {
   if (!s) return null;
-  let v = 0;
+  let v = s.x ? xfp(s.x) : 0;
   for (let i = 0; i < STATS.length; i++) v += (s[i] || 0) * (L.w[STATS[i]] || 0);
   if (bp) {
     const d = bp[0] || 0, t = bp[1] || 0, q = bp[2] || 0, b = L.b;
@@ -179,6 +205,12 @@ function sleeperLeague(lg) {
     const get = (u) => fetch(SLB + lg.id + u, {cache: "no-store"}).then((r) => (r.ok ? r.json() : null));
     LGDATA[lg.id] = Promise.all([get(""), get("/rosters"), get("/users")]).then(([info, rosters, users]) => {
       if (!info || !rosters) return null;
+      if (!lg.x) {                        // saved before the extra rules were scored: read them now
+        const n = sleeperToLeague(info, lg.id);
+        lg.x = n.x; lg.unmod = n.unmod; writeStore();
+        if (L.key === lg.key) { L.x = lg.x; L.unmod = lg.unmod; }
+        if (DRAFT && DRAFT.key === lg.key) { DRAFT.x = lg.x; DRAFT.unmod = lg.unmod; renderLeagueForm(); }
+      }
       const uname = Object.fromEntries((users || []).map((u) => [u.user_id, (u.metadata && u.metadata.team_name) || u.display_name || "Team"]));
       const teams = rosters.map((r) => ({id: r.roster_id, ab: "", name: uname[r.owner_id] || "Team " + r.roster_id}));
       const owner = {}, slot = {}, name = {}, unmapped = [];
@@ -232,6 +264,8 @@ function renderLeagueForm() {
     `<div class="ctl"><label for="sc-${s}">${STAT_LBL[s]}</label><input id="sc-${s}" data-stat="${s}" type="number" step="0.5" value="${d.w[s] ?? 0}"></div>`).join("");
   $("lg-bonus").innerHTML = [["DD", "Double-double"], ["TD", "Triple-double"], ["QD", "Quad-double"]].map(([k, lbl]) =>
     `<div class="ctl"><label for="bo-${k}">${lbl}</label><input id="bo-${k}" data-bonus="${k}" type="number" step="0.5" value="${d.b[k] ?? 0}"></div>`).join("");
+  $("lg-xtra").innerHTML = (META.extras || []).map((k) =>
+    `<div class="ctl"><label for="xs-${k}" title="${esc(X_MILE.has(k) ? "Points for each " + X_LBL[k].toLowerCase() : "Points per " + X_LBL[k].toLowerCase().replace(/s$/, ""))}">${X_LBL[k]}</label><input id="xs-${k}" data-xtra="${k}" type="number" step="0.5" value="${(d.x || {})[k] ?? 0}"></div>`).join("");
   $("lg-cum").checked = !!d.cum;
   $("lg-unmod").innerHTML = (d.unmod && d.unmod.length)
     ? "This league also scores " + d.unmod.map(esc).join(", ") + " &mdash; the model does not project " +
@@ -284,6 +318,8 @@ function readForm(quiet) {
   document.querySelectorAll("#lg-slots input").forEach((el) => { d.slots[el.dataset.slot] = Math.max(0, parseInt(el.value, 10) || 0); });
   document.querySelectorAll("#lg-scoring input").forEach((el) => { d.w[el.dataset.stat] = parseFloat(el.value) || 0; });
   document.querySelectorAll("#lg-bonus input").forEach((el) => { d.b[el.dataset.bonus] = parseFloat(el.value) || 0; });
+  d.x = {};
+  document.querySelectorAll("#lg-xtra input").forEach((el) => { const v = parseFloat(el.value) || 0; if (v) d.x[el.dataset.xtra] = v; });
   d.cum = $("lg-cum").checked;
   if (!quiet) DRAFT = d;
   return d;
@@ -317,16 +353,17 @@ function espnToLeague(j, id, d) {
     d.key = key; d.id = id; d.platform = "espn"; d.type = d.type || "points";
     d.name = s.name || d.name || ("ESPN " + id);
     if (s.size) d.teams = s.size;
-    const w = Object.fromEntries(STATS.map((k) => [k, 0])), b = {DD: 0, TD: 0, QD: 0}, unmod = [];
+    const w = Object.fromEntries(STATS.map((k) => [k, 0])), b = {DD: 0, TD: 0, QD: 0}, unmod = [], x = {};
     ((s.scoringSettings || {}).scoringItems || []).forEach((it) => {
       const nm = ESPN_STAT[it.statId], pts = +it.points || 0;
       if (!pts) return;
       if (nm === "DREB") { w.REB += pts; w.OREB -= pts; }   // DREB = REB - OREB
       else if (nm in b) b[nm] = pts;
       else if (nm) w[nm] = pts;
+      else if (ESPN_X[it.statId]) x[ESPN_X[it.statId]] = pts;
       else unmod.push((ESPN_UNMOD[it.statId] || "stat #" + it.statId) + " (" + (pts > 0 ? "+" : "") + pts + ")");
     });
-    d.w = w; d.b = b; d.unmod = unmod;
+    d.w = w; d.b = b; d.unmod = unmod; d.x = x;
     const ss = (s.scoringSettings || {});
     if (ss.scoringType && /CATEGOR|ROTO/i.test(ss.scoringType)) unmod.push("this is a categories league — the site scores points");
     const slots = {};
@@ -394,17 +431,18 @@ function sleeperToLeague(j, id) {
   Object.assign(d, {key: "sleeper-" + id, id, platform: "sleeper", type: "points", name: j.name || "Sleeper " + id,
     teams: j.total_rosters || st.num_teams || d.teams, adds: null, season: j.season, status: j.status,
     mode: st.game_mode === 0 || st.game_mode == null ? "lockin" : "gamepick", mode_raw: st.game_mode ?? null, cum: true});
-  const w = Object.fromEntries(STATS.map((k) => [k, 0])), b = {DD: 0, TD: 0, QD: 0}, unmod = [];
+  const w = Object.fromEntries(STATS.map((k) => [k, 0])), b = {DD: 0, TD: 0, QD: 0}, unmod = [], x = {};
   Object.entries(sc).forEach(([k, v]) => {
     v = +v || 0; if (!v) return;
-    if (SL_STAT[k] && SL_STAT[k] in w) w[SL_STAT[k]] += v;
+    if (SL_X[k]) x[SL_X[k]] = v;          // a 50-point game earns both the 40 and the 50 bonus (assumed)
+    else if (SL_STAT[k] && SL_STAT[k] in w) w[SL_STAT[k]] += v;
     else if (k === "dreb") { w.REB += v; w.OREB -= v; }
     else if (k === "fgmi") { w.FGA += v; w.FGM -= v; }       // missed FG = attempts - makes
     else if (k === "ftmi") { w.FTA += v; w.FTM -= v; }
     else if (k === "dd") b.DD = v; else if (k === "td") b.TD = v; else if (k === "qd") b.QD = v;
     else unmod.push(`${SL_UNMOD[k] || k} (${v > 0 ? "+" : ""}${v})`);
   });
-  d.w = w; d.b = b; d.unmod = unmod;
+  d.w = w; d.b = b; d.unmod = unmod; d.x = x;
   const slots = {};
   (j.roster_positions || []).forEach((pos) => {
     const k = pos === "BN" ? "BE" : pos;
@@ -998,6 +1036,8 @@ function renderScorecard() {
 }
 function renderProj() {
   renderScorecard();
+  const XS = (META.extras || []).filter((k) => L.x && L.x[k]);
+  const XI = Object.fromEntries((META.extras || []).map((k, i) => [k, i]));
   const V = VIEWS[PJ.view];
   const all = projRows().filter((r) => r[V.tot] != null && r[V.tot] > 0);
   all.sort((a, b) => b[V.tot] - a[V.tot]);
@@ -1026,6 +1066,8 @@ function renderProj() {
     H(V.gp, V.gpLbl, "", PJ.view === "ros" ? "Projected games from here: availability x team games left" : "") +
     H(V.tot, "Total") +
     '<th class="grp">MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>3PM</th><th>TOV</th><th>FG%</th><th>FT%</th>' +
+    // only the extra rules this league scores (they are already inside FP/G and the total)
+    XS.map((k, i) => `<th class="${i ? "" : "grp"}" title="${esc((X_MILE.has(k) ? "Chance of a " + X_LBL[k].toLowerCase() + " in a game he plays" : X_LBL[k] + " per game") + ` (your league: ${sg(L.x[k], 1)} each). Already counted in FP/G and the total.`)}">${X_COL[k]}</th>`).join("") +
     H("sofar", "Now FP/G", "grp", "Actual FP/G this season") +
     H("adj", "Luck-adj", "", "FP/G with luck removed: his own per-minute rates at the minutes he played, plus his real shot attempts and assists") +
     H("luck", "Luck/G", "", "Actual minus luck-adjusted, per game. Positive = the box score flatters him") +
@@ -1044,12 +1086,14 @@ function renderProj() {
       `<td class="grp">${fx(p[V.mpg])}</td><td>${st("PTS")}</td><td>${st("REB")}</td><td>${st("AST")}</td><td>${st("STL")}</td>` +
       `<td>${st("BLK")}</td><td>${st("FG3M")}</td><td>${st("TOV")}</td>` +
       `<td>${s ? pct(s[SI.FGM], s[SI.FGA]) : "-"}</td><td>${s ? pct(s[SI.FTM], s[SI.FTA]) : "-"}</td>` +
+      XS.map((k, i) => { const v = s && s.x ? s.x[XI[k]] : null;
+        return `<td class="${i ? "" : "grp"}">${v == null ? "-" : X_MILE.has(k) ? (v * 100).toFixed(v >= 0.1 ? 0 : 1) + "%" : v.toFixed(2)}</td>`; }).join("") +
       `<td class="grp">${fx(r.sofar)}</td><td>${fx(r.adj)}</td>` +
       `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
       `<td class="grp dim">${p.pre_rank ?? "-"}</td><td class="dim">${p.espn != null ? Math.round(p.espn) : "-"}</td>` +
       `<td class="dim">${p.own != null ? p.own.toFixed(0) : "-"}</td></tr>`);
     if (plain && r.rank === cut)
-      rows.push(`<tr class="cutlbl"><td colspan="23">Waiver line — ${L.teams} teams × ${rostered(L)} roster spots = ${cut} rostered players</td></tr>`);
+      rows.push(`<tr class="cutlbl"><td colspan="${23 + XS.length}">Waiver line — ${L.teams} teams × ${rostered(L)} roster spots = ${cut} rostered players</td></tr>`);
   });
   $("pj-table").querySelector("tbody").innerHTML = rows.join("");
   $("pj-count").textContent = `${list.length} of top ${top.length}`;
@@ -1099,6 +1143,7 @@ function loadGames() {
       (byP[r[C.id]] = byP[r[C.id]] || []).push(r);
       (byG[r[C.g]] = byG[r[C.g]] || {})[r[C.id]] = r;
     });
+    j.rows.forEach((r) => { if (r[C.adj]) withX(r[C.adj], (BYID[r[C.id]] || {}).xr); });
     GAMES = {C, rows: j.rows, byP, byG};
     return GAMES;
   });
@@ -1170,7 +1215,7 @@ function openPlayer(id) {
     if (!rows.length) { $("dlog").innerHTML = '<p class="note">No games yet this season.</p>'; return; }
     const lucks = [];
     const body = rows.map((r) => {
-      const box = STATS.map((k) => r[C[k]]);
+      const box = withX(STATS.map((k) => r[C[k]]), rowX(r));
       const fp = fpg(box, [r[C.dd], r[C.td], r[C.qd]]);
       const a = r[C.adj] ? fpg(r[C.adj], r[C.abp]) : null;
       const lk = a == null ? null : fp - a;
@@ -1216,12 +1261,12 @@ function gameLines(gid) {
     const r = byG[id], f = RECAP.fb[gid + ":" + id];
     const row = {id, tm, st: !!st, dnp, pm, min: null, box: null, fp: null, adj: null, lk: null, fg3a: null};
     if (r) {
-      row.box = STATS.map((k) => r[C[k]]); row.min = r[C.min]; row.fg3a = r[C.FG3A];
+      row.box = withX(STATS.map((k) => r[C[k]]), rowX(r)); row.min = r[C.min]; row.fg3a = r[C.FG3A];
       row.fp = fpg(row.box, [r[C.dd], r[C.td], r[C.qd]]);
       row.adj = r[C.adj] ? fpg(r[C.adj], r[C.abp]) : null;
       row.sh = r[C.sh];
     } else if (f && dnp == null) {
-      row.min = f[0]; row.box = f.slice(1, 1 + STATS.length); row.fg3a = f[1 + STATS.length];
+      row.min = f[0]; row.box = f.slice(1, 1 + STATS.length); row.fg3a = f[1 + STATS.length]; withX(row.box, boxX(row.box));
       row.fp = fpg(row.box, multi(row.box));
       if (RECAP.lv && RECAP.lv[gid]) row.adj = adjLine(BYID[id], row.min, row.box);
     }
@@ -1242,7 +1287,7 @@ function adjLine(p, M, box) {
   const dA = box[SI.FGA] - s[SI.FGA];
   s[SI.FGA] = box[SI.FGA]; s[SI.FGM] += c * dA; s[SI.FG3M] += c3 * dA; s[SI.PTS] += (2 * c + c3) * dA;
   s[SI.AST] = box[SI.AST];
-  return fpg(s, bp.map((b) => b * M / mpg));
+  return fpg(withX(s, p.xr), bp.map((b) => b * M / mpg));
 }
 
 // ---- LIVE NIGHTS: a game shows up here as soon as ESPN calls it final, not at
@@ -2218,7 +2263,7 @@ function luckWhy(p, sign) {
 function lucks(id) {
   const C = GAMES.C;
   return (GAMES.byP[id] || []).slice().sort((a, b) => (a[C.d] < b[C.d] ? -1 : 1)).filter((r) => r[C.adj]).map((r) =>
-    fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]) - fpg(r[C.adj], r[C.abp]));
+    fpgRow(r) - fpg(r[C.adj], r[C.abp]));
 }
 const keepSet = () => new Set((L.keep || []).map(normName));
 function renderInseason() {
@@ -2683,7 +2728,7 @@ function weekVsProj(p, ws, today) {
   if (!gs.length) return null;
   let act = 0, exp = 0;
   gs.forEach((r) => {
-    act += fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]);
+    act += fpgRow(r);
     exp += at.fp + mAdj(p, (META.sched[p.tm] || []).find((x) => x[0] === r[C.d]), scale).adj;
   });
   return {n: gs.length, act, exp, pg: at.fp};
@@ -2782,7 +2827,7 @@ function lockWeek(p, days, today) {
   const dvP = dayVals(p, days, false, () => true);
   const games = days.map((d, i) => ({d, x: d < today ? dvP[i] : dvF[i], xp: dvP[i]})).filter((g) => g.x.g);
   const act = {};
-  if (C) (GAMES.byP[p.id] || []).forEach((r) => { if (days.includes(r[C.d])) act[r[C.d]] = fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]); });
+  if (C) (GAMES.byP[p.id] || []).forEach((r) => { if (days.includes(r[C.d])) act[r[C.d]] = fpgRow(r); });
   const proj = (g) => ({play: g.x.avail ? g.x.play : 0, v: g.x.v || 0, sd: Math.sqrt(g.x.sd2 || 0) * (g.x.rf || 1)});
   const projThen = (g) => ({play: g.xp.play || 0, v: g.xp.v || 0, sd: Math.sqrt(g.xp.sd2 || 0) * (g.xp.rf || 1)});
   const past = games.filter((g) => g.d < today), fut = games.filter((g) => g.d >= today);
@@ -3517,12 +3562,13 @@ function rosAt(p, T) {
   const before = sched.filter((d) => d < T).length, left = sched.filter((d) => d >= T).length;
   const av0 = p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
   const av = Math.min(1, (av0 * 20 + gp) / (20 + before));
+  withX(sl, p.xr);
   return {fp: fpg(sl, bp), av, left, tot: fpg(sl, bp) * av * left, approx, sl, bp};
 }
 function sinceFP(p, T) {
   const C = GAMES.C;
   return (GAMES.byP[p.id] || []).filter((r) => r[C.d] >= T)
-    .reduce((a, r) => a + fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]), 0);
+    .reduce((a, r) => a + fpgRow(r), 0);
 }
 function loadPastTrades(lg) {
   const key = L.id;
@@ -4011,7 +4057,11 @@ function applyData([meta, players, inj, slp]) {
   BC = null;
   STATS.forEach((s, i) => { SI[s] = i; });
   BYID = {}; SL2ID = {};
-  players.forEach((p) => { BYID[p.id] = p; if (p.sl) SL2ID[p.sl] = p.id; });
+  players.forEach((p) => {
+    BYID[p.id] = p; if (p.sl) SL2ID[p.sl] = p.id;
+    if (p.xr) { withX(p.s, p.xr); withX(p.ps, p.xr); withX(p.adj, p.xr); }   // expected extras per game
+    if (p.xt) withX(p.td, p.xt);                                              // this season's actual, per game
+  });
   const last = META.last_game_day || META.asof;
   TEAMLEFT = {};
   Object.entries(META.sched).forEach(([t, g]) => { TEAMLEFT[t] = g.filter((x) => x[0] > last).length; });

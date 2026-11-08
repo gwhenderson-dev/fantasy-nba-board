@@ -108,6 +108,9 @@
         <div class="fields" id="lg-scoring"></div>
         <h3>Bonuses</h3>
         <div class="fields" id="lg-bonus"></div>
+        <h3>Other scoring</h3>
+        <p class="note" style="margin:.2rem 0 .5rem">Fouls, ejections and milestone games. Leave 0 if your league doesn&rsquo;t score them; ESPN and Sleeper leagues fill these in when you add them. A 50-point game also counts as a 40-point game.</p>
+        <div class="fields" id="lg-xtra"></div>
         <label style="display:flex;gap:.45rem;align-items:center;margin-top:.7rem;font-size:.86rem">
           <input type="checkbox" id="lg-cum"> Bonuses stack (a triple-double also earns the double-double bonus)</label>
         <p class="note" id="lg-unmod"></p>
@@ -616,6 +619,23 @@ adds limit = adds per game day × game days in the matchup,
       (16 team-weeks): typical miss 120 points (8%), 11 of 16 within 10%, lean &minus;55 (it assumes a perfect daily lineup and no
       mid-week injuries), winner called in 6 of 8.</p>
 
+    <h3>Extra scoring rules (fouls and milestone games)</h3>
+    <p>Some leagues score technical fouls, flagrant fouls, personal fouls, ejections, fouling out, or bonuses for 40- and 50-point,
+      15-assist and 20-rebound games. When your league does, they are inside every number on the site (FP/G, totals, Waivers, My week,
+      trades, Lock-In), and the Projections tab adds a column for each one. Box scores supply the actual counts every game. Projections,
+      tested before shipping (written down first; milestone models chosen on 2012&ndash;19 and graded once on 2021&ndash;26; foul habits
+      tuned on 2025-26 halves and graded on this season so far):</p>
+    <ul class="plan">
+      <li><strong>Technical fouls</strong> are a habit: a player&rsquo;s own rate (last season plus this one) predicts far better than the
+        league average, so it is used as is (players under 20 games lean on the league average).</li>
+      <li><strong>Flagrant fouls</strong> are close to random: mostly the league average (320 games of it blended in).
+        <strong>Personal fouls</strong>: own rate with 10 games of league average; ejections and ESPN&rsquo;s foul-out count: own rate.</li>
+      <li><strong>Milestone games</strong>: the chance in each game he plays, from his projected average and his own game-to-game swing.
+        40-point games use a normal curve (the only model within 20% of the real count: it runs 14% low); 50 points, 15 assists and
+        20 rebounds use the league&rsquo;s real game shape, which runs 38&ndash;53% high on these rare nights (no model was within 20%).
+        A 50-point game also counts as a 40-point game.</li>
+    </ul>
+
     <h3>Sleeper Lock-In leagues</h3>
     <div class="formula">one game per starter counts each week (Mon&ndash;Sun); never locked = his last game, 0 if he sits
 games left  g1 &hellip; gK, each: play chance p, projected score v, spread sd
@@ -689,6 +709,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=e749aec239"></script>
+<script src="app.js?v=3d65d8491b"></script>
 </body>
 </html>
