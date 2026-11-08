@@ -718,3 +718,37 @@ table.dvp-t td .dvp { margin-left: 0; min-width: 2.3rem; text-align: center; }
 .bp-left summary { cursor: pointer; font-size: .82rem; }
 .bp-left ul { margin: .4rem 0 .2rem 1.1rem; padding: 0; font-size: .82rem; line-height: 1.55; }
 .bp-left li { margin-bottom: .35rem; }
+
+/* ---- welcome popup (first visit; header "+ Add league") ---------------- */
+.addlg { margin-left: 0; }
+dialog.wel { border: 1px solid var(--rule); border-radius: 14px; padding: 0; width: min(40rem, calc(100% - 2rem)); max-height: calc(100% - 2rem);
+  background: var(--paper); color: var(--ink); box-shadow: 0 18px 50px rgba(0, 0, 0, .28); }
+dialog.wel::backdrop { background: rgba(10, 12, 24, .55); }
+.wel-in { padding: 1.3rem 1.4rem 1.1rem; display: grid; gap: .9rem; overflow: auto; max-height: calc(100vh - 2rem); }
+.wel-head { display: flex; align-items: center; gap: .65rem; }
+.wel-head h2 { font-family: var(--display); font-size: 1.35rem; letter-spacing: -.02em; margin: 0; flex: 1; text-wrap: balance; }
+.wel-mark svg { width: 1.9rem; display: block; }
+.wel-mark .b1 { fill: var(--accent); } .wel-mark .b2 { fill: var(--ink); opacity: .55; } .wel-mark .b3 { fill: var(--ink); opacity: .28; }
+.wel-x { border: 0; background: none; color: var(--muted); font-size: 1.6rem; line-height: 1; cursor: pointer; padding: .1rem .35rem; border-radius: 6px; }
+.wel-x:hover { color: var(--ink); background: var(--band); }
+.wel-lede { margin: 0; color: var(--ink2); }
+.wel-step { display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); gap: .7rem; align-items: start; }
+.wel-step[hidden] { display: none; }
+.wel-step h3 { margin: .15rem 0 .45rem; font-size: .95rem; }
+.wel-n { width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent-bg); color: var(--accent); font-weight: 750; display: grid; place-items: center; font-size: .85rem; }
+.wel-step input { width: 100%; font-size: 1rem; padding: .5rem .65rem; }
+.wel-hint { margin: .35rem 0 0; font-size: .8rem; color: var(--muted); }
+.wel-hint code { font-size: .78rem; }
+.wel-ok { border: 1px solid var(--rule); border-radius: 10px; padding: .75rem .9rem; background: var(--bg); }
+.wel-ok-h { font-size: 1rem; margin-bottom: .35rem; color: var(--good); }
+.wel-ok-h strong { color: var(--ink); }
+.wel-facts { margin: 0 0 .5rem; padding-left: 1.1rem; font-size: .84rem; display: grid; gap: .15rem; }
+.wel-ok p { margin: .35rem 0 0; font-size: .86rem; }
+.wel-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.wel-actions .linkbtn { margin-left: auto; }
+.wel-foot { margin: 0; font-size: .74rem; color: var(--muted); }
+@media (max-width: 640px) {
+  .wel-in { padding: 1rem 1rem .9rem; }
+  .wel-head h2 { font-size: 1.15rem; }
+  .addlg { order: 3; }
+}

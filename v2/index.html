@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=384a1822e7">
+<link rel="stylesheet" href="app.css?v=04faa386e8">
 </head>
 <body>
 <header class="top">
@@ -19,6 +19,7 @@
       <button class="refbtn" id="refresh" title="Re-read the latest stats, projections and official injury report, and your live ESPN league">&#8635; Refresh</button>
       <small id="refmsg"></small></div>
     <label class="lgpick">League <select id="lgsel" aria-label="Active league"></select></label>
+    <button class="refbtn addlg" id="addlg" type="button" title="Add a league from ESPN, Sleeper, Yahoo or Fantrax">+ Add league</button>
     <label class="lgpick" id="tmpick" hidden>You are <select id="tmsel" aria-label="Your fantasy team"></select></label>
   </div>
   <div class="pickteam" id="pickteam" hidden>&#128075; First time here? Pick <strong>your team</strong> in &ldquo;You are&rdquo; above &mdash;
@@ -39,6 +40,37 @@
   </nav>
 </div>
 
+<dialog class="wel" id="welcome" aria-labelledby="wel-h">
+  <div class="wel-in">
+    <div class="wel-head"><span class="wel-mark"><svg viewBox="0 0 28 22" aria-hidden="true"><rect class="b1" x="0" y="0" width="28" height="5.6" rx="2"/><rect class="b2" x="0" y="8.2" width="20" height="5.6" rx="2"/><rect class="b3" x="0" y="16.4" width="12.5" height="5.6" rx="2"/></svg></span><h2 id="wel-h">Welcome to The Depth Chart</h2>
+      <button type="button" class="wel-x" id="wel-x" aria-label="Close">&times;</button></div>
+    <p class="wel-lede">Projections, waiver pickups and weekly matchups, scored by your league&rsquo;s own rules. Tell us where your league lives and we&rsquo;ll check we can read it.</p>
+    <div class="wel-step"><span class="wel-n">1</span><div><h3>Where is your league?</h3>
+      <div class="chips" id="wel-plat" role="group" aria-label="League platform">
+        <button type="button" class="chip" data-plat="espn">ESPN</button>
+        <button type="button" class="chip" data-plat="sleeper">Sleeper</button>
+        <button type="button" class="chip" data-plat="yahoo">Yahoo</button>
+        <button type="button" class="chip" data-plat="fantrax">Fantrax</button>
+        <button type="button" class="chip" data-plat="other">Somewhere else</button>
+      </div></div></div>
+    <div class="wel-step" id="wel-typeset"><span class="wel-n">2</span><div><h3>What kind of league?</h3>
+      <div class="chips" id="wel-type" role="group" aria-label="League type">
+        <button type="button" class="chip" data-type="points">Head-to-head points</button>
+        <button type="button" class="chip" data-type="cats">Head-to-head categories</button>
+        <button type="button" class="chip" data-type="roto">Rotisserie</button>
+      </div></div></div>
+    <div class="wel-step" id="wel-idset" hidden><span class="wel-n">3</span><div><h3><label for="wel-id">Your league ID</label></h3>
+      <input id="wel-id" type="text" autocomplete="off" spellcheck="false">
+      <p class="wel-hint" id="wel-hint"></p></div></div>
+    <div id="wel-res" aria-live="polite"></div>
+    <div class="wel-actions">
+      <button type="button" class="btn primary" id="wel-check" hidden>Check my league</button>
+      <button type="button" class="btn primary" id="wel-use" hidden>Use this league</button>
+      <button type="button" class="linkbtn" id="wel-skip">Skip, just look around</button>
+    </div>
+    <p class="wel-foot">Leagues are saved in this browser only. We read public league data and never ask for passwords.</p>
+  </div>
+</dialog>
 <main>
   <!-- ================================================================ LEAGUE -->
   <section class="panel" id="tab-league" hidden>
@@ -636,6 +668,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=6ec79bfef8"></script>
+<script src="app.js?v=3f7c01178d"></script>
 </body>
 </html>

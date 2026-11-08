@@ -246,11 +246,21 @@ function pullEspn() {
     if (!r.ok) throw new Error("HTTP " + r.status + (r.status === 401 || r.status === 403 ? " — the league must be public" : ""));
     return r.json();
   }).then((j) => {
+    const key = "espn-" + id;
+    const d = espnToLeague(j, id, STORE.list[key] ? clone(STORE.list[key]) : clone(DRAFT));
+    DRAFT = d;
+    renderLeagueForm();
+    lgMsg("ok", `Pulled <strong>${esc(d.name)}</strong>: ${d.teams} teams, ${rostered(d)} roster spots, scoring and bonuses filled in. Review, then <strong>Save league</strong>.`);
+  }).catch((e) => {
+    lgMsg("err", "Could not pull league " + esc(id) + " (" + esc(e.message) + "). Private leagues can't be read; make it viewable to the public in ESPN's league settings, or enter the rules by hand.");
+  }).finally(() => { $("lg-pull").disabled = false; });
+}
+// ESPN mSettings -> a league object (scoring, slots, adds, playoffs)
+function espnToLeague(j, id, d) {
     const s = j.settings || {};
     const key = "espn-" + id;
-    const d = STORE.list[key] ? clone(STORE.list[key]) : clone(DRAFT);
     if (!STORE.list[key]) { delete d.tl; delete d.my_team; d.keep = []; }
-    d.key = key; d.id = id; d.platform = "espn";
+    d.key = key; d.id = id; d.platform = "espn"; d.type = d.type || "points";
     d.name = s.name || d.name || ("ESPN " + id);
     if (s.size) d.teams = s.size;
     const w = Object.fromEntries(STATS.map((k) => [k, 0])), b = {DD: 0, TD: 0, QD: 0}, unmod = [];
@@ -285,14 +295,185 @@ function pullEspn() {
     }
     // matchup period -> its fantasy weeks (playoff rounds can span 2+ weeks)
     d.mp = sch.matchupPeriods && Object.keys(sch.matchupPeriods).length ? sch.matchupPeriods : null;
-    DRAFT = d;
-    renderLeagueForm();
-    lgMsg("ok", `Pulled <strong>${esc(d.name)}</strong>: ${d.teams} teams, ${rostered(d)} roster spots, scoring and bonuses filled in. Review, then <strong>Save league</strong>.`);
-  }).catch((e) => {
-    lgMsg("err", "Could not pull league " + esc(id) + " (" + esc(e.message) + "). Private leagues can't be read; make it viewable to the public in ESPN's league settings, or enter the rules by hand.");
-  }).finally(() => { $("lg-pull").disabled = false; });
+    if (ss.scoringType && /CATEGOR|ROTO/i.test(ss.scoringType)) d.type = /ROTO/i.test(ss.scoringType) ? "roto" : "cats";
+    return d;
 }
 
+// the in-season tabs read rosters from ESPN today; say so plainly for other platforms
+const PLAT_NAME = {sleeper: "Sleeper", fantrax: "Fantrax", yahoo: "Yahoo"};
+function rosterMsg(what) {
+  const pn = PLAT_NAME[L.platform];
+  if (pn) return `<div class="msg info">${what} for ${pn} leagues is coming next: it needs your league&rsquo;s rosters` +
+    (L.platform === "sleeper" && L.mode ? ` and ${L.mode === "lockin" ? "Lock-In" : "Game Pick"} scoring (one game per starter each week)` : "") +
+    ". For now it works with public ESPN leagues. Projections, the Schedule and Team defence already use your league&rsquo;s scoring.</div>";
+  return `<div class="msg info">${what} reads rosters from a public ESPN league. Add one with <button class="linkbtn" onclick="document.getElementById('addlg').click()">+ Add league</button>.</div>`;
+}
+// ============================================================ WELCOME POPUP
+// First visit (and the header's "+ Add league"): where the league lives, what
+// kind it is, its id -> read it live and say plainly what works for it.
+const WEL = {plat: null, type: "points", res: null, busy: false};
+const WEL_KEY = "fnba.v2.welcomed";
+const PLATS = {
+  espn: {name: "ESPN", hint: "The number after <code>leagueId=</code> in your ESPN league&rsquo;s web address. The league must be viewable to the public (ESPN league settings).", ph: "e.g. 242568268"},
+  sleeper: {name: "Sleeper", hint: "The long number in <code>sleeper.com/leagues/&hellip;</code>. Paste the whole address if that&rsquo;s easier.", ph: "e.g. 1286125072255307776"},
+  fantrax: {name: "Fantrax", hint: "The code after <code>/league/</code> in your Fantrax league&rsquo;s web address.", ph: "e.g. a1b2c3d4e5f6g7h8"},
+  yahoo: {name: "Yahoo", hint: ""},
+  other: {name: "Somewhere else", hint: ""},
+};
+const TYPES = {points: "Head-to-head points", cats: "Head-to-head categories", roto: "Rotisserie"};
+function welId(plat, raw) {
+  const v = String(raw || "").trim();
+  if (plat === "espn") { const m = v.match(/leagueId=(\d+)/i) || v.match(/^(\d{3,12})$/); return m ? m[1] : null; }
+  if (plat === "sleeper") { const m = v.match(/leagues?\/(\d{10,25})/) || v.match(/^(\d{10,25})$/); return m ? m[1] : null; }
+  if (plat === "fantrax") { const m = v.match(/league\/([a-z0-9]{6,32})/i) || v.match(/^([a-z0-9]{6,32})$/i); return m ? m[1].toLowerCase() : null; }
+  return null;
+}
+// Sleeper league -> a league object (scoring, slots, playoffs, Lock-In mode)
+const SL_STAT = {pts: "PTS", reb: "REB", ast: "AST", stl: "STL", blk: "BLK", to: "TOV", tpm: "FG3M",
+  fgm: "FGM", fga: "FGA", ftm: "FTM", fta: "FTA", oreb: "OREB"};
+const SL_UNMOD = {bonus_pt_40p: "40-point games", bonus_pt_50p: "50-point games", ff: "flagrant fouls", tf: "technical fouls",
+  bonus_ast_15p: "15-assist games", bonus_reb_20p: "20-rebound games", tpa: "3-point attempts", pf: "personal fouls"};
+function sleeperToLeague(j, id) {
+  const d = clone(META.league), sc = j.scoring_settings || {}, st = j.settings || {};
+  delete d.tl; delete d.my_team; d.keep = []; d.mp = null; d.adds_day = null;
+  Object.assign(d, {key: "sleeper-" + id, id, platform: "sleeper", type: "points", name: j.name || "Sleeper " + id,
+    teams: j.total_rosters || st.num_teams || d.teams, adds: null, season: j.season, status: j.status,
+    mode: st.game_mode === 0 || st.game_mode == null ? "lockin" : "gamepick", mode_raw: st.game_mode ?? null, cum: true});
+  const w = Object.fromEntries(STATS.map((k) => [k, 0])), b = {DD: 0, TD: 0, QD: 0}, unmod = [];
+  Object.entries(sc).forEach(([k, v]) => {
+    v = +v || 0; if (!v) return;
+    if (SL_STAT[k] && SL_STAT[k] in w) w[SL_STAT[k]] += v;
+    else if (k === "dreb") { w.REB += v; w.OREB -= v; }
+    else if (k === "fgmi") { w.FGA += v; w.FGM -= v; }       // missed FG = attempts - makes
+    else if (k === "ftmi") { w.FTA += v; w.FTM -= v; }
+    else if (k === "dd") b.DD = v; else if (k === "td") b.TD = v; else if (k === "qd") b.QD = v;
+    else unmod.push(`${SL_UNMOD[k] || k} (${v > 0 ? "+" : ""}${v})`);
+  });
+  d.w = w; d.b = b; d.unmod = unmod;
+  const slots = {};
+  (j.roster_positions || []).forEach((pos) => {
+    const k = pos === "BN" ? "BE" : pos;
+    if (ALL_SLOTS.includes(k)) slots[k] = (slots[k] || 0) + 1;
+  });
+  if (st.reserve_slots) slots.IR = st.reserve_slots;
+  if (Object.keys(slots).length) d.slots = slots;
+  if (st.playoff_week_start && st.playoff_teams) {
+    const rounds = Math.ceil(Math.log2(st.playoff_teams));
+    d.playoff_weeks = [st.playoff_week_start, st.playoff_week_start + rounds - 1]; d.po_len = 1;
+  }
+  return d;
+}
+function fantraxToLeague(j, id) {
+  const d = clone(META.league);
+  delete d.tl; delete d.my_team; d.keep = []; d.mp = null; d.adds_day = null; d.unmod = [];
+  const teams = j.teamInfo ? Object.keys(j.teamInfo).length : Array.isArray(j.teams) ? j.teams.length : null;
+  Object.assign(d, {key: "fantrax-" + id, id, platform: "fantrax", type: WEL.type,
+    name: j.leagueName || j.name || (j.league && j.league.name) || "Fantrax " + id, teams: teams || d.teams});
+  return d;
+}
+const scoreLine = (d) => STATS.filter((k) => d.w[k]).map((k) => `${STAT_LBL[k]} ${d.w[k]}`).join(" · ") +
+  (d.b.DD || d.b.TD ? ` · double-double ${d.b.DD}, triple-double ${d.b.TD}` : "");
+function welWorks(d) {
+  const off = d.type !== "points";
+  if (off) return `<p><strong>Heads up:</strong> this site scores <strong>points</strong> leagues. ${TYPES[d.type]} isn&rsquo;t supported yet, ` +
+    "so the numbers won&rsquo;t match your league. Projections, the Schedule and Team defence are still useful.</p>";
+  if (d.platform === "espn") return "<p><strong>Everything works:</strong> your scoring and roster slots, your teams and rosters, Recap, Waivers, My week and the Trade analyzer. Next, pick your team in &ldquo;You are&rdquo; at the top.</p>";
+  if (d.platform === "sleeper") return `<p><strong>Works now:</strong> your scoring, roster slots, team count and playoff weeks drive Projections, the Schedule and Team defence.</p>` +
+    `<p><strong>Coming next:</strong> your Sleeper rosters on Waivers, My week and the Trade analyzer. Your league uses ` +
+    (d.mode === "lockin" ? "<strong>Lock-In</strong> (one game per starter counts each week, the one you lock in)" : "<strong>Game Pick</strong> (one chosen game per starter each week)") +
+    ", which needs its own weekly maths, so those tabs will say so until it lands.</p>";
+  if (d.platform === "fantrax") return "<p><strong>Found it.</strong> Fantrax doesn&rsquo;t share a league&rsquo;s scoring publicly, so the default points scoring is in place: check it on the League tab. " +
+    "Fantrax rosters on the in-season tabs are coming.</p>";
+  return "";
+}
+function renderWelcome() {
+  const P = WEL.plat ? PLATS[WEL.plat] : null;
+  document.querySelectorAll("#wel-plat .chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.plat === WEL.plat)));
+  document.querySelectorAll("#wel-type .chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.type === WEL.type)));
+  const needsId = ["espn", "sleeper", "fantrax"].includes(WEL.plat);
+  $("wel-idset").hidden = !needsId;
+  if (needsId) { $("wel-hint").innerHTML = P.hint; $("wel-id").placeholder = P.ph; }
+  $("wel-typeset").hidden = WEL.plat === "sleeper";       // Sleeper basketball is always points
+  $("wel-check").hidden = !WEL.plat;
+  $("wel-check").textContent = needsId ? "Check my league" : "Set up my rules by hand";
+  $("wel-check").disabled = WEL.busy;
+  $("wel-use").hidden = !(WEL.res && WEL.res.d);
+  const r = WEL.res;
+  $("wel-res").innerHTML = WEL.plat === "yahoo" && !r
+    ? '<div class="msg info"><strong>Yahoo needs you to sign in with Yahoo</strong> (Yahoo doesn&rsquo;t let websites read leagues any other way). That sign-in is being set up. For now, choose <em>Set up my rules by hand</em> and enter your scoring on the League tab.</div>'
+    : !r ? "" : r.err ? `<div class="msg err">${r.err}</div>`
+    : `<div class="wel-ok"><div class="wel-ok-h">&#10003; Found <strong>${esc(r.d.name)}</strong></div>` +
+      `<ul class="wel-facts"><li>${r.d.teams} teams · ${starters(r.d)} starters + ${r.d.slots.BE || 0} bench${r.d.slots.IR ? " + " + r.d.slots.IR + " IR" : ""}</li>` +
+      (r.d.platform !== "fantrax" ? `<li>Scoring: ${esc(scoreLine(r.d))}</li>` : "") +
+      (r.d.playoff_weeks ? `<li>Playoffs: weeks ${r.d.playoff_weeks[0]}&ndash;${r.d.playoff_weeks[1]}</li>` : "") +
+      (r.d.unmod && r.d.unmod.length ? `<li class="dim">Not modelled: ${esc(r.d.unmod.join(", "))}</li>` : "") +
+      (r.note ? `<li class="dim">${r.note}</li>` : "") + `</ul>${welWorks(r.d)}</div>`;
+}
+function welCheck() {
+  if (WEL.plat === "yahoo" || WEL.plat === "other") {           // straight to the League tab, a blank custom league
+    const d = clone(META.league);
+    Object.assign(d, {key: "custom-" + Date.now(), id: "", name: WEL.plat === "yahoo" ? "My Yahoo league" : "My league",
+      platform: WEL.plat === "yahoo" ? "yahoo" : "custom", type: WEL.type, unmod: [], keep: []});
+    delete d.my_team; delete d.tl; d.mp = null;
+    welDone();
+    DRAFT = d; location.hash = "league"; renderLeagueForm();
+    lgMsg("info", "Enter your league&rsquo;s scoring, roster slots and playoff weeks, then press <strong>Save league</strong>.");
+    return;
+  }
+  const id = welId(WEL.plat, $("wel-id").value);
+  if (!id) { WEL.res = {err: `That doesn&rsquo;t look like ${WEL.plat === "espn" ? "an" : "a"} ${PLATS[WEL.plat].name} league ID. ${PLATS[WEL.plat].hint}`}; renderWelcome(); return; }
+  WEL.busy = true; WEL.res = null; renderWelcome();
+  $("wel-res").innerHTML = `<p class="note">Reading ${PLATS[WEL.plat].name} league ${esc(id)}&hellip;</p>`;
+  const sid = parseInt(META.season.slice(0, 4), 10);
+  const job = WEL.plat === "espn"
+    ? fetch(espnBase() + id + "?view=mSettings").then((r) => {
+        if (r.status === 401 || r.status === 403) throw new Error("This ESPN league is private. In ESPN, open League &rarr; Settings and make it viewable to the public, then try again.");
+        if (!r.ok) throw new Error(`ESPN didn&rsquo;t find league ${esc(id)} for the ${META.season} season (HTTP ${r.status}).`);
+        return r.json();
+      }).then((j) => { const d = espnToLeague(j, id, STORE.list["espn-" + id] ? clone(STORE.list["espn-" + id]) : clone(META.league)); if (d.type === "points") d.type = WEL.type; return {d}; })
+    : WEL.plat === "sleeper"
+    ? fetch("https://api.sleeper.app/v1/league/" + id).then((r) => r.json()).then((j) => {
+        if (!j || !j.league_id) throw new Error(`Sleeper didn&rsquo;t find league ${esc(id)}. Check the number in your league&rsquo;s web address.`);
+        if (j.sport && j.sport !== "nba") throw new Error(`That&rsquo;s a Sleeper ${esc(String(j.sport).toUpperCase())} league, not basketball.`);
+        const d = sleeperToLeague(j, id);
+        const note = String(j.season) !== String(sid) ? `This league is from the ${esc(j.season)} season; Sleeper gives each season a new league ID, so use this season&rsquo;s if you have it.`
+          : j.status === "pre_draft" ? "This league hasn&rsquo;t drafted yet, so there are no rosters to read." : "";
+        return {d, note};
+      })
+    : fetch("https://www.fantrax.com/fxea/general/getLeagueInfo?leagueId=" + encodeURIComponent(id)).then((r) => r.json()).then((j) => {
+        if (!j || j.error) throw new Error(`Fantrax didn&rsquo;t find league ${esc(id)}${j && j.error && j.error.message ? " (" + esc(j.error.message) + ")" : ""}. Check the code in your league&rsquo;s web address.`);
+        return {d: fantraxToLeague(j, id)};
+      });
+  job.then((res) => { WEL.res = res; })
+    .catch((e) => { WEL.res = {err: e && e.message && !/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? e.message : `Couldn&rsquo;t reach ${PLATS[WEL.plat].name} just now. Check your connection and try again.`}; })
+    .finally(() => { WEL.busy = false; renderWelcome(); });
+}
+function welDone() { lsSet(WEL_KEY, 1); if ($("welcome").open) $("welcome").close(); }
+function welUse() {
+  const d = WEL.res && WEL.res.d;
+  if (!d) return;
+  STORE.list[d.key] = d;
+  writeStore();
+  welDone();
+  setActive(d.key);
+}
+function openWelcome() {
+  WEL.res = null; WEL.busy = false;
+  renderWelcome();
+  const dlg = $("welcome");
+  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+}
+function bindWelcome() {
+  $("wel-plat").addEventListener("click", (e) => { const b = e.target.closest("[data-plat]"); if (!b) return; WEL.plat = b.dataset.plat; WEL.res = null; renderWelcome(); if (!$("wel-idset").hidden) $("wel-id").focus(); });
+  $("wel-type").addEventListener("click", (e) => { const b = e.target.closest("[data-type]"); if (!b) return; WEL.type = b.dataset.type; renderWelcome(); });
+  $("wel-check").addEventListener("click", welCheck);
+  $("wel-id").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); welCheck(); } });
+  $("wel-use").addEventListener("click", welUse);
+  $("wel-skip").addEventListener("click", welDone);
+  $("wel-x").addEventListener("click", welDone);
+  $("welcome").addEventListener("cancel", () => lsSet(WEL_KEY, 1));      // Esc
+  $("addlg").addEventListener("click", openWelcome);
+}
 function bindLeague() {
   $("lgsel").addEventListener("change", (e) => setActive(e.target.value));
   $("tmsel").addEventListener("change", (e) => {
@@ -1452,7 +1633,7 @@ function renderWaivers() {
   $("wv-lede").innerHTML = (shut ? `<b>Today&rsquo;s pickups are closed</b> (first tip-off${tipClock(META.asof) ? " " + esc(tipClock(META.asof)) : ""}): anyone you add now plays from tomorrow. ` : "") +
     (!days.length ? "No fantasy week left in the schedule for this window. " : `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
     (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
-      : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ")) +
+      : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : (PLAT_NAME[L.platform] ? `${PLAT_NAME[L.platform]} rosters aren&rsquo;t read yet, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ` : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. "))) +
     `Players out are left off, using the <strong>official NBA injury report</strong>${OFF.as_of ? ` (as of ${esc(OFF.as_of)})` : ""} first and ESPN&rsquo;s status otherwise: ` +
     `a player listed out on his team&rsquo;s last two or more reports is dropped entirely, a one-night Out removes just that game, and Doubtful / Questionable are tagged. ` +
     `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`);
@@ -1550,7 +1731,7 @@ const SP_PTW = 1 / 200;                   // "Most games": one projected point =
 const SP_POOL = 40;                       // free agents considered: the best 40 over the window + 6 per day
 function planStream(inner) {
   const lg = LGRES[L.id], mt = myTeam();
-  if (!lg) return {err: L.platform === "espn" ? "Loading your league from ESPN…" : "The planner needs a public ESPN league (League tab)."};
+  if (!lg) return {err: L.platform === "espn" ? "Loading your league from ESPN…" : PLAT_NAME[L.platform] ? `The streaming planner for ${PLAT_NAME[L.platform]} leagues is coming next; it works with public ESPN leagues today.` : "The planner needs a public ESPN league (+ Add league at the top)."};
   if (mt == null) return {err: "Pick your team in “You are” at the top."};
   const today = todayET();
   const PER = matchupPeriods().find((p) => p.start <= today && today <= p.end);
@@ -1949,7 +2130,7 @@ function renderInseason() {
     $("is-lede").innerHTML = "";
     body.innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
       ? '<p class="note">Loading your league&rsquo;s rosters from ESPN&hellip;</p>'
-      : '<div class="msg info">This tab reads rosters from a public ESPN league. Pull one on the League tab.</div>';
+      : rosterMsg("In-season analysis");
     return;
   }
   if (!GAMES) { body.innerHTML = '<p class="note">Loading games&hellip;</p>'; loadGames().then(renderInseason); return; }
@@ -2456,7 +2637,7 @@ function renderWeek() {
     $("wk-cards").innerHTML = "";
     $("wk-detail").innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
       ? '<p class="note">Loading your league from ESPN&hellip;</p>'
-      : '<div class="msg info">My week reads rosters and matchups from a public ESPN league. Pull one on the League tab.</div>';
+      : rosterMsg("My week");
     return;
   }
   if (!WK.mm) {
@@ -2900,7 +3081,7 @@ function renderTrade() {
   if (!lg) {
     $("tr-score").innerHTML = L.platform === "espn" && /^\d+$/.test(L.id || "")
       ? '<p class="note">Loading your league from ESPN&hellip;</p>'
-      : '<div class="msg info">The trade analyzer reads rosters from a public ESPN league. Pull one on the League tab.</div>';
+      : rosterMsg("The trade analyzer");
     $("tr-ra").innerHTML = $("tr-rb").innerHTML = "";
     return;
   }
@@ -3559,6 +3740,8 @@ fetchData(false)
     bindSchedule();
     bindDefence();
     bindRefresh();
+    bindWelcome();
+    if (!qTeam && !lsGet(WEL_KEY, 0)) openWelcome();
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
