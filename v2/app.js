@@ -10,6 +10,7 @@ const fx = (v, nd = 1) => (v == null || isNaN(v) ? "-" : v.toFixed(nd));
 const sg = (v, nd = 1) => (v == null || isNaN(v) ? "-" : (v > 0 ? "+" : "") + v.toFixed(nd));
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+let SL2ID = {};
 let META, PLAYERS, BYID = {}, STATS, TEAMLEFT = {}, GAMES = null, GAMES_P = null;
 let DATA_V = "";                     // cache-buster, set by the Refresh button
 const NC = {cache: "no-cache"};      // revalidate data files: a daily build must not be hidden by the browser cache
@@ -169,9 +170,39 @@ function fillTeamPicker() {
   $("tmsel").innerHTML = (mt == null ? '<option value="">pick your team</option>' : "") +
     tl.map(([id, name]) => `<option value="${id}"${id === mt ? " selected" : ""}>${esc(name)}</option>`).join("");
 }
+// Sleeper league -> the same shape espnLeague() gives (owner / slot keyed by
+// the site's player ids via players.json "sl"); rosters are today's
+const SLB = "https://api.sleeper.app/v1/league/";
+function sleeperLeague(lg) {
+  if (!lg || lg.platform !== "sleeper" || !/^\d+$/.test(lg.id || "")) return Promise.resolve(null);
+  if (!LGDATA[lg.id]) {
+    const get = (u) => fetch(SLB + lg.id + u, {cache: "no-store"}).then((r) => (r.ok ? r.json() : null));
+    LGDATA[lg.id] = Promise.all([get(""), get("/rosters"), get("/users")]).then(([info, rosters, users]) => {
+      if (!info || !rosters) return null;
+      const uname = Object.fromEntries((users || []).map((u) => [u.user_id, (u.metadata && u.metadata.team_name) || u.display_name || "Team"]));
+      const teams = rosters.map((r) => ({id: r.roster_id, ab: "", name: uname[r.owner_id] || "Team " + r.roster_id}));
+      const owner = {}, slot = {}, name = {}, unmapped = [];
+      rosters.forEach((r) => {
+        const ir = new Set(r.reserve || []);
+        (r.players || []).forEach((sid) => {
+          const id = SL2ID[sid];
+          if (id == null) { unmapped.push(sid); return; }
+          owner[id] = r.roster_id; slot[id] = ir.has(sid) ? 13 : 0; name[id] = BYID[id].n;
+        });
+      });
+      const d = {teams, owner, slot, name, elig: {}, inj: {}, pro: {}, tx: {}, wv: {}, ret: {}, at: Date.now(), next: null,
+        rpos: (info.roster_positions || []).filter((x) => x !== "BN"), unmapped, platform: "sleeper",
+        byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
+      LGRES[lg.id] = d;
+      return d;
+    }).catch(() => null);
+  }
+  return LGDATA[lg.id];
+}
+const leagueData = (lg) => (lg && lg.platform === "sleeper" ? sleeperLeague(lg) : espnLeague(lg));
 function refreshLeagueData() {
   const lg = STORE.list[STORE.active];
-  return espnLeague(lg).then((d) => {
+  return leagueData(lg).then((d) => {
     if (!d || STORE.list[STORE.active] !== lg) return;
     lg.tl = d.teams.map((t) => [t.id, t.name, t.ab]);
     if (lg.my_team != null && !d.byId[lg.my_team]) delete lg.my_team;
@@ -326,6 +357,7 @@ function espnToLeague(j, id, d) {
 const PLAT_NAME = {sleeper: "Sleeper", fantrax: "Fantrax", yahoo: "Yahoo"};
 function rosterMsg(what) {
   const pn = PLAT_NAME[L.platform];
+  if (L.platform === "sleeper") return '<p class="note">Loading your league from Sleeper&hellip;</p>';
   if (pn) return `<div class="msg info">${what} for ${pn} leagues is coming next: it needs your league&rsquo;s rosters` +
     (L.platform === "sleeper" && L.mode ? ` and ${L.mode === "lockin" ? "Lock-In" : "Game Pick"} scoring (one game per starter each week)` : "") +
     ". For now it works with public ESPN leagues. Projections, the Schedule and Team defence already use your league&rsquo;s scoring.</div>";
@@ -401,10 +433,10 @@ function welWorks(d) {
   if (off) return `<p><strong>Heads up:</strong> this site scores <strong>points</strong> leagues. ${TYPES[d.type]} isn&rsquo;t supported yet, ` +
     "so the numbers won&rsquo;t match your league. Projections, the Schedule and Team defence are still useful.</p>";
   if (d.platform === "espn") return "<p><strong>Everything works:</strong> your scoring and roster slots, your teams and rosters, Recap, Waivers, My week and the Trade analyzer. Next, pick your team in &ldquo;You are&rdquo; at the top.</p>";
-  if (d.platform === "sleeper") return `<p><strong>Works now:</strong> your scoring, roster slots, team count and playoff weeks drive Projections, the Schedule and Team defence.</p>` +
-    `<p><strong>Coming next:</strong> your Sleeper rosters on Waivers, My week and the Trade analyzer. Your league uses ` +
-    (d.mode === "lockin" ? "<strong>Lock-In</strong> (one game per starter counts each week, the one you lock in)" : "<strong>Game Pick</strong> (one chosen game per starter each week)") +
-    ", which needs its own weekly maths, so those tabs will say so until it lands.</p>";
+  if (d.platform === "sleeper") return `<p><strong>Works:</strong> your scoring and roster slots, your teams and rosters on every tab, and ` +
+    (d.mode === "lockin" ? "<strong>Lock-In</strong> scoring: My week projects each starter&rsquo;s locked game, a <strong>Lock or pass?</strong> card tells you when to lock, and Waivers ranks free agents by their Lock-In value."
+      : "rosters. Your league uses <strong>Game Pick</strong> (one game chosen in advance per starter); its weekly maths isn&rsquo;t built yet.") +
+    ` Next, pick your team in &ldquo;You are&rdquo; at the top.</p>`;
   if (d.platform === "fantrax") return "<p><strong>Found it.</strong> Fantrax doesn&rsquo;t share a league&rsquo;s scoring publicly, so the default points scoring is in place: check it on the League tab. " +
     "Fantrax rosters on the in-season tabs are coming.</p>";
   return "";
@@ -1578,8 +1610,16 @@ function streamRows() {
       const bst = boostFP(p, d), v = (fp + bst) * rf + adj;
       proj += play * v;
       if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, v + CZ * sd * rf);
-      return {d, opp, home, second, play, sp, rf, adj, bst, tip, val: play * v};
+      return {d, opp, home, second, play, sp, rf, adj, bst, tip, val: play * v, v};
     });
+    // Lock-In: one game per starter per Mon-Sun week -> his expected locked score
+    // for each week in the window (games are extra chances, not extra points)
+    if (L.mode === "lockin") {
+      const byWk = {};
+      games.forEach((g) => { const dt = new Date(g.d + "T12:00:00Z"), mon = addDays(g.d, -((dt.getUTCDay() + 6) % 7));
+        (byWk[mon] = byWk[mon] || []).push({play: g.play, v: g.v, sd: sd * g.rf}); });
+      proj = Object.values(byWk).reduce((a, gs) => a + lockV(gs), 0);
+    }
     const now = p.td && p.gp ? fpg(p.td, p.tbp || [0, 0, 0]) : null;
     const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
     const bg = games.filter((g) => g.bst > 0.05);
@@ -1662,7 +1702,7 @@ function renderWaivers() {
   $("wv-lede").innerHTML = (shut ? `<b>Today&rsquo;s pickups are closed</b> (first tip-off${tipClock(META.asof) ? " " + esc(tipClock(META.asof)) : ""}): anyone you add now plays from tomorrow. ` : "") +
     (!days.length ? "No fantasy week left in the schedule for this window. " : `Pickups with a game ${wl} (${days[0]}${days.length > 1 ? " to " + days[days.length - 1] : ""}), scored under <strong>${esc(L.name)}</strong>. ` +
     (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
-      : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : (PLAT_NAME[L.platform] ? `${PLAT_NAME[L.platform]} rosters aren&rsquo;t read yet, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ` : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. "))) +
+      : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : (L.platform === "sleeper" ? "Loading your Sleeper league&hellip; " : PLAT_NAME[L.platform] ? `${PLAT_NAME[L.platform]} rosters aren&rsquo;t read yet, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ` : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. "))) +
     `Players out are left off, using the <strong>official NBA injury report</strong>${OFF.as_of ? ` (as of ${esc(OFF.as_of)})` : ""} first and ESPN&rsquo;s status otherwise: ` +
     `a player listed out on his team&rsquo;s last two or more reports is dropped entirely, a one-night Out removes just that game, and Doubtful / Questionable are tagged. ` +
     `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`);
@@ -1760,6 +1800,7 @@ const SP_PTW = 1 / 200;                   // "Most games": one projected point =
 const SP_POOL = 40;                       // free agents considered: the best 40 over the window + 6 per day
 function planStream(inner) {
   const lg = LGRES[L.id], mt = myTeam();
+  if (L.mode === "lockin") return {err: "The streaming planner is for leagues where every game counts. In Lock-In only one game per starter counts each week, so extra games are extra chances, not extra points: the Waivers list below already ranks free agents by their Lock-In value."};
   if (!lg) return {err: L.platform === "espn" ? "Loading your league from ESPN…" : PLAT_NAME[L.platform] ? `The streaming planner for ${PLAT_NAME[L.platform]} leagues is coming next; it works with public ESPN leagues today.` : "The planner needs a public ESPN league (+ Add league at the top)."};
   if (mt == null) return {err: "Pick your team in “You are” at the top."};
   const today = todayET();
@@ -1969,6 +2010,9 @@ const SP_HUES = ["var(--accent)", "var(--good)", "var(--gold)", "var(--org)", "v
 function renderPlanner() {
   const box = $("sp-out");
   if (!box) return;
+  // Lock-In: the planner's controls don't apply; show only why
+  const li = L.mode === "lockin";
+  document.querySelectorAll("#sp-box > .controls, #sp-lock").forEach((el) => { el.hidden = li; });
   const lg = LGRES[L.id];
   if (lg && !lg._spRet) { lg._spRet = 1; loadReturns(lg).then(() => { SP.key = null; renderPlanner(); }); }
   const locked = dayLocked(todayET());
@@ -2401,8 +2445,25 @@ function setLineup(wk, tid, pid, d, start) {
   (m[pid] = m[pid] || {})[d] = start ? 1 : 0;
   try { localStorage.setItem(luKey(wk, tid), JSON.stringify(m)); } catch (e) { /* storage blocked */ }
 }
+// Sleeper matchups -> ESPN mMatchupScore shape (+ each side's Sleeper entry in .sl)
+function sleeperMatchups() {
+  const today = todayET();
+  const weeks = META.weeks.filter((w) => w[1] <= today).map((w) => w[0]);
+  return Promise.all(weeks.map((w) => fetch(SLB + L.id + "/matchups/" + w, {cache: "no-store"}).then((r) => (r.ok ? r.json() : [])).catch(() => [])
+    .then((arr) => {
+      const by = {};
+      (arr || []).forEach((e) => { if (e.matchup_id != null) (by[e.matchup_id] = by[e.matchup_id] || []).push(e); });
+      return Object.values(by).filter((x) => x.length === 2).map(([a, h]) => ({matchupPeriodId: w,
+        away: {teamId: a.roster_id, totalPoints: a.points || 0, totalPointsLive: a.points || 0, sl: a},
+        home: {teamId: h.roster_id, totalPoints: h.points || 0, totalPointsLive: h.points || 0, sl: h}}));
+    }))).then((x) => x.flat());
+}
 function loadMatchups(lg) {
   if (WK.mm) return Promise.resolve(WK.mm);
+  if (L.platform === "sleeper") {
+    if (!WK.mmP) WK.mmP = sleeperMatchups().then((x) => { WK.mm = x; return x; });
+    return WK.mmP;
+  }
   if (!WK.mmP) WK.mmP = fetch(espnBase() + L.id + "?view=mMatchupScore").then((r) => (r.ok ? r.json() : {schedule: []}))
     .catch(() => ({schedule: []})).then((j) => { WK.mm = j.schedule || []; return WK.mm; });
   return WK.mmP;
@@ -2414,7 +2475,7 @@ function loadReturns(lg) {
   ids.forEach((id) => { lg.ret[id] = null; });
   const flt = JSON.stringify({players: {filterIds: {value: ids}, limit: ids.length + 5,
                                         sortPercOwned: {sortPriority: 1, sortAsc: false}}});
-  return fetch(espnBase() + L.id + "?view=kona_playercard", {headers: {"x-fantasy-filter": flt}})
+  return fetch(espnBase() + (L.platform === "espn" ? L.id : META.league.id) + "?view=kona_playercard", {headers: {"x-fantasy-filter": flt}})
     .then((r) => (r.ok ? r.json() : {players: []})).catch(() => ({players: []}))
     .then((k) => (k.players || []).forEach((w) => {
       const pl = w.player || {}, d = (pl.injuryDetails || {}).expectedReturnDate;
@@ -2660,6 +2721,178 @@ function starterSlots() {               // the league's starter slot ids, one pe
   });
   return S.sort((a, b) => a - b);
 }
+// ============================================================ LOCK-IN (Sleeper)
+// One game per starter counts each week (Mon-Sun): after a game you lock it or
+// pass; never locked -> his team's LAST game of the week, 0 if he sits it.
+// Optimal stopping (src/backtest/lockin.py, pre-registered, 2024-25 + 2025-26:
+// +5 FP per starter-week over Sleeper's default, weekly value within 5%):
+//   after the last game V = play x mean; earlier V = (1-play) V + play E[max(S, V)]
+// S ~ Normal(mean, sd) per game = the Waivers per-game value (matchup, back-to-back)
+// and the calibrated game-to-game spread.
+const npdf = (x) => Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+function emaxN(mu, sd, c) {
+  if (!(sd > 0)) return Math.max(mu, c);
+  const a = (mu - c) / sd;
+  return c + (mu - c) * normCdf(a) + sd * npdf(a);
+}
+// expected locked score from these upcoming games (in order), each {play, v, sd}
+function lockV(gs) {
+  let V = null;
+  for (let i = gs.length - 1; i >= 0; i--) {
+    const g = gs[i];
+    V = V == null ? g.play * g.v : (1 - g.play) * V + g.play * emaxN(g.v, g.sd, V);
+  }
+  return V || 0;
+}
+// a player's Lock-In week: actual FP in finished games, the lock the rule would
+// have made, and what he is worth from here
+function lockWeek(p, days, today) {
+  const C = GAMES && GAMES.C;
+  // upcoming games: today's availability (injuries, return dates, status odds);
+  // finished games are judged as they looked then, so today's injury never leaks back
+  const dvF = dayVals(p, days, false, (d, sp) => !outOn(p, d) && sp >= 0.05 && !benched(p) && !(isAbsent(p) && absWindow(p).ret > d));
+  const dvP = dayVals(p, days, false, () => true);
+  const games = days.map((d, i) => ({d, x: d < today ? dvP[i] : dvF[i], xp: dvP[i]})).filter((g) => g.x.g);
+  const act = {};
+  if (C) (GAMES.byP[p.id] || []).forEach((r) => { if (days.includes(r[C.d])) act[r[C.d]] = fpg(STATS.map((k) => r[C[k]]), [r[C.dd], r[C.td], r[C.qd]]); });
+  const proj = (g) => ({play: g.x.avail ? g.x.play : 0, v: g.x.v || 0, sd: Math.sqrt(g.x.sd2 || 0) * (g.x.rf || 1)});
+  const projThen = (g) => ({play: g.xp.play || 0, v: g.xp.v || 0, sd: Math.sqrt(g.xp.sd2 || 0) * (g.xp.rf || 1)});
+  const past = games.filter((g) => g.d < today), fut = games.filter((g) => g.d >= today);
+  let locked = null;
+  past.forEach((g) => {
+    const k = games.indexOf(g);
+    if (locked || !(g.d in act) || k === games.length - 1) return;
+    const bar = lockV(games.slice(k + 1).map(projThen));   // as it looked that night
+    if (act[g.d] >= bar) locked = {d: g.d, x: act[g.d], bar};
+  });
+  const futV = lockV(fut.map(proj));
+  const last = games[games.length - 1];
+  const recent0 = [...past].reverse().find((g) => g.d in act);
+  const canLock = recent0 && fut.length && (!locked || locked.d === recent0.d) ? act[recent0.d] : null;   // his latest game can still be locked now
+  const value = locked ? locked.x : fut.length ? Math.max(futV, canLock ?? -Infinity) : last && last.d in act ? act[last.d] : 0;
+  const state = locked ? "locked" : fut.length ? "open" : "final";
+  const recent = [...past].reverse().find((g) => g.d in act);
+  // the decision now: his latest finished game vs what his remaining games are worth
+  const decide = recent && fut.length && (!locked || locked.d === recent.d)
+    ? {x: act[recent.d], d: recent.d, bar: futV, lock: act[recent.d] >= futV} : null;
+  const out = fut.length > 0 && fut.every((g) => !g.x.avail);   // won't play again this week -> his last game = 0
+  return {games, act, locked, value, state, fut, futV, decide, recent, out, mean: fpg(p.s, p.bp), next: fut[0] && fut[0].d};
+}
+const SLOT_OF = (pos) => ({PG: "PG", SG: "SG", SF: "SF", PF: "PF", C: "C", G: "G", F: "F", UTIL: "UTIL"}[pos] || pos);
+function renderWeekLock(lg, PER, days, today) {
+  if (!GAMES) { $("wk-detail").innerHTML = '<p class="note">Loading this week&rsquo;s games&hellip;</p>'; loadGames().then(renderWeek); return; }
+  const wk = PER.id, over = PER.end < today, mt = myTeam();
+  const gridKey = document.querySelector("#tab-week > .legend");
+  if (gridKey) gridKey.hidden = true;                  // that key explains the every-game lineup grid
+  const ms = (WK.mm || []).filter((m) => m.matchupPeriodId === wk && m.home && m.away);
+  const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
+  const dshort = (d) => dn(d) + " " + (+d.slice(8));
+  $("acc-box").hidden = true;
+  if (!ms.length) {
+    $("wk-cards").innerHTML = "";
+    $("ss-box").hidden = true;
+    $("wk-detail").innerHTML = `<p class="note">${PER.start > today ? "Sleeper sets this week&rsquo;s matchups and lineups when it starts." : "No Sleeper matchups found for this week."}</p>`;
+    return;
+  }
+  // every team in this week's matchups: starters (Sleeper's current lineup) and their Lock-In values
+  const T = {};
+  ms.forEach((m) => [m.away, m.home].forEach((side) => {
+    const e = side.sl || {}, rp = lg.rpos || [];
+    const rows = (e.starters || []).map((sid, i) => {
+      const id = SL2ID[sid], p = BYID[id];
+      return {sid, id, p, slot: SLOT_OF(rp[i] || ""), lw: p ? lockWeek(p, days, today) : null};
+    });
+    const st = new Set(e.starters || []);
+    const bench = (e.players || []).filter((sid) => !st.has(sid)).map((sid) => ({sid, id: SL2ID[sid], p: BYID[SL2ID[sid]]})).filter((r) => r.p);
+    T[side.teamId] = {rows, bench, live: side.totalPoints || 0, proj: rows.reduce((a, r) => a + (r.lw ? r.lw.value : 0), 0)};
+  }));
+  const pairOf = (m) => [m.away.teamId, m.home.teamId];
+  if (!WK.pair || !ms.some((m) => pairOf(m).join() === WK.pair.join())) {
+    const mine = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
+    WK.pair = pairOf(mine || ms[0]);
+  }
+  $("wk-team").innerHTML = ms.map((m) => { const pr = pairOf(m);
+    return `<option value="${pr.join(",")}"${pr.join() === WK.pair.join() ? " selected" : ""}>${esc(lg.byId[pr[0]].name)} vs ${esc(lg.byId[pr[1]].name)}${pr.includes(mt) ? " (yours)" : ""}</option>`; }).join("");
+  $("wk-cards").innerHTML = ms.map((m) => {
+    const A = m.away, H = m.home, a = T[A.teamId], h = T[H.teamId];
+    const isMine = A.teamId === mt || H.teamId === mt, sel = WK.pair.join() === [A.teamId, H.teamId].join();
+    const side = (S, t) => `<span class="tn${S.teamId === mt ? " mine" : ""}" title="${esc(lg.byId[S.teamId].name)}"><i class="sw ${S === A ? "a" : "h"}"></i>${esc(lg.byId[S.teamId].name)}</span>` +
+      `<span class="lv"></span><span class="lv" title="Sleeper&rsquo;s live score">${over ? "" : fx(t.live, 0)}</span>` +
+      `<span class="pf" title="${over ? "Final score" : "Projected: each starter&rsquo;s locked game if the rule says it&rsquo;s locked, else what his remaining games are worth"}">${fx(over ? t.live : t.proj, 0)}</span>`;
+    const ap = over ? a.live : a.proj, hp = over ? h.live : h.proj;
+    return `<div class="card mcard${isMine ? " minem" : ""}${sel ? " sel" : ""}" data-a="${A.teamId}" data-h="${H.teamId}">` +
+      (isMine ? '<span class="yours">YOUR MATCHUP</span>' : "") +
+      `<div class="mside"><span class="dim" style="font-size:.7rem">TEAM</span><span></span><span class="dim" style="font-size:.7rem">${over ? "" : "LIVE"}</span><span class="dim" style="font-size:.7rem">${over ? "FINAL" : "PROJ"}</span>` +
+      side(A, a) + side(H, h) + "</div>" +
+      `<div class="mres">${over ? (ap > hp ? esc(lg.byId[A.teamId].name) + " won" : hp > ap ? esc(lg.byId[H.teamId].name) + " won" : "Tie") + " by " + fx(Math.abs(ap - hp), 0)
+        : (ap === hp ? "Dead even" : esc(lg.byId[(ap > hp ? A : H).teamId].name) + " projected to win by " + fx(Math.abs(ap - hp), 0))}</div></div>`;
+  }).join("");
+  // ---- Lock or pass? (your starters, this week)
+  const mine = T[mt];
+  if (mine && !over && PER.start <= today) {
+    const calls = mine.rows.filter((r) => r.lw).map((r) => {
+      const w = r.lw;
+      let tag, cls, why;
+      const left = `his ${w.fut.length} game${w.fut.length > 1 ? "s" : ""} left ${w.fut.length > 1 ? "are" : "is"} worth`;
+      if (w.out && w.decide) {
+        tag = "LOCK IT"; cls = "lk-lock";
+        why = `Scored <b>${fx(w.decide.x)}</b> on ${dshort(w.decide.d)} and isn&rsquo;t expected to play again this week: lock it now, or he scores 0`;
+      } else if (w.out && !w.locked) {
+        tag = "SWAP"; cls = "lk-pass";
+        why = "Not expected to play his remaining games: start someone else, or he scores 0";
+      } else if (w.decide) {
+        tag = w.decide.lock ? "LOCK IT" : "PASS"; cls = w.decide.lock ? "lk-lock" : "lk-pass";
+        why = `Scored <b>${fx(w.decide.x)}</b> on ${dshort(w.decide.d)}; ${left} <b>${fx(w.decide.bar)}</b> to wait for`;
+      } else if (w.locked) {
+        tag = "LOCKED"; cls = "lk-done"; why = `${fx(w.locked.x)} on ${dshort(w.locked.d)} beat the ${fx(w.locked.bar)} bar: lock it if you haven&rsquo;t`;
+      } else if (w.state === "open") {
+        tag = "WAIT"; cls = "lk-wait"; why = `Next game ${dshort(w.next)}; ${left} <b>${fx(w.futV)}</b>`;
+      } else {
+        tag = "DONE"; cls = "lk-wait"; why = `No games left: his last game counts (${fx(w.value)})`;
+      }
+      return `<div class="lk-row">${headshot(r.id)}<div class="lk-mid"><div><span class="name" data-id="${r.id}">${esc(r.p.n)}</span> <span class="slt-s">${esc(r.slot)}</span> <span class="dim">avg ${fx(w.mean)}</span></div><div class="lk-why">${why}</div></div><span class="lk-tag ${cls}">${tag}</span></div>`;
+    });
+    $("ss-box").hidden = false;
+    $("ss-box").innerHTML = `<summary><strong>Lock or pass?</strong> &mdash; your starters this week</summary>` +
+      `<p class="note" style="margin:.5rem 0">Lock a game when it beats what his remaining games are worth on average (the bar). In two seasons of testing, locking this way scored about <strong>5 more points per starter per week</strong> than Sleeper&rsquo;s default of taking his last game, and the plain rule <em>lock any game at or above his average</em> did almost as well.</p>` +
+      `<div class="lk-list">${calls.join("")}</div>` +
+      `<div class="legend" aria-label="Key"><span class="lg-i"><span class="lk-tag lk-lock">LOCK IT</span> his last game beats the bar</span><span class="lg-i"><span class="lk-tag lk-pass">PASS</span> his games left are worth more</span><span class="lg-i"><span class="lk-tag lk-done">LOCKED</span> an earlier game already beat the bar</span><span class="lg-i"><span class="lk-tag lk-wait">WAIT</span> no finished game yet</span><span class="lg-i"><span class="lk-tag lk-pass">SWAP</span> won&rsquo;t play again this week: he&rsquo;d score 0</span></div>`;
+  } else $("ss-box").hidden = true;
+  // ---- detail: both teams of the chosen matchup
+  const block = (tid) => {
+    const t = T[tid];
+    if (!t) return "";
+    const cell = (r, d) => {
+      const w = r.lw, g = w && w.games.find((x) => x.d === d);
+      if (!g) return `<td class="dg"></td>`;
+      if (d < today) {
+        if (!(d in w.act)) return `<td class="dg out past" title="Didn&rsquo;t play">×</td>`;
+        const isL = w.locked && w.locked.d === d;
+        return `<td class="dg past${isL ? " lk-cell" : ""}" title="${isL ? "The rule locks this game" : ""}">${fx(w.act[d], 0)}${isL ? " ★" : ""}</td>`;
+      }
+      if (!g.x.avail) return `<td class="dg out" title="Not expected to play">×</td>`;
+      return `<td class="dg" title="Projected ${fx(g.x.v)} if he plays (${Math.round((g.x.play || 0) * 100)}% to play)"><span class="dim">${fx(g.x.v, 0)}</span></td>`;
+    };
+    const status = (w) => w.state === "locked" ? `locked ${fx(w.locked.x, 0)} (${dn(w.locked.d)})` : w.state === "open" ? `${w.fut.length} left` : "week done";
+    const rows = t.rows.map((r) => r.lw ? `<tr><td class="l"><span class="slt-s">${esc(r.slot)}</span></td><td class="l name" data-id="${r.id}">${esc(r.p.n)}</td><td class="l dim">${status(r.lw)}</td>` +
+      days.map((d) => cell(r, d)).join("") + `<td class="big">${fx(r.lw.value, 1)}</td></tr>`
+      : `<tr><td class="l"><span class="slt-s">${esc(r.slot)}</span></td><td class="l dim" colspan="${days.length + 3}">${r.sid ? "A player the site doesn&rsquo;t project (Sleeper id " + esc(r.sid) + ")" : "Empty slot"}</td></tr>`).join("");
+    const bench = t.bench.map((r) => `<tr class="isout"><td class="l"><span class="slt-s">BN</span></td><td class="l name" data-id="${r.id}">${esc(r.p.n)}</td><td class="l dim">bench: can&rsquo;t be locked</td>${days.map(() => '<td class="dg"></td>').join("")}<td class="dim">&ndash;</td></tr>`).join("");
+    return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(lg.byId[tid].name)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
+      `<span class="count" style="margin-left:0">${over ? "final " + fx(t.live, 0) : "projected " + fx(t.proj, 0) + " · live " + fx(t.live, 0)}</span></div>` +
+      '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Slot</th><th class="l">Player</th><th class="l">Lock-In</th>' +
+      days.map((d) => `<th class="dcol${d < today ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`).join("") +
+      `<th title="His locked game, or what his remaining games are worth">Worth</th></tr></thead><tbody>${rows}${bench}</tbody></table></div>`;
+  };
+  $("wk-detail").innerHTML = WK.pair.map(block).join("") +
+    `<p class="note">Lock-In counts one game per starter: past days show his fantasy points (★ = the game the lock rule takes), future days his projected score if he plays. ` +
+    `<strong>Worth</strong> is the locked game when the rule would have locked one, otherwise what his remaining games are worth if you lock smartly (the expected best you can bank, not his average). ` +
+    `Sleeper doesn&rsquo;t say which games you actually locked, so the projection assumes the rule; the live score is Sleeper&rsquo;s own. Bench players can&rsquo;t be locked.</p>`;
+  $("wk-count").textContent = `${ms.length} matchups`;
+  $("wk-lede").innerHTML = `Every matchup in week ${wk} (${PER.start.slice(5)} to ${PER.end.slice(5)}), scored under <strong>${esc(L.name)}</strong> with Sleeper&rsquo;s <strong>Lock-In</strong> rules: one game per starter counts. ` +
+    `<strong>Proj</strong> adds each starter&rsquo;s locked game, or what his remaining games are worth if you lock smartly.`;
+  $("wk-note").innerHTML = "Lineups and live scores are read from Sleeper; projections from this morning&rsquo;s build. Win chances aren&rsquo;t shown for Lock-In yet.";
+}
 function renderWeek() {
   const lg = LGRES[L.id];
   if (!lg) {
@@ -2692,6 +2925,9 @@ function renderWeek() {
   const days = [];
   for (let d = ws; d <= we; d = addDays(d, 1)) days.push(d);
   const SLOTS = starterSlots();
+  if (L.platform === "sleeper") return renderWeekLock(lg, PER, days, today);
+  const gridKey = document.querySelector("#tab-week > .legend");
+  if (gridKey) gridKey.hidden = false;
   const TW = Object.fromEntries(lg.teams.map((t) => [t.id, teamWeek(lg, t.id, days, wk, SLOTS, today)]));
   const liveOf = (tid) => { const m = (WK.mm || []).find((x) => x.matchupPeriodId === wk && x.home && x.away && (x.home.teamId === tid || x.away.teamId === tid));
     if (!m) return 0; const sd = m.home.teamId === tid ? m.home : m.away; return (sd.totalPointsLive != null ? sd.totalPointsLive : sd.totalPoints) || 0; };
@@ -3733,8 +3969,8 @@ function applyData([meta, players, inj]) {
   OFF = inj && inj.players ? inj : {players: {}, as_of: null};   // + teams, cleared
   BC = null;
   STATS.forEach((s, i) => { SI[s] = i; });
-  BYID = {};
-  players.forEach((p) => { BYID[p.id] = p; });
+  BYID = {}; SL2ID = {};
+  players.forEach((p) => { BYID[p.id] = p; if (p.sl) SL2ID[p.sl] = p.id; });
   const last = META.last_game_day || META.asof;
   TEAMLEFT = {};
   Object.entries(META.sched).forEach(([t, g]) => { TEAMLEFT[t] = g.filter((x) => x[0] > last).length; });
