@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=bfc616f483">
+<link rel="stylesheet" href="app.css?v=027830bcea">
 </head>
 <body>
 <header class="top">
@@ -140,6 +140,7 @@
   <section class="panel" id="tab-proj" hidden>
     <h1>Player projections</h1>
     <p class="lede" id="pj-lede"></p>
+    <details class="card sc-score" id="score-box"></details>
     <div class="controls">
       <div class="ctl"><span class="lbl">View</span><div class="chips" id="pj-view">
         <button class="chip" data-v="ros" aria-pressed="true">Rest of season</button>
@@ -661,6 +662,9 @@ past trades:
       <li>Draft rankings: beats last season&rsquo;s totals in 22 of 24 seasons and last season&rsquo;s per-game in 20 of 24.</li>
       <li>Stat by stat against ESPN&rsquo;s preseason projections (7 seasons, top 200): smaller error on most stats (rebounds,
         steals, blocks, threes, games); ESPN is better on stars and slightly better on minutes.</li>
+      <li>Game by game against Sleeper&rsquo;s projections (Rotowire): the <strong>Projection scorecard</strong> on the Projections tab.
+        Both projections are saved each morning before tip-off and graded on the games played, stat by stat and in fantasy points.
+        It started on Nov 8, 2026; Sleeper&rsquo;s earlier numbers were edited after the games, so they aren&rsquo;t graded.</li>
       <li>The FantasyPros expert consensus is still about 1 point ahead per season on draft value, mostly from earlier injury and
         role news; ESPN&rsquo;s published rankings are about even.</li>
       <li>In-season, the draft-day prior stops mattering after about five games.</li>
@@ -685,6 +689,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=2ba2e600c1"></script>
+<script src="app.js?v=0f542a5543"></script>
 </body>
 </html>

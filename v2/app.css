@@ -781,3 +781,9 @@ dialog.wel::backdrop { background: rgba(10, 12, 24, .55); }
 .lk-done { background: var(--accent-bg); color: var(--accent); }
 .lk-wait { color: var(--muted); border-color: var(--rule); }
 td.lk-cell { font-weight: 750; color: var(--accent); }
+
+/* ---- ours vs Sleeper: scorecard + Waivers sub-line ---------------------- */
+.sc-score { margin: .2rem 0 1rem; }
+.sc-score summary { cursor: pointer; }
+.sc-score .tablewrap { max-width: 40rem; }
+td .sub.slp { display: block; font-size: .7rem; color: var(--muted); white-space: nowrap; }

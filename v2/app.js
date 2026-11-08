@@ -970,7 +970,34 @@ function tags(p) {
 }
 function pct(m, a) { return m != null && a ? (100 * m / a).toFixed(1) : "-"; }
 
+// ---- ours vs Sleeper (Rotowire): both saved before tip-off, graded on games played
+function renderScorecard() {
+  const box = $("score-box");
+  if (!box) return;
+  const S = META.scorecard || {n: 0};
+  const head = `<summary><strong>Projection scorecard</strong> &mdash; ours vs Sleeper&rsquo;s (Rotowire), game by game <span class="dim">` +
+    (S.n ? `${S.n} games graded` : "grading starts with the next games") + "</span></summary>";
+  if (!S.n) {
+    box.innerHTML = head + `<p class="note">Each morning, before tip-off, the site saves Sleeper&rsquo;s projection for every upcoming game alongside ours. ` +
+      `Once the games are played, both are graded against the box score, stat by stat. Sleeper&rsquo;s earlier projections can&rsquo;t be graded fairly: ` +
+      `they were edited after the games were played (checked Nov 7, every game of weeks 1&ndash;3), so the scorecard counts only projections saved in advance. ` +
+      `Sleeper&rsquo;s numbers are a benchmark here; none of our projections use them.</p>`;
+    return;
+  }
+  const row = (k, o, t) => `<tr><td class="l">${STAT_LBL[k] || k}</td><td>${o.toFixed(2)}</td><td>${t.toFixed(2)}</td>` +
+    `<td class="l ${o < t ? "pos-up" : o > t ? "pos-dn" : "dim"}">${o < t ? "ours" : o > t ? "Sleeper" : "tie"}</td></tr>`;
+  const fpRow = (lbl, v) => `<tr><td class="l">${lbl}</td><td>${v[0].toFixed(2)}</td><td>${v[1].toFixed(2)}</td>` +
+    `<td class="l ${v[0] < v[1] ? "pos-up" : "pos-dn"}">${v[0] < v[1] ? "ours" : "Sleeper"} <span class="dim">(ours closer in ${Math.round(v[2] * 100)}% of games)</span></td></tr>`;
+  const wins = S.stats.filter(([, o, t]) => o < t).length;
+  box.innerHTML = head + `<p class="note">Average miss per game (lower is better) on <strong>${S.n}</strong> player-games played from ${S.from} to ${S.to}. ` +
+    `Both projections were saved the morning before each game. Ours is closer on <strong>${wins} of ${S.stats.length}</strong> stats.</p>` +
+    `<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Stat</th><th>Ours</th><th>Sleeper</th><th class="l">Closer</th></tr></thead><tbody>` +
+    fpRow("Fantasy points, this site&rsquo;s default scoring", S.fp.league) + fpRow("Fantasy points, Sleeper&rsquo;s default scoring", S.fp.sleeper) +
+    S.stats.map(([k, o, t]) => row(k, o, t)).join("") + "</tbody></table></div>" +
+    `<p class="note">Games where a player didn&rsquo;t play are left out: both projections assume he plays. Sleeper&rsquo;s numbers are a benchmark; none of our projections use them.</p>`;
+}
 function renderProj() {
+  renderScorecard();
   const V = VIEWS[PJ.view];
   const all = projRows().filter((r) => r[V.tot] != null && r[V.tot] > 0);
   all.sort((a, b) => b[V.tot] - a[V.tot]);
@@ -1624,7 +1651,8 @@ function streamRows() {
     const adjFp = p.adj ? fpg(p.adj, p.abp) : null;
     const bg = games.filter((g) => g.bst > 0.05);
     const inj = bg.length ? bg.reduce((a, g) => a + g.bst * g.play, 0) : null;   // FP the injury boost adds in this window
-    out.push({p, fp, games, proj, ceil, now, adjFp, boost: boostInfo(p), inj, injN: bg.length, injPg: bg.length ? bg.reduce((a, g) => a + g.bst, 0) / bg.length : 0,
+    const sv = games.map((g) => slpFP(p.id, g.d)).filter((v) => v != null);
+    out.push({p, fp, games, proj, ceil, now, adjFp, slp: sv.length ? sv.reduce((a, v) => a + v, 0) / sv.length : null, slpN: sv.length, boost: boostInfo(p), inj, injN: bg.length, injPg: bg.length ? bg.reduce((a, g) => a + g.bst, 0) / bg.length : 0,
       luck: now != null && adjFp != null ? now - adjFp : null,
       psit, listed, risk: listed || psit >= B.flag, ng: games.length,
       st: rostered ? (lg.byId[lg.owner[p.id]] || {}).ab : lg ? (lg.wv[p.id] ? "WVR" : "FA") : null});
@@ -1689,7 +1717,7 @@ function renderWaivers() {
       (r.inj ? `<td class="l grp injcol" title="${esc(boostTip(r.boost) + (r.injN < r.ng ? `\nBoosted in ${r.injN} of his ${r.ng} games in this window (the rest come after a return)` : ""))}">` +
         `<b class="pos-up">+${r.inj.toFixed(1)}</b>${r.ng > 1 ? `<span class="dim inj-pg">${r.injPg.toFixed(1)}/g${r.injN < r.ng ? ` · ${r.injN} of ${r.ng} games` : ""}</span>` : ""}` +
         `<span class="sub">${esc(r.boost.parts.map((x) => surname(x.name)).join(", "))} out</span></td>` : `<td class="grp injcol"></td>`) +
-      `<td class="grp">${fx(r.fp)}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
+      `<td class="grp">${fx(r.fp)}${r.slp != null ? `<span class="sub slp" title="Sleeper&rsquo;s projection (Rotowire) for these ${r.slpN} game${r.slpN > 1 ? "s" : ""}, per game, under your scoring. A benchmark: our numbers never use it">Sleeper ${fx(r.slp)}</span>` : ""}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
       `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
       `<td class="grp ${r.risk ? "" : "dim"}" title="${b2 ? `Sat ${b2[0]} of ${b2[1]} second nights (last season + this)` : "No second nights on record"}">${r.listed ? "your list" : Math.round(r.psit * 100) + "%"}</td>` +
       `<td class="dim">${p.own != null ? p.own.toFixed(0) : "-"}</td></tr>`;
@@ -2871,7 +2899,8 @@ function renderWeekLock(lg, PER, days, today) {
         return `<td class="dg past${isL ? " lk-cell" : ""}" title="${isL ? "The rule locks this game" : ""}">${fx(w.act[d], 0)}${isL ? " ★" : ""}</td>`;
       }
       if (!g.x.avail) return `<td class="dg out" title="Not expected to play">×</td>`;
-      return `<td class="dg" title="Projected ${fx(g.x.v)} if he plays (${Math.round((g.x.play || 0) * 100)}% to play)"><span class="dim">${fx(g.x.v, 0)}</span></td>`;
+      const sl = slpFP(r.id, d);
+      return `<td class="dg" title="Projected ${fx(g.x.v)} if he plays (${Math.round((g.x.play || 0) * 100)}% to play)${sl != null ? `\nSleeper projects ${fx(sl)}` : ""}"><span class="dim">${fx(g.x.v, 0)}</span></td>`;
     };
     const status = (w) => w.state === "locked" ? `locked ${fx(w.locked.x, 0)} (${dn(w.locked.d)})` : w.state === "open" ? `${w.fut.length} left` : "week done";
     const rows = t.rows.map((r) => r.lw ? `<tr><td class="l"><span class="slt-s">${esc(r.slot)}</span></td><td class="l name" data-id="${r.id}">${esc(r.p.n)}</td><td class="l dim">${status(r.lw)}</td>` +
@@ -3002,9 +3031,11 @@ function renderWeek() {
     if (!x.g) return `<td class="dg${past}"></td>`;
     if (!x.avail) return `<td class="dg out${past}" title="Not playing">×</td>`;
     if (D.past) return x.st ? `<td class="dg st past">●<span class="slt">${ESPN_SLOT[x.slot] || ""}</span></td>` : `<td class="dg bn past">○</td>`;
-    const tip = x.noslot ? "You started him but every slot he can fill is taken — he won't count"
+    const sl = slpFP(r.id, x.d);
+    const tip = (x.noslot ? "You started him but every slot he can fill is taken — he won't count"
       : x.pick === 1 ? `You started him: ${fx(x.val)} projected` : x.pick === 0 ? "You benched him"
-      : x.st ? `In the best lineup: ${fx(x.val)} projected. Untick to bench him` : "On the bench: the best lineup has no slot for him. Tick to start him";
+      : x.st ? `In the best lineup: ${fx(x.val)} projected. Untick to bench him` : "On the bench: the best lineup has no slot for him. Tick to start him") +
+      (sl != null ? `\nSleeper projects ${fx(sl)} if he plays (ours ${fx(x.v)})` : "");
     // quiet matchup mark: only when the tested matchup adjustment is big (|adj| >= WK_MCH)
     const pc = posCls((BYID[r.id] || {}).pos), opp = x.g[1], adj = x.adj || 0;
     const big = Math.abs(adj) >= WK_MCH;
@@ -3962,10 +3993,18 @@ function fetchData(bust) {
   const q = bust ? "?t=" + Date.now() : "";
   return Promise.all([fetch("data/meta.json" + q, NC).then((r) => r.json()), fetch("data/players.json" + q, NC).then((r) => r.json()),
     // refreshed hourly on game days -> always bypass the browser cache
-    fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)]);
+    fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch("data/sleeper.json" + q, NC).then((r) => (r.ok ? r.json() : null)).catch(() => null)]);
 }
-function applyData([meta, players, inj]) {
-  META = meta; PLAYERS = players; STATS = meta.stats;
+// Sleeper's per-game projections (Rotowire): a benchmark shown next to ours, never an input
+let SLP = {};
+// Sleeper's projected fantasy points for his game on date d, under the active league (null if none)
+function slpFP(id, d) {
+  const g = (SLP[id] || []).find((x) => x[0] === d);
+  return g ? fpg(g.slice(2, 2 + STATS.length), [g[2 + STATS.length] || 0, g[3 + STATS.length] || 0, 0]) : null;
+}
+function applyData([meta, players, inj, slp]) {
+  META = meta; PLAYERS = players; STATS = meta.stats; SLP = slp || {};
   OFF = inj && inj.players ? inj : {players: {}, as_of: null};   // + teams, cleared
   BC = null;
   STATS.forEach((s, i) => { SI[s] = i; });
