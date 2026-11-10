@@ -3844,7 +3844,218 @@ function bindSchedule() {
 }
 
 // ================================================================ ROUTING
-const TABS = ["league", "proj", "insea", "wire", "recap", "week", "trade", "sched", "def", "how"];
+const TABS = ["league", "proj", "insea", "wire", "recap", "live", "week", "trade", "sched", "def", "how"];
+// ================================================================== LIVE
+// A fantasy matchup as it happens, player by player. Points are ESPN's own
+// (the league feed's per-day stats for each roster, view=mMatchupScore +
+// mScoreboard with scoringPeriodId = the day, which ESPN updates during games);
+// game clocks and scores come from ESPN's NBA scoreboard. What is still to
+// come = our projection: a game not started counts its full projected value,
+// a game in progress the share of 48 minutes left, a finished game nothing;
+// days after today = My week's best lineup. ESPN leagues only.
+const LV = {day: null, pair: null, auto: true, j: null, sb: null, at: 0, prev: {}, timer: null, busy: null, err: ""};
+const LV_SLOT_ORDER = (s) => (s === 12 ? 100 : s === 13 ? 101 : s);
+function liveFetch() {
+  // one request at a time: share it (and fetch again if the day changed meanwhile)
+  if (LV.busy) return LV.busy.then(() => (LV.j && LV.P === espnPeriod(LV.day) ? null : liveFetch()));
+  if (!LV.day) return Promise.resolve();
+  const day = LV.day, P = espnPeriod(day);
+  const lgP = fetch(espnBase() + L.id + "?view=mMatchupScore&view=mScoreboard&scoringPeriodId=" + P, {cache: "no-store"})
+    .then((r) => { if (!r.ok) throw new Error("ESPN answered " + r.status); return r.json(); });
+  return (LV.busy = Promise.all([lgP, espnSite("scoreboard", "dates=" + day.replace(/-/g, ""))]).then(([j, sb]) => {
+    if (LV.day !== day) return;
+    if (LV.j) LV.prev = liveFPMap(LV.j, P);
+    LV.j = j; LV.sb = sb; LV.at = Date.now(); LV.P = P; LV.err = "";
+  }).catch((e) => { LV.err = e.message || "ESPN did not answer"; }).finally(() => { LV.busy = null; }));
+}
+function liveFPMap(j, P) {
+  const m = {};
+  (j.schedule || []).forEach((x) => ["home", "away"].forEach((k) => {
+    const s = x[k]; if (!s || !s.rosterForCurrentScoringPeriod) return;
+    s.rosterForCurrentScoringPeriod.entries.forEach((e) => { const st = liveStat(e, P); if (st) m[e.playerId] = st.appliedTotal || 0; });
+  }));
+  return m;
+}
+function liveStat(e, P) {
+  const pl = ((e.playerPoolEntry || {}).player) || {};
+  return (pl.stats || []).find((s) => s.scoringPeriodId === P && s.statSourceId === 0 && s.statSplitTypeId === 5) || null;
+}
+// the NBA game a pro team plays that day: {state pre|in|post, detail, period, clock, us, them, opp, home, left (share of 48 min)}
+function liveGames() {
+  const G = {};
+  ((LV.sb && LV.sb.events) || []).forEach((e) => {
+    const c = e.competitions[0], st = e.status || {}, ty = st.type || {};
+    const T = (t) => ETRI[t.team.abbreviation] || t.team.abbreviation;
+    const per = st.period || 0, clk = st.clock != null ? st.clock : 720;
+    const done = per <= 4 ? (per - 1) * 720 + (720 - clk) : 2880;
+    const left = ty.state === "pre" ? 1 : ty.state === "post" ? 0 : Math.max(0, 2880 - Math.max(0, done)) / 2880;
+    c.competitors.forEach((t) => {
+      const o = c.competitors.find((x) => x !== t);
+      G[+t.team.id] = {id: +e.id, state: ty.state, detail: ty.shortDetail || "", tip: Date.parse(e.date), period: per,
+        tm: T(t), opp: T(o), home: t.homeAway === "home", us: +t.score || 0, them: +o.score || 0, left};
+    });
+  });
+  return G;
+}
+function liveSide(side, G, P, lg, today) {
+  const rows = side.rosterForCurrentScoringPeriod.entries.map((e) => {
+    const pl = ((e.playerPoolEntry || {}).player) || {}, id = e.playerId, p = BYID[id];
+    const st = liveStat(e, P), s = (st && st.stats) || {};
+    const g = G[pl.proTeamId] || null;
+    const fp = st ? st.appliedTotal || 0 : 0;
+    const starter = e.lineupSlotId !== 12 && e.lineupSlotId !== 13;
+    // our projection for his game that day (My week's per-game value)
+    let proj = 0, v = 0, sd2 = 0;
+    if (p && g) {
+      const dv = dayVals(p, [LV.day], false, (d, sp) => !outOn(p, d) && sp >= 0.05)[0];
+      if (dv && dv.avail) { proj = dv.val; v = dv.v || dv.val; sd2 = dv.sd2 || 0; }
+    }
+    const played = (s[40] || 0) > 0;
+    const exp = !g ? 0 : g.state === "post" ? 0 : g.state === "in" ? (played ? v : proj) * g.left : proj;
+    return {id, p, n: pl.fullName || (p && p.n) || "#" + id, slot: e.lineupSlotId, starter, inj: pl.injuryStatus, g, s, fp, st: !!st,
+      played, proj, exp, var: g && g.state !== "post" ? sd2 * (g.state === "in" ? g.left : 1) : 0,
+      bump: LV.prev[id] != null && LV.prev[id] !== fp ? fp - LV.prev[id] : 0};
+  }).sort((a, b) => LV_SLOT_ORDER(a.slot) - LV_SLOT_ORDER(b.slot) || b.fp - a.fp);
+  const S = rows.filter((r) => r.starter);
+  const n = (f) => S.filter(f).length;
+  return {rows, teamId: side.teamId, live: (side.totalPointsLive != null ? side.totalPointsLive : side.totalPoints) || 0,
+    today: S.reduce((a, r) => a + r.fp, 0), bench: rows.filter((r) => !r.starter && r.slot !== 13).reduce((a, r) => a + r.fp, 0),
+    rest: S.reduce((a, r) => a + r.exp, 0), var: S.reduce((a, r) => a + r.var, 0),
+    ytp: n((r) => r.g && r.g.state === "pre" && r.proj > 0), ip: n((r) => r.g && r.g.state === "in"), done: n((r) => r.g && r.g.state === "post")};
+}
+function renderLive() {
+  const lg = LGRES[L.id];
+  const box = $("lv-main");
+  if (L.platform !== "espn" || !/^\d+$/.test(L.id || "")) { box.innerHTML = rosterMsg("Live"); $("lv-ctl").hidden = true; return; }
+  $("lv-ctl").hidden = false;
+  if (!lg) {
+    box.innerHTML = LV.lgFail ? '<p class="note pos-dn">ESPN did not return your league. Press Update now to try again.</p>' : '<p class="note">Loading your league from ESPN&hellip;</p>';
+    if (!LV.lgP && !LV.lgFail) LV.lgP = espnLeague(L).then((d) => { LV.lgP = null; LV.lgFail = !d; if (!$("tab-live").hidden) renderLive(); });
+    return;
+  }
+  const today = todayET();
+  const per = matchupPeriods().find((p) => p.start <= today && today <= p.end) || matchupPeriods().find((p) => p.end >= today);
+  if (!per) { box.innerHTML = '<p class="note">No matchup this week.</p>'; return; }
+  const days = [];
+  for (let d = per.start; d <= per.end; d = addDays(d, 1)) days.push(d);
+  if (!LV.day || !days.includes(LV.day) || LV.day > today) LV.day = days.includes(today) ? today : days[0];
+  $("lv-day").innerHTML = days.filter((d) => d <= today).map((d) => `<option value="${d}"${d === LV.day ? " selected" : ""}>${d === today ? "Today, " : ""}${new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"})}</option>`).join("");
+  if (!LV.j || LV.P !== espnPeriod(LV.day)) {
+    box.innerHTML = LV.err ? `<p class="note pos-dn">${esc(LV.err)}</p>` : '<p class="note">Loading the live matchup from ESPN&hellip;</p>';
+    if (!LV.err && !LV.loadP) LV.loadP = Promise.all([liveFetch(), loadReturns(lg)]).then(() => {
+      LV.loadP = null;
+      if (!LV.j && !LV.err) LV.err = "ESPN did not return this day's matchups";
+      if (!$("tab-live").hidden) renderLive();
+    });
+    return;
+  }
+  const P = LV.P, G = liveGames(), isToday = LV.day === today;
+  const ms = (LV.j.schedule || []).filter((m) => m.home && m.away && m.home.rosterForCurrentScoringPeriod && m.away.rosterForCurrentScoringPeriod);
+  if (!ms.length) { box.innerHTML = '<p class="note">ESPN shows no matchups with rosters for this day.</p>'; return; }
+  const mt = myTeam(), pairOf = (m) => [m.away.teamId, m.home.teamId];
+  if (!LV.pair || !ms.some((m) => pairOf(m).join() === LV.pair.join())) {
+    const mine = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
+    LV.pair = pairOf(mine || ms[0]);
+  }
+  // rest of the week after today: My week's best lineup per day
+  const SLOTS = starterSlots();
+  const after = days.filter((d) => d > today);
+  const fut = (tid) => {
+    if (!after.length || !isToday) return {pts: 0, var: 0};
+    const T = teamWeek(lg, tid, days, per.id, SLOTS, today);
+    let pts = 0, v = 0;
+    days.forEach((d, i) => { if (d > today) { pts += T.days[i].pts; T.ps.forEach((r) => { if (r.days[i].st) v += r.days[i].sd2; }); } });
+    return {pts, var: v};
+  };
+  const all = ms.map((m) => {
+    const A = liveSide(m.away, G, P, lg, today), H = liveSide(m.home, G, P, lg, today);
+    [A, H].forEach((X) => { const f = fut(X.teamId); X.fut = f.pts;
+      X.final = X.live + (isToday ? X.rest : 0) + X.fut; X.fvar = X.var + f.var; });
+    const sd = Math.sqrt(A.fvar + H.fvar);
+    A.win = sd > 0 ? normCdf((A.final - H.final) / sd) : (A.final > H.final ? 1 : A.final < H.final ? 0 : .5); H.win = 1 - A.win;
+    return {m, A, H, key: pairOf(m).join()};
+  });
+  const cur = all.find((x) => x.key === LV.pair.join());
+  const tn = (id) => esc((lg.byId[id] || {}).name || "Team " + id);
+  // ---- strip of every matchup (click to switch)
+  const strip = `<div class="lv-strip">${all.map((x) => `<button class="lv-mini${x === cur ? " sel" : ""}${[x.A.teamId, x.H.teamId].includes(mt) ? " mine" : ""}" data-pair="${x.key}">` +
+    `<span class="tn">${tn(x.A.teamId)}</span><b>${fx(x.A.live, 0)}</b><span class="tn">${tn(x.H.teamId)}</span><b>${fx(x.H.live, 0)}</b></button>`).join("")}</div>`;
+  // ---- the score
+  const sideHead = (X, cls) => `<div class="lv-sc ${cls}"><div class="lv-tn${X.teamId === mt ? " mine" : ""}">${tn(X.teamId)}${X.teamId === mt ? ' <span class="tag rk">YOU</span>' : ""}</div>` +
+    `<div class="lv-big">${fx(X.live, 0)}</div>` +
+    `<div class="lv-sub"><span title="Points in starter slots ${isToday ? "today" : "that day"} (ESPN's live total)">${isToday ? "today" : "that day"} ${fx(X.today, 0)}</span>` +
+    (isToday ? ` · <span title="Projected final for the week: live score + what is still to come today (games not started: full projection; games in progress: the share of 48 minutes left) + the best lineup on each remaining day">proj ${fx(X.final, 0)}</span>` : "") + "</div>" +
+    `<div class="lv-cnt" title="Starters: in progress / yet to play / done ${isToday ? "today" : "that day"}"><span class="ip">${X.ip} playing</span> · ${X.ytp} to play · ${X.done} done</div></div>`;
+  const wbar = isToday ? `<div class="wrow lv-w" title="Rough win chance: projected final margin against the spread of the games still to come (normal approximation, games independent; untested as a probability)"><b class="wa">${Math.round(cur.A.win * 100)}%</b>` +
+    `<div class="wbar"><span class="a" style="width:${(cur.A.win * 100).toFixed(0)}%"></span><span class="h"></span></div><b class="wh">${Math.round(cur.H.win * 100)}%</b></div>` : "";
+  const score = `<div class="card lv-score">${sideHead(cur.A, "a")}<div class="lv-vs">${(() => { const d = cur.A.live - cur.H.live, ld = d > 0 ? cur.A : cur.H;
+    return Math.round(d) === 0 ? '<b>tied</b>' : `<span class="dim">${ld.teamId === mt ? "you lead by" : tn(ld.teamId) + " by"}</span><b>${fx(Math.abs(d), 0)}</b>`; })()}</div>${sideHead(cur.H, "h")}${wbar}</div>`;
+  // ---- NBA games that day with this matchup's players in them
+  const own = {};
+  [cur.A, cur.H].forEach((X, k) => X.rows.forEach((r) => { if (r.g && r.starter) { const o = own[r.g.id] = own[r.g.id] || [0, 0]; o[k]++; } }));
+  const evs = Object.values(G).filter((g) => g.home).sort((a, b) => a.tip - b.tip || a.id - b.id);
+  const games = evs.length ? `<div class="lv-games">${evs.map((g) => { const o = own[g.id] || [0, 0];
+    return `<div class="lv-g ${g.state}${o[0] + o[1] ? "" : " none"}" title="${esc(`${g.opp} @ ${g.tm}: ${g.detail}\nStarters in this game: ${tn(cur.A.teamId).replace(/&amp;/g, "&")} ${o[0]}, ${tn(cur.H.teamId).replace(/&amp;/g, "&")} ${o[1]}`)}">` +
+      `<span>${teamLogo(g.opp)}${g.opp} <b>${g.state === "pre" ? "" : g.them}</b></span><span>${teamLogo(g.tm)}${g.tm} <b>${g.state === "pre" ? "" : g.us}</b></span>` +
+      `<span class="st">${esc(g.state === "pre" ? new Date(g.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"}) : g.detail)}</span>` +
+      `<span class="ow"><i class="sw a"></i>${o[0]} <i class="sw h"></i>${o[1]}</span></div>`; }).join("")}</div>` : "";
+  // ---- both rosters
+  const gameCell = (r) => {
+    const g = r.g;
+    if (!g) return '<span class="dim">no game</span>';
+    const vs = `${g.home ? "vs" : "@"} ${g.opp}`;
+    if (g.state === "pre") return `${vs} <span class="dim">${new Date(g.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})}</span>`;
+    const res = g.state === "post" ? `<b class="${g.us > g.them ? "pos-up" : "pos-dn"}">${g.us > g.them ? "W" : "L"}</b> ` : "";
+    return `${vs} ${res}${g.us}-${g.them} <span class="${g.state === "in" ? "lv-on" : "dim"}">${esc(g.state === "in" ? g.detail : "Final")}</span>`;
+  };
+  const line = (r) => {
+    if (!r.st || !r.played) return r.g && r.g.state !== "pre" ? '<span class="dim">' + (r.g.state === "post" ? "did not play" : "not in yet") + "</span>" : "";
+    const s = r.s, k = (i) => Math.round(s[i] || 0);
+    return `<span class="lv-ln">${k(40)} min · <b>${k(0)}</b> pts ${k(6)} reb ${k(3)} ast` +
+      (k(2) ? ` ${k(2)} stl` : "") + (k(1) ? ` ${k(1)} blk` : "") + (k(11) ? ` ${k(11)} to` : "") +
+      ` · ${k(13)}-${k(14)} FG${k(17) ? `, ${k(17)} 3PM` : ""}${k(16) ? `, ${k(15)}-${k(16)} FT` : ""}</span>`;
+  };
+  const row = (r) => {
+    const pr = r.g && r.proj > 0 ? r.fp + r.exp : null;
+    const pct = r.proj > 0 ? Math.min(100, r.fp / r.proj * 100) : 0;
+    return `<tr class="${r.starter ? "" : "bn"}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}" data-id="${r.id}">` +
+      `<td class="l slt-c">${ESPN_SLOT[r.slot] || (r.slot === 12 ? "BE" : r.slot === 13 ? "IR" : "")}</td>` +
+      `<td class="l"><span class="name nm2" data-id="${r.id}">${esc(r.n)}</span> ${r.p ? statusTag({id: r.id, p: r.p, inj: r.inj}, lg).replace('style="margin:0"', 'style="margin:0 0 0 .2rem"') : ""}` +
+      `<div class="lv-gm">${r.p ? esc(r.p.tm) + " · " : ""}${gameCell(r)}</div><div>${line(r)}</div></td>` +
+      `<td class="lv-fp${r.bump ? (r.bump > 0 ? " up" : " dn") : ""}" title="${esc(`ESPN fantasy points ${isToday ? "so far today" : "that day"}: ${fx(r.fp)}` +
+        (r.proj > 0 ? `\nOur projection for this game: ${fx(r.proj)}` + (isToday && r.g && r.g.state !== "post" ? `\nStill to come (estimate): ${fx(r.exp)} → about ${fx(r.fp + r.exp)}` : "") : "") +
+        (r.bump ? `\n${sg(r.bump)} since the last update` : "") + (r.starter ? "" : "\nOn the bench: these points don't count"))}">` +
+      `<b>${r.g || r.fp ? fx(r.fp, 0) : '<span class="dim">–</span>'}</b>${r.proj > 0 ? `<span class="sub">proj ${fx(isToday && r.g && r.g.state === "in" ? pr : r.proj, 0)}</span><span class="lv-bar"><i style="width:${pct.toFixed(0)}%"></i></span>` : ""}</td></tr>`;
+  };
+  const tbl = (X) => {
+    const S = X.rows.filter((r) => r.starter), B = X.rows.filter((r) => !r.starter);
+    return `<div class="card lv-team"><h3>${tn(X.teamId)}</h3><table class="lv-t"><thead><tr><th class="l">Slot</th><th class="l">Player</th><th>FP</th></tr></thead><tbody>` +
+      S.map(row).join("") + `<tr class="lv-tot"><td></td><td class="l">Starters</td><td><b>${fx(X.today, 0)}</b></td></tr>` +
+      (B.length ? `<tr class="lv-sep"><td class="l" colspan="3">Bench${X.bench ? ` <span class="dim">· ${fx(X.bench, 0)} pts left on the bench</span>` : ""}</td></tr>` + B.map(row).join("") : "") + "</tbody></table></div>";
+  };
+  box.innerHTML = strip + score + games + `<div class="lv-cols">${tbl(cur.A)}${tbl(cur.H)}</div>`;
+  box.querySelectorAll(".lv-mini").forEach((b) => b.addEventListener("click", () => { LV.pair = b.dataset.pair.split(",").map(Number); renderLive(); }));
+  const anyLive = evs.some((g) => g.state === "in"), anyPre = evs.some((g) => g.state === "pre");
+  $("lv-at").textContent = `Updated ${new Date(LV.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit", second: "2-digit"})}` +
+    (isToday && LV.auto ? (anyLive ? " · updating every 30 s" : anyPre ? " · checks every 2 min until tip-off" : " · all games final") : "");
+  liveSchedule(isToday && LV.auto ? (anyLive ? 30e3 : anyPre ? 120e3 : 0) : 0);
+}
+function liveSchedule(ms) {
+  clearTimeout(LV.timer);
+  if (!ms) return;
+  LV.timer = setTimeout(() => {
+    if ($("tab-live").hidden || document.hidden) return liveSchedule(ms);   // paused while out of view
+    liveFetch().then(() => { if (!$("tab-live").hidden) renderLive(); });
+  }, ms);
+}
+function bindLive() {
+  $("lv-day").addEventListener("change", (e) => { LV.day = e.target.value; LV.j = null; LV.prev = {}; LV.err = ""; renderLive(); });
+  $("lv-auto").addEventListener("change", (e) => { LV.auto = e.target.checked; renderLive(); });
+  $("lv-now").addEventListener("click", () => { LV.err = ""; LV.lgFail = false; liveFetch().then(renderLive); });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && LV.day && LV.j && !$("tab-live").hidden && LV.auto && LV.day === todayET() && Date.now() - LV.at > 25e3) liveFetch().then(renderLive);
+  });
+}
 function showTab(t) {
   if (!TABS.includes(t)) t = "proj";
   document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
@@ -3856,6 +4067,7 @@ function showTab(t) {
   if (t === "wire") renderWaivers();
   if (t === "insea") renderInseason();
   if (t === "week") renderWeek();
+  if (t === "live") renderLive(); else liveSchedule(0);
   if (t === "trade") renderTrade();
   if (t === "sched") renderSchedule();
   if (t === "def") renderDefence();
@@ -3867,6 +4079,7 @@ function renderAll() {
   if (!$("tab-wire").hidden) renderWaivers();
   if (!$("tab-insea").hidden) renderInseason();
   if (!$("tab-week").hidden) renderWeek();
+  if (!$("tab-live").hidden) renderLive();
   if (!$("tab-trade").hidden) renderTrade();
 }
 
@@ -4125,6 +4338,7 @@ fetchData(false)
     bindPlanner();
     bindInseason();
     bindWeek();
+    bindLive();
     bindTrade();
     bindSchedule();
     bindDefence();
@@ -4134,7 +4348,7 @@ fetchData(false)
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
-    window.FNBA_DEBUG = {relg: () => { Object.keys(LGDATA).forEach((k) => delete LGDATA[k]); return espnLeague(L); }, sw: () => ({lg: LGRES[L.id], L, teamWeek, renderWeek, espnBase, startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+    window.FNBA_DEBUG = {live: () => ({LV, renderLive, liveGames}), relg: () => { Object.keys(LGDATA).forEach((k) => delete LGDATA[k]); return espnLeague(L); }, sw: () => ({lg: LGRES[L.id], L, teamWeek, renderWeek, espnBase, startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
         return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, free: P.free, n: SP.n, metric: SP.metric,

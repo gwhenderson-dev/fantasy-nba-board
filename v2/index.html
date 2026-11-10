@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=7cc0e47c59">
+<link rel="stylesheet" href="app.css?v=94f803596e">
 </head>
 <body>
 <header class="top">
@@ -32,6 +32,7 @@
     <button class="tab" role="tab" data-tab="insea">In-season</button>
     <button class="tab" role="tab" data-tab="wire">Waivers</button>
     <button class="tab" role="tab" data-tab="recap">Recap</button>
+    <button class="tab" role="tab" data-tab="live">Live</button>
     <button class="tab" role="tab" data-tab="week">My week</button>
     <button class="tab" role="tab" data-tab="trade">Trade analyzer</button>
     <button class="tab" role="tab" data-tab="sched">Schedule</button>
@@ -275,6 +276,20 @@
     <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="lgrow">Name</span> your player</span><span class="lg-i"><span class="lgrow theirs">Name</span> on another fantasy team (the Fantasy column says whose; FA = free agent)</span></div>
     <div class="games" id="rc-games"></div>
     <div id="rc-box"></div>
+  </section>
+  <section class="panel" id="tab-live" hidden>
+    <h1>Live</h1>
+    <p class="lede">Your matchup as it happens, player by player. Points are ESPN&rsquo;s own, read straight from your league, and the page
+      updates itself every 30 seconds while games are on. &ldquo;Proj&rdquo; adds what is still to come: our projection for games not
+      started, the share of 48 minutes left for games in progress, and the best lineup for the rest of the week.</p>
+    <div class="controls" id="lv-ctl">
+      <div class="ctl"><label for="lv-day">Day</label><select id="lv-day"></select></div>
+      <label class="chip"><input type="checkbox" id="lv-auto" checked> Auto-update</label>
+      <button class="btn" id="lv-now">Update now</button>
+      <span class="count" id="lv-at"></span>
+    </div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><b class="lv-on">Q3 4:21</b> game in progress</span><span class="lg-i"><span class="lv-bar lg"><i style="width:60%"></i></span> points so far vs our projection for the game</span><span class="lg-i"><b class="pos-up">FP</b> / <b class="pos-dn">FP</b> just went up / down</span><span class="lg-i"><span class="dim">dim rows</span> bench: points don&rsquo;t count</span><span class="lg-i"><i class="sw a"></i><i class="sw h"></i> starters from each team in that NBA game</span></div>
+    <div id="lv-main"></div>
   </section>
   <section class="panel" id="tab-week" hidden>
     <h1>My week</h1>
@@ -560,6 +575,15 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
       The start list is the exact best assignment to your slots, positions respected. For each bench player the page forces him in,
       re-solves, and shows who would sit and what it costs. The percentage is a rough chance he outscores that starter tonight
       (a normal approximation with each player&rsquo;s game-to-game SD, games treated as independent). It is untested as a probability.</p>
+    <h3>Live tab</h3>
+    <p>Fantasy points come straight from ESPN: your league&rsquo;s feed for that day lists every roster with its lineup slots and each
+      player&rsquo;s stats and points, and ESPN updates them during games. Clocks and scores come from ESPN&rsquo;s NBA scoreboard. The page
+      re-reads both every 30 seconds while a game is on (every 2 minutes before tip-off, and it pauses when the tab is out of view).
+      The projected final is the live score plus what is still to come: a starter whose game has not started counts his full projected
+      value for the game (the same per-game value as My week, incl. matchup and back-to-back odds), one in progress counts that value times
+      the share of 48 minutes left (overtime counts as nothing left), a finished game counts nothing; days after today use My week&rsquo;s
+      best lineup. Today&rsquo;s lineup is the one actually set on ESPN, not our best one. The win chance is rough: the projected margin
+      against the spread of the games still to come, treated as independent. Untested as a probability.</p>
     <h3>Streaming planner</h3>
     <p>ESPN stops a pickup from playing on a day once that day&rsquo;s first NBA game has tipped off, so the page reads the
       day&rsquo;s tip times from ESPN&rsquo;s live scoreboard and, from the first tip-off on, plans from tomorrow (the Today button is
@@ -710,6 +734,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=a0181f340b"></script>
+<script src="app.js?v=e9847994eb"></script>
 </body>
 </html>
