@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=94f803596e">
+<link rel="stylesheet" href="app.css?v=820e6ee381">
 </head>
 <body>
 <header class="top">
@@ -279,16 +279,15 @@
   </section>
   <section class="panel" id="tab-live" hidden>
     <h1>Live</h1>
-    <p class="lede">Your matchup as it happens, player by player. Points are ESPN&rsquo;s own, read straight from your league, and the page
-      updates itself every 30 seconds while games are on. &ldquo;Proj&rdquo; adds what is still to come: our projection for games not
+    <p class="lede">Your matchup as it happens, player by player. Points are ESPN&rsquo;s own, read straight from your league. Once the first game tips off
+      the page updates itself every 30 seconds while games are on (before that it just waits for tip-off). &ldquo;Proj&rdquo; adds what is still to come: our projection for games not
       started, the share of 48 minutes left for games in progress, and the best lineup for the rest of the week.</p>
     <div class="controls" id="lv-ctl">
       <div class="ctl"><label for="lv-day">Day</label><select id="lv-day"></select></div>
-      <label class="chip"><input type="checkbox" id="lv-auto" checked> Auto-update</label>
       <button class="btn" id="lv-now">Update now</button>
       <span class="count" id="lv-at"></span>
     </div>
-    <div class="legend" aria-label="Key"><span class="lg-i"><b class="lv-on">Q3 4:21</b> game in progress</span><span class="lg-i"><span class="lv-bar lg"><i style="width:60%"></i></span> points so far vs our projection for the game</span><span class="lg-i"><b class="pos-up">FP</b> / <b class="pos-dn">FP</b> just went up / down</span><span class="lg-i"><span class="dim">dim rows</span> bench: points don&rsquo;t count</span><span class="lg-i"><i class="sw a"></i><i class="sw h"></i> starters from each team in that NBA game</span></div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><b class="lv-on">Q3 4:21</b> game in progress</span><span class="lg-i"><span class="lv-tr lg"><i class="lv-cur" style="width:40%"></i><i class="lv-ex" style="left:40%;width:22%"></i><b class="lv-tk" style="left:66%"></b></span> points so far, still to come (estimate) and the projection line &mdash; the bar runs past the projection, and turns green once he beats it</span><span class="lg-i"><b class="pos-up">FP</b> / <b class="pos-dn">FP</b> just went up / down</span><span class="lg-i"><span class="dim">dim rows</span> bench: points don&rsquo;t count</span><span class="lg-i"><i class="sw a"></i><i class="sw h"></i> starters from each team in that NBA game</span></div>
     <div id="lv-main"></div>
   </section>
   <section class="panel" id="tab-week" hidden>
@@ -578,7 +577,10 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
     <h3>Live tab</h3>
     <p>Fantasy points come straight from ESPN: your league&rsquo;s feed for that day lists every roster with its lineup slots and each
       player&rsquo;s stats and points, and ESPN updates them during games. Clocks and scores come from ESPN&rsquo;s NBA scoreboard. The page
-      re-reads both every 30 seconds while a game is on (every 2 minutes before tip-off, and it pauses when the tab is out of view).
+      re-reads both every 30 seconds while a game is on; before the first tip-off it reads nothing and waits for the scheduled tip time
+      (then once a minute until ESPN shows the game started), and it pauses when the tab is out of view. Each player&rsquo;s bar shows his
+      points so far against our projection for the game, on a scale that runs half again past the projection (further if he goes past it),
+      with the estimated rest of his game in a lighter shade.
       The projected final is the live score plus what is still to come: a starter whose game has not started counts his full projected
       value for the game (the same per-game value as My week, incl. matchup and back-to-back odds), one in progress counts that value times
       the share of 48 minutes left (overtime counts as nothing left), a finished game counts nothing; days after today use My week&rsquo;s
@@ -734,6 +736,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=e9847994eb"></script>
+<script src="app.js?v=f27532aa7a"></script>
 </body>
 </html>

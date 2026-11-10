@@ -3853,7 +3853,7 @@ const TABS = ["league", "proj", "insea", "wire", "recap", "live", "week", "trade
 // come = our projection: a game not started counts its full projected value,
 // a game in progress the share of 48 minutes left, a finished game nothing;
 // days after today = My week's best lineup. ESPN leagues only.
-const LV = {day: null, pair: null, auto: true, j: null, sb: null, at: 0, prev: {}, timer: null, busy: null, err: ""};
+const LV = {day: null, pair: null, j: null, sb: null, at: 0, prev: {}, timer: null, busy: null, err: ""};
 const LV_SLOT_ORDER = (s) => (s === 12 ? 100 : s === 13 ? 101 : s);
 function liveFetch() {
   // one request at a time: share it (and fetch again if the day changed meanwhile)
@@ -4015,17 +4015,31 @@ function renderLive() {
       (k(2) ? ` ${k(2)} stl` : "") + (k(1) ? ` ${k(1)} blk` : "") + (k(11) ? ` ${k(11)} to` : "") +
       ` · ${k(13)}-${k(14)} FG${k(17) ? `, ${k(17)} 3PM` : ""}${k(16) ? `, ${k(15)}-${k(16)} FT` : ""}</span>`;
   };
+  // points so far against the projection, on a scale that runs past it (a player can
+  // beat his projection): the projection sits at 2/3 of the bar unless he passes it
+  const bar = (r) => {
+    if (!r.g || !(r.proj > 0 || r.fp > 0)) return "";
+    const fp = Math.max(0, r.fp), live = isToday && r.g.state !== "post", end = live ? fp + r.exp : fp;
+    const max = Math.max(r.proj * 1.5, end * 1.1, fp * 1.1, 10), pc = (v) => (Math.min(v, max) / max * 100).toFixed(1) + "%";
+    const over = r.proj > 0 && fp >= r.proj;
+    return `<div class="lv-pb${r.g.state === "pre" ? " pre" : ""}"><div class="lv-tr">` +
+      (live && end > fp + 0.5 ? `<i class="lv-ex" style="left:${pc(fp)};width:${pc(end - fp)}" title="Still to come (estimate): about ${fx(end, 0)} by the end"></i>` : "") +
+      `<i class="lv-cur${over ? " over" : ""}" style="width:${pc(fp)}"></i>` +
+      (r.proj > 0 ? `<b class="lv-tk" style="left:${pc(r.proj)}"></b><span class="lv-tl" style="left:${pc(r.proj)}">proj ${fx(r.proj, 0)}</span>` : "") +
+      `</div></div>`;
+  };
   const row = (r) => {
-    const pr = r.g && r.proj > 0 ? r.fp + r.exp : null;
-    const pct = r.proj > 0 ? Math.min(100, r.fp / r.proj * 100) : 0;
-    return `<tr class="${r.starter ? "" : "bn"}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}" data-id="${r.id}">` +
+    const b = bar(r);
+    return `<tr class="${r.starter ? "" : "bn"}${b ? " hb" : ""}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}" data-id="${r.id}">` +
       `<td class="l slt-c">${ESPN_SLOT[r.slot] || (r.slot === 12 ? "BE" : r.slot === 13 ? "IR" : "")}</td>` +
       `<td class="l"><span class="name nm2" data-id="${r.id}">${esc(r.n)}</span> ${r.p ? statusTag({id: r.id, p: r.p, inj: r.inj}, lg).replace('style="margin:0"', 'style="margin:0 0 0 .2rem"') : ""}` +
       `<div class="lv-gm">${r.p ? esc(r.p.tm) + " · " : ""}${gameCell(r)}</div><div>${line(r)}</div></td>` +
       `<td class="lv-fp${r.bump ? (r.bump > 0 ? " up" : " dn") : ""}" title="${esc(`ESPN fantasy points ${isToday ? "so far today" : "that day"}: ${fx(r.fp)}` +
         (r.proj > 0 ? `\nOur projection for this game: ${fx(r.proj)}` + (isToday && r.g && r.g.state !== "post" ? `\nStill to come (estimate): ${fx(r.exp)} → about ${fx(r.fp + r.exp)}` : "") : "") +
         (r.bump ? `\n${sg(r.bump)} since the last update` : "") + (r.starter ? "" : "\nOn the bench: these points don't count"))}">` +
-      `<b>${r.g || r.fp ? fx(r.fp, 0) : '<span class="dim">–</span>'}</b>${r.proj > 0 ? `<span class="sub">proj ${fx(isToday && r.g && r.g.state === "in" ? pr : r.proj, 0)}</span><span class="lv-bar"><i style="width:${pct.toFixed(0)}%"></i></span>` : ""}</td></tr>`;
+      `<b>${r.g || r.fp ? fx(r.fp, 0) : '<span class="dim">–</span>'}</b>` +
+      (isToday && r.g && r.g.state === "in" && r.proj > 0 ? `<span class="sub">≈ ${fx(r.fp + r.exp, 0)} by the end</span>` : "") + "</td></tr>" +
+      (b ? `<tr class="lv-br${r.starter ? "" : " bn"}"><td></td><td colspan="2">${b}</td></tr>` : "");
   };
   const tbl = (X) => {
     const S = X.rows.filter((r) => r.starter), B = X.rows.filter((r) => !r.starter);
@@ -4035,25 +4049,28 @@ function renderLive() {
   };
   box.innerHTML = strip + score + games + `<div class="lv-cols">${tbl(cur.A)}${tbl(cur.H)}</div>`;
   box.querySelectorAll(".lv-mini").forEach((b) => b.addEventListener("click", () => { LV.pair = b.dataset.pair.split(",").map(Number); renderLive(); }));
-  const anyLive = evs.some((g) => g.state === "in"), anyPre = evs.some((g) => g.state === "pre");
+  const now = Date.now(), anyLive = evs.some((g) => g.state === "in");
+  const pre = evs.filter((g) => g.state === "pre"), due = pre.some((g) => g.tip <= now);   // past tip time, not started yet
+  const nextTip = pre.map((g) => g.tip).filter((t) => t > now).sort((a, b) => a - b)[0];
+  const hm = (t) => new Date(t).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"});
   $("lv-at").textContent = `Updated ${new Date(LV.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit", second: "2-digit"})}` +
-    (isToday && LV.auto ? (anyLive ? " · updating every 30 s" : anyPre ? " · checks every 2 min until tip-off" : " · all games final") : "");
-  liveSchedule(isToday && LV.auto ? (anyLive ? 30e3 : anyPre ? 120e3 : 0) : 0);
+    (!isToday ? "" : anyLive ? " · updating every 30 s while games are on" : due ? " · waiting for tip-off" :
+      nextTip ? ` · updates start at tip-off (${hm(nextTip)})` : evs.length ? " · all games final" : "");
+  liveSchedule(!isToday ? 0 : anyLive ? 30e3 : due ? 60e3 : nextTip ? nextTip - now + 30e3 : 0);
 }
 function liveSchedule(ms) {
   clearTimeout(LV.timer);
   if (!ms) return;
   LV.timer = setTimeout(() => {
-    if ($("tab-live").hidden || document.hidden) return liveSchedule(ms);   // paused while out of view
+    if ($("tab-live").hidden || document.hidden) return liveSchedule(30e3);   // paused while out of view
     liveFetch().then(() => { if (!$("tab-live").hidden) renderLive(); });
   }, ms);
 }
 function bindLive() {
   $("lv-day").addEventListener("change", (e) => { LV.day = e.target.value; LV.j = null; LV.prev = {}; LV.err = ""; renderLive(); });
-  $("lv-auto").addEventListener("change", (e) => { LV.auto = e.target.checked; renderLive(); });
   $("lv-now").addEventListener("click", () => { LV.err = ""; LV.lgFail = false; liveFetch().then(renderLive); });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && LV.day && LV.j && !$("tab-live").hidden && LV.auto && LV.day === todayET() && Date.now() - LV.at > 25e3) liveFetch().then(renderLive);
+    if (!document.hidden && LV.day && LV.j && !$("tab-live").hidden && LV.day === todayET() && Date.now() - LV.at > 25e3) liveFetch().then(renderLive);
   });
 }
 function showTab(t) {
@@ -4067,7 +4084,9 @@ function showTab(t) {
   if (t === "wire") renderWaivers();
   if (t === "insea") renderInseason();
   if (t === "week") renderWeek();
-  if (t === "live") renderLive(); else liveSchedule(0);
+  if (t === "live") {                 // back on the tab: read once if the last read is old, then follow the games
+    if (LV.j && LV.day === todayET() && Date.now() - LV.at > 25e3) liveFetch().then(renderLive); else renderLive();
+  } else liveSchedule(0);
   if (t === "trade") renderTrade();
   if (t === "sched") renderSchedule();
   if (t === "def") renderDefence();

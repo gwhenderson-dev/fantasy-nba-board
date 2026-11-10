@@ -850,9 +850,19 @@ td .sub.slp { display: block; font-size: .7rem; color: var(--muted); white-space
 .lv-fp.up b { color: var(--good); }
 .lv-fp.dn b { color: var(--red); }
 .lv-fp .sub { display: block; font-size: .7rem; color: var(--muted); }
-.lv-bar { display: block; height: 4px; border-radius: 2px; background: var(--rule); margin-top: .2rem; overflow: hidden; }
-.lv-bar i { display: block; height: 100%; background: var(--accent); }
-.lv-bar.lg { display: inline-block; width: 2.4rem; vertical-align: middle; margin: 0 .2rem 0 0; }
+.lv-t tr.hb td { border-bottom: 0; padding-bottom: .15rem; }
+.lv-br td { padding-top: 0; padding-bottom: .55rem; }
+.lv-br.bn td { opacity: .62; }
+.lv-pb { padding-top: 1rem; }
+.lv-tr { position: relative; display: block; height: 10px; border-radius: 5px; background: var(--rule); }
+.lv-tr i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; }
+.lv-tr .lv-cur { background: var(--accent); }
+.lv-tr .lv-cur.over { background: var(--good); }
+.lv-tr .lv-ex { background: var(--accent); opacity: .3; border-radius: 0 5px 5px 0; }
+.lv-tk { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.lv-tl { position: absolute; top: -1.05rem; transform: translateX(-50%); font-size: .68rem; color: var(--muted); white-space: nowrap; }
+.lv-pb.pre .lv-tr { opacity: .75; }
+.lv-tr.lg { display: inline-block; width: 4.2rem; height: 8px; vertical-align: middle; margin-right: .3rem; }
 .lv-tot td { border-top: 2px solid var(--rule2); font-weight: 650; }
 .lv-tot td b { font-size: 1.15rem; }
 .lv-sep td { padding-top: .8rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 650; }
