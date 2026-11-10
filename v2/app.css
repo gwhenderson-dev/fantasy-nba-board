@@ -166,6 +166,7 @@ tbody tr:hover td { background: var(--band); }
 .tag.dtd { background: var(--h-dtd); }
 .tag.prob { background: var(--h-prob); }
 .tag.rk { background: transparent; color: var(--accent); border-color: var(--accent); }
+.tag.mv { background: transparent; color: var(--muted); border-color: var(--muted); border-style: dashed; white-space: nowrap; }
 .tag.boost { background: transparent; color: var(--good); border-color: var(--good); }
 
 /* ---- player modal ------------------------------------------------------ */
@@ -319,6 +320,7 @@ td.dg { text-align: center; padding: .3rem .25rem; font-size: .8rem; }
 td.dg.st { color: var(--good); font-weight: 700; }
 td.dg.bn { color: var(--gold); }
 td.dg.out { color: var(--warn); }
+td.dg.off { color: var(--muted); background-image: repeating-linear-gradient(135deg, transparent 0 5px, var(--rule) 5px 6px); }
 td.dg.past, th.past { opacity: .45; }
 td.dg input.gcb { width: 1.05rem; height: 1.05rem; margin: 0; cursor: pointer; accent-color: var(--good); vertical-align: middle; }
 /* a rounded ring on a wrapper: outlines on native checkboxes draw square in some browsers */

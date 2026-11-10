@@ -137,11 +137,16 @@ function espnLeague(lg) {
       const want = dayLocked(today) ? addDays(today, 1) : today;
       const target = Math.round((Date.parse(want) - Date.parse(first)) / 864e5) + 1;
       const next = target > (j.scoringPeriodId || 0);
-      if (!next) return [j, j, null];
-      return fetch(espnBase() + lg.id + "?view=mRoster&scoringPeriodId=" + target, {cache: "no-store"})
-        .then((r) => (r.ok ? r.json() : null)).catch(() => null)
-        .then((n) => (n && (n.teams || []).length ? [j, n, target] : [j, j, null]));
-    }).then(([j, rj, period]) => {
+      if (!next) return [j, j, null, null];
+      const get = (sp) => fetch(espnBase() + lg.id + "?view=mRoster&scoringPeriodId=" + sp, {cache: "no-store"})
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null).then((n) => (n && (n.teams || []).length ? n : null));
+      // once today has tipped off, TODAY's lineup is the roster locked at tip-off:
+      // a player dropped after the lock still plays for you tonight, one added
+      // after it only counts from tomorrow. Keep that roster too (My week).
+      const tp = target - 1, lockedDay = want !== today;
+      return Promise.all([get(target), lockedDay ? (tp === j.scoringPeriodId ? j : get(tp)) : null])
+        .then(([n, t]) => (n ? [j, n, target, lockedDay ? t : null] : [j, j, null, null]));
+    }).then(([j, rj, period, tj]) => {
       const teams = (j.teams || []).map((t) => ({id: t.id, ab: t.abbrev || "",
         name: (t.name || [t.location, t.nickname].filter(Boolean).join(" ") || "Team " + t.id).trim()}));
       const owner = {}, slot = {}, name = {}, elig = {}, inj = {}, pro = {}, tx = {};
@@ -158,7 +163,23 @@ function espnLeague(lg) {
           }
         });
       });
-      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {}, at: Date.now(), next: period,
+      // today's locked roster (only after the first tip-off, and only when it differs)
+      let locked = null;
+      if (tj) {
+        locked = {owner: {}, slot: {}, day: today};
+        (tj.teams || []).forEach((t) => ((t.roster || {}).entries || []).forEach((e) => {
+          locked.owner[e.playerId] = t.id; locked.slot[e.playerId] = e.lineupSlotId;
+          const pl = (e.playerPoolEntry || {}).player;
+          if (pl && !(e.playerId in name)) {          // dropped since: keep his details for today
+            name[e.playerId] = pl.fullName; elig[e.playerId] = pl.eligibleSlots || [];
+            inj[e.playerId] = pl.injuryStatus || null; pro[e.playerId] = pl.proTeamId;
+          }
+        }));
+        const same = Object.keys(owner).length === Object.keys(locked.owner).length &&
+          Object.keys(owner).every((id) => locked.owner[id] === owner[id]);
+        if (same) locked = null;
+      }
+      const d = {teams, owner, slot, name, elig, inj, pro, tx, wv: {}, ret: {}, at: Date.now(), next: period, locked,
         byId: Object.fromEntries(teams.map((t) => [t.id, t]))};
       // second, optional call: which unrostered players are on waivers (not free agents)
       // ESPN answers 400 to this filter without a sort clause
@@ -2602,7 +2623,13 @@ function dayVals(p, days, own, ok) {
 // a team's week: per player, per day -> game?, plays?, value, started?
 function teamWeek(lg, teamId, days, wk, SLOTS, today) {
   const marks = weekMarks(wk);
-  const ps = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === teamId).map((id) => {
+  // after today's first tip-off: today (and earlier days) = the roster locked at
+  // tip-off, tomorrow on = the roster with the moves made since (lg.locked)
+  const LK = lg.locked && lg.locked.day === today ? lg.locked : null;
+  const onDay = (id, d) => (!LK || d > today ? lg.owner[id] === teamId : LK.owner[id] === teamId);
+  const ids = new Set(Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === teamId));
+  if (LK) Object.keys(LK.owner).map(Number).forEach((id) => { if (LK.owner[id] === teamId) ids.add(id); });
+  const ps = [...ids].map((id) => {
     const p = BYID[id];
     const inj = lg.inj[id];
     const hurt = (p ? espnOut(p, inj) : OUT_SET.includes(inj)) || lg.slot[id] === 13 || isAbsent(p);
@@ -2615,8 +2642,13 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     const plays = own ? !!marks[id] : def;
     const elig = (lg.elig[id] && lg.elig[id].length ? lg.elig[id] : eligFromPos(p && p.pos)).filter((s) => SLOTS.includes(s));
     const r = {id, n: p ? p.n : lg.name[id] || "#" + id, p, inj, ret, hurt, plays, manual: own, elig,
-      days: dayVals(p, days, own, (d, sp) => plays && !(hurt && !own && ret && d < ret) && !(outOn(p, d) && !own) && !(sp < 0.05 && !own)),
+      days: dayVals(p, days, own, (d, sp) => onDay(id, d) && plays && !(hurt && !own && ret && d < ret) && !(outOn(p, d) && !own) && !(sp < 0.05 && !own)),
       starts: 0, games: 0, pts: 0, var: 0};
+    if (LK) {
+      r.dropped = LK.owner[id] === teamId && lg.owner[id] !== teamId;
+      r.added = lg.owner[id] === teamId && LK.owner[id] !== teamId;
+      r.days.forEach((x) => { if (!onDay(id, x.d)) { x.avail = false; x.off = true; } });
+    }
     return r;
   });
   // the visitor's per-game lineup choices: 1 = start him, 0 = bench him
@@ -3074,6 +3106,7 @@ function renderWeek() {
   const cell = (r, D, i) => {
     const x = r.days[i], past = D.past ? " past" : "";
     if (!x.g) return `<td class="dg${past}"></td>`;
+    if (x.off) return `<td class="dg off${past}" title="${esc(r.dropped ? "Dropped after today's first tip-off: he still counts for you today, not after" : "Added after today's first tip-off: he counts for you from tomorrow")}">–</td>`;
     if (!x.avail) return `<td class="dg out${past}" title="Not playing">×</td>`;
     if (D.past) return x.st ? `<td class="dg st past">●<span class="slt">${ESPN_SLOT[x.slot] || ""}</span></td>` : `<td class="dg bn past">○</td>`;
     const sl = slpFP(r.id, x.d);
@@ -3110,7 +3143,7 @@ function renderWeek() {
     rows.map((r) => `<tr class="${r.plays ? "" : "isout"}"><td class="l"><input type="checkbox" data-pid="${r.id}"${r.plays ? " checked" : ""} aria-label="${esc(r.n)} plays this week"></td>` +
       `<td class="l name" data-id="${r.id}">${esc(r.n)}${r.p ? "" : ' <span class="dim">(no projection)</span>'}</td>` +
       `<td class="l">${statusTag(r, lg)}<span class="dim" style="font-size:.76rem">` +
-      `${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? ` · <span title="${esc(r.plays ? "You ticked his Plays box for this week, so he counts even though the page had him out" : "You unticked his Plays box for this week, so none of his games count")}. Saved in this browser; Reset lineup choices undoes it.">set by you</span>` : ""}</span></td>` +
+      `${r.dropped ? ' <span class="tag mv" title="Dropped after today\'s first tip-off: today\'s lineup was already locked, so his game today still counts for you; nothing after today does">dropped · today only</span>' : r.added ? ' <span class="tag mv" title="Added after today\'s first tip-off: pickups made after the lock start tomorrow">added · from tomorrow</span>' : ""}${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? ` · <span title="${esc(r.plays ? "You ticked his Plays box for this week, so he counts even though the page had him out" : "You unticked his Plays box for this week, so none of his games count")}. Saved in this browser; Reset lineup choices undoes it.">set by you</span>` : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i).replace('<td class="dg', `<td class="dg${i % 2 ? " alt" : ""}`)).join("") +
       `<td class="grp">${r.games} / ${r.starts}</td>` + (() => { const v = ws <= today ? weekVsProj(r.p, ws, today) : null;
         if (!v) return '<td class="dim"></td>';
@@ -4101,7 +4134,7 @@ fetchData(false)
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
-    window.FNBA_DEBUG = {sw: () => ({lg: LGRES[L.id], startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+    window.FNBA_DEBUG = {relg: () => { Object.keys(LGDATA).forEach((k) => delete LGDATA[k]); return espnLeague(L); }, sw: () => ({lg: LGRES[L.id], L, teamWeek, renderWeek, espnBase, startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
         return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, free: P.free, n: SP.n, metric: SP.metric,
