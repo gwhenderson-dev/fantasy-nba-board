@@ -3587,14 +3587,23 @@ function rosAt(p, T) {
   const tot = STATS.map(() => 0), cnt = [0, 0, 0];
   rows.forEach((r) => { mn += r[C.min] || 0; STATS.forEach((k, i) => { tot[i] += r[C[k]] || 0; });
     cnt[0] += r[C.dd]; cnt[1] += r[C.td]; cnt[2] += r[C.qd]; });
-  const mpg = (5 * mpg0 + mn) / (5 + gp);
-  const sl = STATS.map((k, i) => (ps[i] / mpg0 * 600 + tot[i]) / (600 + mn) * mpg);
-  const geq = 600 / mpg0;
+  // the ros.py blend: veterans k 600 min / g0 5 games; rookies (college-model
+  // prior) k 200 / g0 5 with minutes from their last 5 games (rookie_ros.py)
+  const R = META.ros || {k: 600, g0: 5, h: 20, rk_k: 200, rk_g0: 5, rk_L: 5, rk_h: 10};
+  const rook = !!p.rook, k = rook ? R.rk_k : R.k, g0 = rook ? R.rk_g0 : R.g0;
+  let mpg = (g0 * mpg0 + mn) / (g0 + gp);
+  if (rook && R.rk_L && gp) {
+    const last = rows.slice().sort((a, b) => (a[C.d] < b[C.d] ? -1 : 1)).slice(-R.rk_L);
+    mpg = (g0 * mpg0 + last.reduce((a, r) => a + (r[C.min] || 0), 0)) / (g0 + last.length);
+  }
+  const sl = STATS.map((kk, i) => (ps[i] / mpg0 * k + tot[i]) / (k + mn) * mpg);
+  const geq = k / mpg0;
   const bp = pbp.map((b, j) => (b * geq + cnt[j]) / (geq + gp));
   const sched = (META.sched[p.tm] || []).map((g) => g[0]);
   const before = sched.filter((d) => d < T).length, left = sched.filter((d) => d >= T).length;
   const av0 = p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
-  const av = Math.min(1, (av0 * 20 + gp) / (20 + before));
+  const h = rook ? (R.rk_h || 10) : (R.h || 20);
+  const av = Math.min(1, (av0 * h + gp) / (h + before));
   withX(sl, p.xr);
   return {fp: fpg(sl, bp), av, left, tot: fpg(sl, bp) * av * left, approx, sl, bp};
 }

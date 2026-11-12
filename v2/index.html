@@ -435,7 +435,18 @@ bonuses: same as rates, evidence = 600 / draft MPG games</div>
     <p>This blend beat both &ldquo;never update&rdquo; and &ldquo;trust the season so far&rdquo; at all 25 test checkpoints (two weeks in to late January). A later check (Nov 2026) re-tuned the weights for
       the last third of the season (days 112&ndash;140): the best setting was the same 600 minutes / 5 games / 20 games, and dropping the
       preseason projection late in the season was clearly worse (+0.12 FP/G error, 4 of 5 test seasons worse). Its
-      result is the <strong>ROS FP/G</strong> used everywhere in-season, and:</p>
+      result is the <strong>ROS FP/G</strong> used everywhere in-season.</p>
+    <p><strong>Rookies get their own setting</strong> (Nov 2026). The weights above were tuned on veterans, whose draft-day line
+      rests on years of NBA games; a rookie&rsquo;s rests on a college translation, which is far less reliable. Tested the same way on
+      502 rookie seasons (each rookie&rsquo;s college-model line built only from earlier draft classes; tuned 2012&ndash;19, scored
+      2021&ndash;26, checked after his own game 5, 10, 15, 20 and 30):</p>
+    <div class="formula">rate(stat)   = (draft rate × 200 + season total) / (200 + season minutes)
+MPG          = (5 × draft MPG + minutes in his last 5 games) / (5 + 5)
+availability = (10 × draft availability + games played) / (10 + team games so far)</div>
+    <p>Rest-of-season error fell from 5.85 to 5.31 FP/G against the veteran setting (better in 24 of 25 test checkpoints). Two
+      things that did <em>not</em> work: using only his real games from game 5 on (worse than both, 7.5 FP/G error at game 5 &mdash;
+      five games are too noisy), and separate settings by position (no gain). The rookie availability change is small (better in
+      20 of 25). The ROS FP/G feeds:</p>
     <div class="formula">ROS points = ROS FP/G × availability × games left
            + injury boost (section 5)
 games left = his team's remaining games
@@ -736,6 +747,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=f27532aa7a"></script>
+<script src="app.js?v=6454cfcf30"></script>
 </body>
 </html>
