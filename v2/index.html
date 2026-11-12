@@ -445,7 +445,9 @@ MPG          = (5 × draft MPG + minutes in his last 5 games) / (5 + 5)
 availability = (10 × draft availability + games played) / (10 + team games so far)</div>
     <p>Rest-of-season error fell from 5.85 to 5.31 FP/G against the veteran setting (better in 24 of 25 test checkpoints). Two
       things that did <em>not</em> work: using only his real games from game 5 on (worse than both, 7.5 FP/G error at game 5 &mdash;
-      five games are too noisy), and separate settings by position (no gain). The rookie availability change is small (better in
+      five games are too noisy), separate settings by position (no gain), and counting games played while a key teammate sat for
+      less (rookies do play about 2 more minutes in those games, but discounting them made the projection worse &mdash; the extra
+      minutes largely stick). The rookie availability change is small (better in
       20 of 25). The ROS FP/G feeds:</p>
     <div class="formula">ROS points = ROS FP/G × availability × games left
            + injury boost (section 5)
