@@ -3589,12 +3589,18 @@ function rosAt(p, T) {
     cnt[0] += r[C.dd]; cnt[1] += r[C.td]; cnt[2] += r[C.qd]; });
   // the ros.py blend: veterans k 600 min / g0 5 games; rookies (college-model
   // prior) k 200 / g0 5 with minutes from their last 5 games (rookie_ros.py)
-  const R = META.ros || {k: 600, g0: 5, h: 20, rk_k: 200, rk_g0: 5, rk_L: 5, rk_h: 10};
-  const rook = !!p.rook, k = rook ? R.rk_k : R.k, g0 = rook ? R.rk_g0 : R.g0;
-  let mpg = (g0 * mpg0 + mn) / (g0 + gp);
-  if (rook && R.rk_L && gp) {
-    const last = rows.slice().sort((a, b) => (a[C.d] < b[C.d] ? -1 : 1)).slice(-R.rk_L);
-    mpg = (g0 * mpg0 + last.reduce((a, r) => a + (r[C.min] || 0), 0)) / (g0 + last.length);
+  const R = META.ros || {k: 600, g0: 5, h: 20, rk_k_up: 100, rk_k_down: 400, rk_g0_up: 2, rk_g0_down: 10, rk_L: 5, rk_h: 10};
+  const rook = !!p.rook;
+  let k = R.k, g0 = R.g0, mpg = (g0 * mpg0 + mn) / (g0 + gp);
+  if (rook) {
+    // rookies trust real games faster when he beats the projection (rookie_ros.py part 4);
+    // direction under the site's default scoring, as the build computes it
+    const W = META.league.w, fpOf = (arr) => STATS.reduce((a, s, i) => a + (arr[i] || 0) * (W[s] || 0), 0);
+    k = mn > 0 && fpOf(tot) / mn > fpOf(ps) / mpg0 ? R.rk_k_up : R.rk_k_down;
+    const last = R.rk_L ? rows.slice().sort((a, b) => (a[C.d] < b[C.d] ? -1 : 1)).slice(-R.rk_L) : rows;
+    const ms = last.reduce((a, r) => a + (r[C.min] || 0), 0), n = last.length;
+    g0 = n && ms / n > mpg0 ? R.rk_g0_up : R.rk_g0_down;
+    mpg = (g0 * mpg0 + ms) / (g0 + n);
   }
   const sl = STATS.map((kk, i) => (ps[i] / mpg0 * k + tot[i]) / (k + mn) * mpg);
   const geq = k / mpg0;

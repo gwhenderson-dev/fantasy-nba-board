@@ -439,16 +439,19 @@ bonuses: same as rates, evidence = 600 / draft MPG games</div>
     <p><strong>Rookies get their own setting</strong> (Nov 2026). The weights above were tuned on veterans, whose draft-day line
       rests on years of NBA games; a rookie&rsquo;s rests on a college translation, which is far less reliable. Tested the same way on
       502 rookie seasons (each rookie&rsquo;s college-model line built only from earlier draft classes; tuned 2012&ndash;19, scored
-      2021&ndash;26, checked after his own game 5, 10, 15, 20 and 30):</p>
-    <div class="formula">rate(stat)   = (draft rate × 200 + season total) / (200 + season minutes)
-MPG          = (5 × draft MPG + minutes in his last 5 games) / (5 + 5)
+      2021&ndash;26, checked after his own game 5, 10, 15, 20 and 30), the best rule trusts his real games <em>faster when he is
+      beating the projection</em>:</p>
+    <div class="formula">rate(stat)   = (draft rate × k + season total) / (k + season minutes)
+               k = 100 min if he is above his draft FP per minute, else 400
+MPG          = (g × draft MPG + minutes in his last 5 games) / (g + 5)
+               g = 2 if his last-5 MPG is above his draft MPG, else 10
 availability = (10 × draft availability + games played) / (10 + team games so far)</div>
-    <p>Rest-of-season error fell from 5.85 to 5.31 FP/G against the veteran setting (better in 24 of 25 test checkpoints). Two
-      things that did <em>not</em> work: using only his real games from game 5 on (worse than both, 7.5 FP/G error at game 5 &mdash;
-      five games are too noisy), separate settings by position (no gain), and counting games played while a key teammate sat for
-      less (rookies do play about 2 more minutes in those games, but discounting them made the projection worse &mdash; the extra
-      minutes largely stick). The rookie availability change is small (better in
-      20 of 25). The ROS FP/G feeds:</p>
+    <p>Rest-of-season error: 5.85 FP/G with the veteran setting, 5.31 with one rookie setting for everyone, 4.78 with the
+      faster-when-beating-it rule (better in 22 of 25 test checkpoints). Rookies outplaying their projection by 20%+ had been
+      under-projected by about 3 FP/G. What did <em>not</em> work: dropping the draft-day line entirely after 5, 8, 10, 15, 20 or
+      30 games (every version worse &mdash; a handful of games is noisy, and rookies who start slowly often recover), separate
+      settings by position, and counting games played while a key teammate sat for less (rookies do play about 2 more minutes in
+      those games, but the extra minutes largely stick). The ROS FP/G feeds:</p>
     <div class="formula">ROS points = ROS FP/G × availability × games left
            + injury boost (section 5)
 games left = his team's remaining games
@@ -749,6 +752,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=6454cfcf30"></script>
+<script src="app.js?v=62ef31d3c2"></script>
 </body>
 </html>
