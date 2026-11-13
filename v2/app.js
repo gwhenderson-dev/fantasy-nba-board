@@ -933,7 +933,8 @@ function boostTip(b) {
   return L2.join("\n");
 }
 
-const b2b0 = (p) => (p.b2b ? `${p.b2b[0]} of ${p.b2b[1]}` : "0 of 0");
+const b2b0 = (p) => (!p.b2b ? "0 of 0" : p.b2b.length > 3
+  ? `${p.b2b[3]} of ${p.b2b[4]} this season, ${p.b2b[0] - p.b2b[3]} of ${p.b2b[1] - p.b2b[4]} last season` : `${p.b2b[0]} of ${p.b2b[1]}`);
 const BUI = {open: {"wv-boosts": true, "is-boosts": true}};
 function renderBoostPanel(cid) {
   const el = $(cid);
@@ -1766,7 +1767,7 @@ function renderWaivers() {
       g.bst > 0.05 ? `Injury boost that night: +${g.bst.toFixed(1)} FP (${r.boost ? r.boost.names.join(", ") : "teammate"} out)` : "",
       g.sp < 1 ? statusPlayTip(r.p, g.d) : "",
       g.rf < 1 ? `Back from a layoff: about ${Math.round(g.rf * 100)}% of his usual minutes in this game (first two games back)` : "",
-      g.second ? `2nd night of a back-to-back: ${Math.round(r.psit * 100)}% chance he sits` + (r.p.b2b ? ` (sat ${r.p.b2b[0]} of ${r.p.b2b[1]} second nights)` : "") +
+      g.second ? `2nd night of a back-to-back: ${Math.round(r.psit * 100)}% chance he sits` + (r.p.b2b ? ` (sat ${b2b0(r.p)} second nights; this season counts 4x last)` : "") +
         `, so this game counts ${Math.round(g.play / (g.sp || 1) * 100)}%` : ""].filter(Boolean).join("\n");
     const pc = posCls(p.pos);
     const gs = r.games.map((g) => `<span class="gch${g.second ? " b2" : ""}${g.sp < 0.6 ? " st" : ""}" title="${esc(dvpTip(g.opp, pc) + "\n" + chipTip(g))}">` +
@@ -1811,7 +1812,7 @@ function renderWaivers() {
   $("wv-b2bsum").textContent = `— ${sit.length} players flagged`;
   $("wv-b2btab").innerHTML = '<div class="tablewrap" style="max-height:24rem;margin-top:.7rem"><table><thead><tr><th class="l">Player</th><th class="l">Tm</th>' +
     '<th title="Rest sits on second nights / second-night chances (bracketed by games played)">Sat</th><th>Sit chance</th>' + (lg ? '<th class="l">Status</th>' : "") + "</tr></thead><tbody>" +
-    sit.map((p) => `<tr data-id="${p.id}"><td class="l name">${esc(p.n)}</td><td class="l dim">${esc(p.tm)}</td><td>${p.b2b[0]} of ${p.b2b[1]}</td>` +
+    sit.map((p) => `<tr data-id="${p.id}"><td class="l name">${esc(p.n)}</td><td class="l dim">${esc(p.tm)}</td><td>${b2b0(p)}</td>` +
       `<td>${Math.round(p.b2b[2] * 100)}%</td>${lg ? `<td class="l dim">${lg.owner[p.id] != null ? esc((lg.byId[lg.owner[p.id]] || {}).ab) : lg.wv[p.id] ? "WVR" : "FA"}</td>` : ""}</tr>`).join("") +
     "</tbody></table></div>";
 }
