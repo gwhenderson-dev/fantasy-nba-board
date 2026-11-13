@@ -437,6 +437,18 @@ bonuses: same as rates, evidence = 600 / draft MPG games</div>
       the last third of the season (days 112&ndash;140): the best setting was the same 600 minutes / 5 games / 20 games, and dropping the
       preseason projection late in the season was clearly worse (+0.12 FP/G error, 4 of 5 test seasons worse). Its
       result is the <strong>ROS FP/G</strong> used everywhere in-season.</p>
+    <p><strong>Veterans, refined (Nov 2026).</strong> Three ideas were tested on the same 24 seasons, plans written down first. Two
+      won and now run together: real games are trusted <em>faster when he is beating his projection</em> and slower when he is
+      falling short, and <em>recent games count more</em> than old ones.</p>
+    <div class="formula">each game's weight = 0.5 ^ (games ago / 10)       (last night 1, ten games ago ½)
+rate(stat) = (draft rate × k + weighted season total) / (k + weighted minutes)
+             k = 300 min if his weighted FP per minute is above the draft line, else 1,000
+MPG        = (g × draft MPG + weighted minutes) / (g + weighted games)
+             g = 1 if his weighted MPG is above the draft MPG, else 10
+availability: unchanged (20 games)</div>
+    <p>Rest-of-season error on the test seasons fell from 3.99 to 3.78 FP/G, better in all 25 test checkpoints. The asymmetry is
+      the big part (3.81 on its own): a veteran outplaying his projection is usually telling you something, while a slow start
+      mostly comes back. Giving each stat its own speed (rebounds faster, steals slower) tied the old rule and was not used.</p>
     <p><strong>Rookies get their own setting</strong> (Nov 2026). The weights above were tuned on veterans, whose draft-day line
       rests on years of NBA games; a rookie&rsquo;s rests on a college translation, which is far less reliable. Tested the same way on
       502 rookie seasons (each rookie&rsquo;s college-model line built only from earlier draft classes; tuned 2012&ndash;19, scored
@@ -763,6 +775,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=ca0ef3ae08"></script>
+<script src="app.js?v=eeb02af231"></script>
 </body>
 </html>

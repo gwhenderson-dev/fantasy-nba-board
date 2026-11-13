@@ -3590,7 +3590,7 @@ function rosAt(p, T) {
     cnt[0] += r[C.dd]; cnt[1] += r[C.td]; cnt[2] += r[C.qd]; });
   // the ros.py blend: veterans k 600 min / g0 5 games; rookies (college-model
   // prior) k 200 / g0 5 with minutes from their last 5 games (rookie_ros.py)
-  const R = META.ros || {k: 600, g0: 5, h: 20, rk_k_up: 100, rk_k_down: 400, rk_g0_up: 2, rk_g0_down: 10, rk_L: 5, rk_h: 10};
+  const R = META.ros || {k: 600, g0: 5, h: 20, v_k_up: 300, v_k_down: 1000, v_g0_up: 1, v_g0_down: 10, v_H: 10, rk_k_up: 100, rk_k_down: 400, rk_g0_up: 2, rk_g0_down: 10, rk_L: 5, rk_h: 10};
   const rook = !!p.rook;
   let k = R.k, g0 = R.g0, mpg = (g0 * mpg0 + mn) / (g0 + gp);
   if (rook) {
@@ -3603,9 +3603,32 @@ function rosAt(p, T) {
     g0 = n && ms / n > mpg0 ? R.rk_g0_up : R.rk_g0_down;
     mpg = (g0 * mpg0 + ms) / (g0 + n);
   }
-  const sl = STATS.map((kk, i) => (ps[i] / mpg0 * k + tot[i]) / (k + mn) * mpg);
-  const geq = k / mpg0;
-  const bp = pbp.map((b, j) => (b * geq + cnt[j]) / (geq + gp));
+  let sl, bp;
+  if (!rook && R.v_H && gp) {
+    // veterans (ros_refine.py): each game weighted 0.5^(games ago / H), real games trusted
+    // faster when he beats the projection; FP judged under the site's default scoring
+    const srt = rows.slice().sort((a, b) => (a[C.d] < b[C.d] ? -1 : 1));
+    let Mw = 0, Nw = 0, Fw = 0;
+    const Tw = STATS.map(() => 0), Bw = [0, 0, 0];
+    srt.forEach((r, i) => {
+      const w = Math.pow(0.5, (srt.length - 1 - i) / R.v_H), line = STATS.map((kk) => r[C[kk]] || 0);
+      Mw += w * (r[C.min] || 0); Nw += w;
+      line.forEach((v, j) => { Tw[j] += w * v; });
+      [r[C.dd], r[C.td], r[C.qd]].forEach((v, j) => { Bw[j] += w * (v || 0); });
+      Fw += w * fpgUnder(META.league, line, [r[C.dd] || 0, r[C.td] || 0, r[C.qd] || 0]);
+    });
+    const fp0 = fpgUnder(META.league, ps, pbp) / mpg0;
+    k = Mw > 0 && Fw / Mw > fp0 ? R.v_k_up : R.v_k_down;
+    g0 = Nw && Mw / Nw > mpg0 ? R.v_g0_up : R.v_g0_down;
+    mpg = (g0 * mpg0 + Mw) / (g0 + Nw);
+    sl = STATS.map((kk, i) => (ps[i] / mpg0 * k + Tw[i]) / (k + Mw) * mpg);
+    const geq = k / mpg0;
+    bp = pbp.map((b, j) => (b * geq + Bw[j]) / (geq + Nw));
+  } else {
+    sl = STATS.map((kk, i) => (ps[i] / mpg0 * k + tot[i]) / (k + mn) * mpg);
+    const geq = k / mpg0;
+    bp = pbp.map((b, j) => (b * geq + cnt[j]) / (geq + gp));
+  }
   const sched = (META.sched[p.tm] || []).map((g) => g[0]);
   const before = sched.filter((d) => d < T).length, left = sched.filter((d) => d >= T).length;
   const av0 = p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
