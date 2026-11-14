@@ -1027,3 +1027,25 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .lr + .lr { margin-top: 0; border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .lr.mine { box-shadow: none; background: var(--accent-bg) !important; }
 .lr.mine + .lr, .lr + .lr.mine { border-top-color: transparent; }
+/* Live: click a player for his points stat by stat (owner 11-14) */
+.lv-t tr.bdok { cursor: pointer; }
+.lv-t tr.bdok:hover > td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.lv-t tr.bdok > td.l .nm2::after { content: "▸"; color: var(--muted); font-size: .7rem; margin-left: .35rem; display: inline-block; transition: transform .15s; }
+.lv-t tr.bdopen > td.l .nm2::after { transform: rotate(90deg); }
+.lv-bdr > td { padding-top: 0 !important; }
+.lv-bd { margin: .1rem 0 .6rem; padding: .55rem .65rem; border-radius: 10px; background: var(--band); }
+.bd-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--rule) 50%, transparent); }
+.bd-bar + .bd-bar { margin-top: 3px; }
+.bd-bar i { height: 100%; display: block; }
+.bd-bar i.p { background: var(--good); opacity: .85; }
+.bd-bar i.p:nth-child(even) { opacity: .6; }
+.bd-bar i.n { background: var(--red); opacity: .8; }
+.bd-bar i.n:nth-child(even) { opacity: .55; }
+.bd-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+.bd-c { display: inline-flex; align-items: baseline; gap: .3rem; font-size: .74rem; padding: .15rem .5rem; border-radius: 7px; background: var(--paper); border: 1px solid var(--rule); }
+.bd-c b { font-weight: 700; }
+.bd-c span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bd-c em { font-style: normal; font-weight: 750; font-variant-numeric: tabular-nums; }
+.bd-c.p em { color: var(--good); }
+.bd-c.n em { color: var(--red); }
+.bd-sum { margin-top: .45rem; font-size: .78rem; color: var(--ink2); }

@@ -4444,9 +4444,30 @@ function renderLive() {
       (r.proj > 0 ? `<b class="lv-tk" style="left:${pc(r.proj)}"></b><span class="lv-tl" style="left:${pc(r.proj)}">proj ${fx(r.proj, 0)}</span>` : "") +
       `</div></div>`;
   };
+  // fantasy points broken down by stat under the league's scoring (owner 11-14: "click a player to see what
+  // his score is made of"). ESPN's stat ids -> our stats; anything ESPN scores that we don't model shows as
+  // "other" (the gap to ESPN's own total)
+  const BD_ID = {PTS: 0, FGM: 13, FGA: 14, FTM: 15, FTA: 16, FG3M: 17, REB: 6, OREB: 4, AST: 3, STL: 2, BLK: 1, TOV: 11};
+  const bdown = (r) => {
+    const s2 = r.s || {}, items = [];
+    STATS.forEach((k) => { const w = (L.w || {})[k] || 0, n = +s2[BD_ID[k]] || 0; if (w && n) items.push({k: STAT_LBL[k] || k, n, w, v: n * w}); });
+    [["DD", 37, "Double-double"], ["TD", 38, "Triple-double"], ["QD", 39, "Quadruple-double"]].forEach(([k, id, nm]) => {
+      const w = (L.b || {})[k] || 0, n = +s2[id] || 0; if (w && n) items.push({k: nm, n, w, v: n * w, bonus: true}); });
+    const sum = items.reduce((a, x) => a + x.v, 0), gap = (r.fp || 0) - sum;
+    if (Math.abs(gap) >= 0.05) items.push({k: "Other scoring", n: null, w: null, v: gap});
+    const pos = items.filter((x) => x.v > 0).sort((a, b) => b.v - a.v), neg = items.filter((x) => x.v < 0).sort((a, b) => a.v - b.v);
+    const tp = pos.reduce((a, x) => a + x.v, 0), tn2 = neg.reduce((a, x) => a + x.v, 0), tot = tp + tn2 || 1;
+    const chip = (x) => `<span class="bd-c ${x.v > 0 ? "p" : "n"}"><b>${esc(x.k)}</b>${x.n != null ? `<span>${x.n} × ${x.w}</span>` : ""}<em>${sg(x.v, x.v % 1 ? 1 : 0)}</em></span>`;
+    const scale = Math.max(tp, 1);
+    return `<div class="lv-bd"><div class="bd-bar" title="${esc(`Points earned ${fx(tp, 1)}, points lost ${fx(-tn2, 1)}`)}">` +
+      pos.map((x) => `<i class="p" style="width:${(x.v / scale * 100).toFixed(1)}%" title="${esc(x.k)}: ${sg(x.v, 1)}"></i>`).join("") + "</div>" +
+      (neg.length ? `<div class="bd-bar neg">${neg.map((x) => `<i class="n" style="width:${(-x.v / scale * 100).toFixed(1)}%" title="${esc(x.k)}: ${sg(x.v, 1)}"></i>`).join("")}</div>` : "") +
+      `<div class="bd-chips">${pos.map(chip).join("")}${neg.map(chip).join("")}</div>` +
+      `<div class="bd-sum">earned <b class="pos-up">${fx(tp, 1)}</b> · lost <b class="pos-dn">${fx(-tn2, 1)}</b> · <b>${fx(r.fp, 1)} FP</b>${r.proj > 0 ? ` <span class="dim">(projected ${fx(r.proj, 1)})</span>` : ""}</div></div>`;
+  };
   const row = (r) => {
-    const b = bar(r);
-    return `<tr class="${r.starter ? "" : "bn"}${b ? " hb" : ""}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}" data-id="${r.id}">` +
+    const b = bar(r), canBd = r.st && (r.played || r.fp), open = canBd && LV.open && LV.open.has(r.id);
+    return `<tr class="${r.starter ? "" : "bn"}${b ? " hb" : ""}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}${canBd ? " bdok" : ""}${open ? " bdopen" : ""}" data-id="${r.id}"${canBd ? ` data-bd="${r.id}" title="Click for his points, stat by stat"` : ""}>` +
       `<td class="l slt-c">${ESPN_SLOT[r.slot] || (r.slot === 12 ? "BE" : r.slot === 13 ? "IR" : "")}</td>` +
       `<td class="l"><span class="name nm2" data-id="${r.id}">${esc(r.n)}</span> ${r.p ? statusTag({id: r.id, p: r.p, inj: r.inj}, lg).replace('style="margin:0"', 'style="margin:0 0 0 .2rem"') : ""}` +
       `<div class="lv-gm">${r.p ? esc(r.p.tm) + " · " : ""}${gameCell(r)}</div><div>${line(r)}</div></td>` +
@@ -4455,7 +4476,8 @@ function renderLive() {
         (r.bump ? `\n${sg(r.bump)} since the last update` : "") + (r.starter ? "" : "\nOn the bench: these points don't count"))}">` +
       `<b>${r.g || r.fp ? fx(r.fp, 0) : '<span class="dim">–</span>'}</b>` +
       (isToday && r.g && r.g.state === "in" && r.proj > 0 ? `<span class="sub">≈ ${fx(r.fp + r.exp, 0)} by the end</span>` : "") + "</td></tr>" +
-      (b ? `<tr class="lv-br${r.starter ? "" : " bn"}"><td></td><td colspan="2">${b}</td></tr>` : "");
+      (b ? `<tr class="lv-br${r.starter ? "" : " bn"}${canBd ? " bdok" : ""}"${canBd ? ` data-bd="${r.id}"` : ""}><td></td><td colspan="2">${b}</td></tr>` : "") +
+      (open ? `<tr class="lv-bdr${r.starter ? "" : " bn"}"><td></td><td colspan="2">${bdown(r)}</td></tr>` : "");
   };
   const tbl = (X) => {
     const S = X.rows.filter((r) => r.starter), B = X.rows.filter((r) => !r.starter);
@@ -4465,6 +4487,13 @@ function renderLive() {
   };
   box.innerHTML = strip + score + games + `<div class="lv-cols">${tbl(cur.A)}${tbl(cur.H)}</div>`;
   box.querySelectorAll(".lv-mini").forEach((b) => b.addEventListener("click", () => { LV.pair = b.dataset.pair.split(",").map(Number); renderLive(); }));
+  box.querySelectorAll("tr[data-bd]").forEach((tr) => tr.addEventListener("click", (e) => {
+    if (e.target.closest(".name, .tag, a, button")) return;           // the name still opens his player page
+    const id = +tr.dataset.bd;
+    LV.open = LV.open || new Set();
+    if (LV.open.has(id)) LV.open.delete(id); else LV.open.add(id);
+    renderLive();
+  }));
   const now = Date.now(), anyLive = evs.some((g) => g.state === "in");
   const pre = evs.filter((g) => g.state === "pre"), due = pre.some((g) => g.tip <= now);   // past tip time, not started yet
   const nextTip = pre.map((g) => g.tip).filter((t) => t > now).sort((a, b) => a - b)[0];
