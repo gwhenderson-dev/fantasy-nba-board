@@ -3122,7 +3122,7 @@ function statusTag(r, lg) {
     return `<span class="tag live" style="margin:0" title="${esc(`Currently playing (${Lv.detail})${where ? ", " + where : ""}.\n${fx(Lv.fp, 1)} FP so far` +
       `${Lv.played ? "" : " (not in the game yet)"} + ${fx(Lv.rest, 1)} expected in the ${Math.round(Lv.left * 100)}% of the game left = ${fx(Lv.proj, 1)} projected` +
       (Lv.starter === false ? "\nOn your bench: his points don't count for you" : ""))}"><i></i>PLAYING</span>` +
-      `<span class="lv-ln">${fx(Lv.fp, 0)} <span class="dim">→ ${fx(Lv.proj, 0)}</span> <small>${esc(Lv.detail)}</small></span>`;
+      `<span class="wk-ln">${fx(Lv.fp, 0)} <span class="dim">→ ${fx(Lv.proj, 0)}</span> <small>${esc(Lv.detail)}</small></span>`;
   }
   const o = off(r.p);
   if (o) {
@@ -4397,11 +4397,19 @@ function renderLive() {
   const strip = `<div class="lv-strip">${all.map((x) => `<button class="lv-mini${x === cur ? " sel" : ""}${[x.A.teamId, x.H.teamId].includes(mt) ? " mine" : ""}" data-pair="${x.key}">` +
     `<span class="tn">${tn(x.A.teamId)}</span><b>${fx(x.A.live, 0)}</b><span class="tn">${tn(x.H.teamId)}</span><b>${fx(x.H.live, 0)}</b></button>`).join("")}</div>`;
   // ---- the score
-  const sideHead = (X, cls) => `<div class="lv-sc ${cls}"><div class="lv-tn${X.teamId === mt ? " mine" : ""}">${tn(X.teamId)}${X.teamId === mt ? ' <span class="tag rk">YOU</span>' : ""}</div>` +
-    `<div class="lv-big">${fx(X.live, 0)}</div>` +
-    `<div class="lv-sub"><span title="Points in starter slots ${isToday ? "today" : "that day"} (ESPN's live total)">${isToday ? "today" : "that day"} ${fx(X.today, 0)}</span>` +
-    (isToday ? ` · <span title="Projected final for the week: live score + what is still to come today (games not started: full projection; games in progress: the share of 48 minutes left) + the best lineup on each remaining day">proj ${fx(X.final, 0)}</span>` : "") + "</div>" +
-    `<div class="lv-cnt" title="Starters: in progress / yet to play / done ${isToday ? "today" : "that day"}"><span class="ip">${X.ip} playing</span> · ${X.ytp} to play · ${X.done} done</div></div>`;
+  // score header (owner 11-14: keep the format, make it better): the live score, a bar of what's banked against
+  // the projected final, and the starters playing / still to play / done as pills
+  const sideHead = (X, cls) => {
+    const fin = isToday && X.final > 0 ? X.final : null, pct = fin ? Math.min(100, X.live / fin * 100) : 0;
+    return `<div class="lv-sc ${cls}"><div class="lv-tn${X.teamId === mt ? " mine" : ""}"><i class="lv-sw ${cls}"></i>${tn(X.teamId)}${X.teamId === mt ? ' <span class="tag rk">YOU</span>' : ""}</div>` +
+      `<div class="lv-big">${fx(X.live, 0)}</div>` +
+      (fin ? `<div class="lv-pbar" title="${esc(`Banked ${fx(X.live, 0)} of a projected ${fx(fin, 0)} (live score + still to come today + the best lineup on the days left)`)}"><i style="width:${pct.toFixed(1)}%"></i></div>` : "") +
+      `<div class="lv-sub"><span title="Points in starter slots ${isToday ? "today" : "that day"} (ESPN's live total)"><b>${fx(X.today, 0)}</b> ${isToday ? "today" : "that day"}</span>` +
+      (fin ? ` <span class="sep">·</span> <span title="Projected final for the matchup">proj <b>${fx(fin, 0)}</b></span>` : "") + "</div>" +
+      `<div class="lv-cnt" title="Starters ${isToday ? "today" : "that day"}: in progress / yet to play / done">` +
+      (X.ip ? `<span class="pl ip"><i></i>${X.ip} playing</span>` : "") + (X.ytp ? `<span class="pl">${X.ytp} to play</span>` : "") + (X.done ? `<span class="pl dn">${X.done} done</span>` : "") +
+      "</div></div>";
+  };
   const wbar = isToday ? `<div class="wrow lv-w" title="Rough win chance: projected final margin against the spread of the games still to come (normal approximation, games independent; untested as a probability)"><b class="wa">${Math.round(cur.A.win * 100)}%</b>` +
     `<div class="wbar"><span class="a" style="width:${(cur.A.win * 100).toFixed(0)}%"></span><span class="h"></span></div><b class="wh">${Math.round(cur.H.win * 100)}%</b></div>` : "";
   const score = `<div class="card lv-score">${sideHead(cur.A, "a")}<div class="lv-vs">${(() => { const d = cur.A.live - cur.H.live, ld = d > 0 ? cur.A : cur.H;
@@ -4420,9 +4428,17 @@ function renderLive() {
     const g = r.g;
     if (!g) return '<span class="dim">no game</span>';
     const vs = `${g.home ? "vs" : "@"} ${g.opp}`;
-    if (g.state === "pre") return `${vs} <span class="dim">${new Date(g.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})}</span>`;
+    if (g.state === "pre") return vs;
     const res = g.state === "post" ? `<b class="${g.us > g.them ? "pos-up" : "pos-dn"}">${g.us > g.them ? "W" : "L"}</b> ` : "";
-    return `${vs} ${res}${g.us}-${g.them} <span class="${g.state === "in" ? "lv-on" : "dim"}">${esc(g.state === "in" ? g.detail : "Final")}</span>`;
+    return `${vs} · ${res}${g.us}-${g.them}`;
+  };
+  // the game's state as a small pill next to his points: tip time, the clock, or Final
+  const statePill = (r) => {
+    const g = r.g;
+    if (!g || !isToday) return "";                       // past days: every game is final, no pill needed
+    if (g.state === "pre") return `<span class="lv-st pre">${new Date(g.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})}</span>`;
+    if (g.state === "in") return `<span class="lv-st in"><i></i>${esc(g.detail.replace(/ - /, " "))}</span>`;
+    return '<span class="lv-st fin">Final</span>';
   };
   const line = (r) => {
     if (!r.st || !r.played) return r.g && r.g.state !== "pre" ? '<span class="dim">' + (r.g.state === "post" ? "did not play" : "not in yet") + "</span>" : "";
@@ -4439,7 +4455,7 @@ function renderLive() {
     const max = Math.max(r.proj * 1.5, end * 1.1, fp * 1.1, 10), pc = (v) => (Math.min(v, max) / max * 100).toFixed(1) + "%";
     const over = r.proj > 0 && fp >= r.proj;
     return `<div class="lv-pb${r.g.state === "pre" ? " pre" : ""}"><div class="lv-tr">` +
-      (live && end > fp + 0.5 ? `<i class="lv-ex" style="left:${pc(fp)};width:${pc(end - fp)}" title="Still to come (estimate): about ${fx(end, 0)} by the end"></i>` : "") +
+      (live && end > fp + 0.5 ? `<i class="lv-ex${fp <= 0 ? " st0" : ""}" style="left:${pc(fp)};width:${pc(end - fp)}" title="Still to come (estimate): about ${fx(end, 0)} by the end"></i>` : "") +
       `<i class="lv-cur${over ? " over" : ""}" style="width:${pc(fp)}"></i>` +
       (r.proj > 0 ? `<b class="lv-tk" style="left:${pc(r.proj)}"></b><span class="lv-tl" style="left:${pc(r.proj)}">proj ${fx(r.proj, 0)}</span>` : "") +
       `</div></div>`;
@@ -4467,7 +4483,7 @@ function renderLive() {
   };
   const row = (r) => {
     const b = bar(r), canBd = r.st && (r.played || r.fp), open = canBd && LV.open && LV.open.has(r.id);
-    return `<tr class="${r.starter ? "" : "bn"}${b ? " hb" : ""}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}${canBd ? " bdok" : ""}${open ? " bdopen" : ""}" data-id="${r.id}"${canBd ? ` data-bd="${r.id}" title="Click for his points, stat by stat"` : ""}>` +
+    return `<tr class="${r.starter ? "" : "bn"}${b ? " hb" : ""}${r.g ? "" : " ng"}${r.g && r.g.state === "in" && r.played ? " on" : ""}${isToday && r.g && r.g.state === "post" ? " done" : ""}${canBd ? " bdok" : ""}${open ? " bdopen" : ""}" data-id="${r.id}"${canBd ? ` data-bd="${r.id}" title="Click for his points, stat by stat"` : ""}>` +
       `<td class="l slt-c">${ESPN_SLOT[r.slot] || (r.slot === 12 ? "BE" : r.slot === 13 ? "IR" : "")}</td>` +
       `<td class="l"><span class="name nm2" data-id="${r.id}">${esc(r.n)}</span> ${r.p ? statusTag({id: r.id, p: r.p, inj: r.inj}, lg).replace('style="margin:0"', 'style="margin:0 0 0 .2rem"') : ""}` +
       `<div class="lv-gm">${r.p ? esc(r.p.tm) + " · " : ""}${gameCell(r)}</div><div>${line(r)}</div></td>` +
@@ -4475,8 +4491,8 @@ function renderLive() {
         (r.proj > 0 ? `\nOur projection for this game: ${fx(r.proj)}` + (isToday && r.g && r.g.state !== "post" ? `\nStill to come (estimate): ${fx(r.exp)} → about ${fx(r.fp + r.exp)}` : "") : "") +
         (r.bump ? `\n${sg(r.bump)} since the last update` : "") + (r.starter ? "" : "\nOn the bench: these points don't count"))}">` +
       `<b>${r.g || r.fp ? fx(r.fp, 0) : '<span class="dim">–</span>'}</b>` +
-      (isToday && r.g && r.g.state === "in" && r.proj > 0 ? `<span class="sub">≈ ${fx(r.fp + r.exp, 0)} by the end</span>` : "") + "</td></tr>" +
-      (b ? `<tr class="lv-br${r.starter ? "" : " bn"}${canBd ? " bdok" : ""}"${canBd ? ` data-bd="${r.id}"` : ""}><td></td><td colspan="2">${b}</td></tr>` : "") +
+      (isToday && r.g && r.g.state === "in" && r.proj > 0 ? `<span class="sub">≈ ${fx(r.fp + r.exp, 0)}</span>` : "") + statePill(r) + "</td></tr>" +
+      (b ? `<tr class="lv-br${r.starter ? "" : " bn"}${isToday && r.g && r.g.state === "post" ? " done" : ""}${canBd ? " bdok" : ""}"${canBd ? ` data-bd="${r.id}"` : ""}><td></td><td colspan="2">${b}</td></tr>` : "") +
       (open ? `<tr class="lv-bdr${r.starter ? "" : " bn"}"><td></td><td colspan="2">${bdown(r)}</td></tr>` : "");
   };
   const tbl = (X) => {

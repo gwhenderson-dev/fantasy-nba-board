@@ -973,8 +973,8 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .tag.live { color: var(--good); border: 1.5px solid var(--good); background: transparent; display: inline-flex; align-items: center; gap: .25rem; }
 .tag.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: lkp 1.6s ease-in-out infinite; }
 .tag.fin { color: var(--ink2); border: 1px solid var(--rule2); background: transparent; }
-.lv-ln { display: block; font-size: .74rem; font-variant-numeric: tabular-nums; margin-top: .1rem; white-space: nowrap; }
-.lv-ln small { color: var(--muted); }
+.wk-ln { display: block; font-size: .74rem; font-variant-numeric: tabular-nums; margin-top: .1rem; white-space: nowrap; }
+.wk-ln small { color: var(--muted); }
 /* step 2: teams that also fit a move (owner 11-14) */
 .sp-tms { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .15rem; }
 .sp-tms .lbl { margin-right: .15rem; }
@@ -1049,3 +1049,58 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .bd-c.p em { color: var(--good); }
 .bd-c.n em { color: var(--red); }
 .bd-sum { margin-top: .45rem; font-size: .78rem; color: var(--ink2); }
+/* Live redesign (owner 11-14): quieter rows, rounded pre-game bars, a better score header */
+.lv-tr .lv-ex.st0 { border-radius: 5px 0 0 5px; }
+.lv-tr { height: 7px; border-radius: 4px; }
+.lv-tr i { border-radius: 4px 0 0 4px; }
+.lv-tr .lv-ex.st0 { border-radius: 4px 0 0 4px; }
+.lv-tk { top: -3px; bottom: -3px; }
+.lv-tl { top: -.95rem; font-size: .64rem; }
+.lv-pb { padding-top: .85rem; }
+.lv-br td { padding-bottom: .5rem; }
+.lv-gm { color: var(--muted); }
+.lv-st { display: inline-block; margin-top: .25rem; font-size: .66rem; font-weight: 650; padding: .05rem .4rem; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--rule2); color: var(--muted); }
+.lv-st.in { color: var(--good); border-color: color-mix(in srgb, var(--good) 55%, transparent); display: inline-flex; align-items: center; gap: .25rem; }
+.lv-st.in i { width: 5px; height: 5px; border-radius: 50%; background: var(--red); animation: lkp 1.6s ease-in-out infinite; }
+.lv-st.fin { background: var(--band); border-color: transparent; }
+.lv-t tr.done > td:not(.lv-fp), .lv-br.done td { opacity: .72; }
+.lv-t tr.done.bn > td, .lv-br.done.bn td { opacity: .5; }
+.lv-fp .sub { margin-top: .05rem; }
+/* score header */
+.lv-score { padding: 1.1rem 1.3rem 1rem; }
+.lv-sw { display: inline-block; width: .6rem; height: .6rem; border-radius: 3px; margin-right: .4rem; vertical-align: 1px; }
+.lv-sw.a { background: var(--accent); } .lv-sw.h { background: var(--ink2); }
+.lv-pbar { height: 6px; border-radius: 3px; background: var(--rule); margin: .35rem 0 .3rem; overflow: hidden; max-width: 16rem; }
+.lv-sc.h .lv-pbar { margin-left: auto; }
+.lv-pbar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.lv-sc.h .lv-pbar i { background: var(--ink2); margin-left: auto; }
+.lv-sub b { font-variant-numeric: tabular-nums; }
+.lv-sub .sep { color: var(--muted); }
+.lv-cnt { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .4rem; }
+.lv-sc.h .lv-cnt { justify-content: flex-end; }
+.lv-cnt .pl { font-size: .7rem; padding: .05rem .45rem; border-radius: 999px; background: var(--band); color: var(--ink2); display: inline-flex; align-items: center; gap: .25rem; }
+.lv-cnt .pl.ip { color: var(--good); font-weight: 650; background: color-mix(in srgb, var(--good) 12%, transparent); }
+.lv-cnt .pl.ip i { width: 5px; height: 5px; border-radius: 50%; background: var(--red); animation: lkp 1.6s ease-in-out infinite; }
+.lv-cnt .pl.dn { color: var(--muted); }
+@media (max-width: 640px) {
+  .lv-score { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); padding: .8rem .8rem .7rem; }
+  .lv-tn { font-size: .78rem; line-height: 1.25; overflow-wrap: anywhere; }
+  .lv-tn .tag { font-size: .55rem; padding: 0 .25rem; vertical-align: 1px; }
+  .lv-sw { width: .5rem; height: .5rem; margin-right: .25rem; }
+  .lv-vs { font-size: .68rem; max-width: 4.2rem; }
+  .lv-vs b { font-size: .95rem; }
+  .lv-sub { font-size: .72rem; }
+  .lv-cnt .pl { font-size: .62rem; }
+  .lv-t .slt-c { width: 2rem; }
+  .bd-c { font-size: .7rem; }
+}
+/* keep each team table inside its card (an open breakdown used to widen it on phones) */
+.lv-cols > * { min-width: 0; }
+.lv-t { table-layout: fixed; }
+.lv-t th:first-child, .lv-t td.slt-c { width: 2.6rem; }
+.lv-t th:last-child { width: 4.6rem; }
+.lv-bd, .bd-sum { max-width: 100%; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .lv-t th:first-child, .lv-t td.slt-c { width: 2rem; } .lv-t th:last-child { width: 3.6rem; } }
+.lv-t td.l, .lv-ln, .lv-gm { white-space: normal; }
+@media (max-width: 640px) { .lv-t th { font-size: .62rem; } }
