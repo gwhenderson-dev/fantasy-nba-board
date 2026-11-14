@@ -1397,6 +1397,27 @@ function liveRecap() {
   }).catch(() => { LIVE_P = null; });
 }
 
+// that night's fantasy lineups from ESPN (owner 11-14: "only the points that counted; played never above 10"):
+// the league feed for the day's scoring period lists every roster with its lineup slot (12 bench, 13 IR)
+const RCL = {};
+function recapLineups(day) {
+  if (L.platform !== "espn" || !/^\d+$/.test(L.id || "")) return null;
+  const k = L.id + "|" + day, x = RCL[k];
+  const stale = x && !(x instanceof Promise) && day === todayET() && Date.now() - (x.at || 0) > 300e3;
+  if (x && !(x instanceof Promise) && !stale) return x.ok ? x : null;
+  if (!x || stale) RCL[k] = fetch(espnBase() + L.id + "?view=mMatchupScore&view=mScoreboard&scoringPeriodId=" + espnPeriod(day), {cache: "no-store"})
+    .then((r) => (r.ok ? r.json() : null)).then((j) => {
+      const out = {owner: {}, slot: {}, ok: false, at: Date.now()};
+      ((j && j.schedule) || []).forEach((m) => ["home", "away"].forEach((s2) => {
+        const sd = m[s2]; if (!sd || !sd.rosterForCurrentScoringPeriod) return;
+        out.ok = true;
+        sd.rosterForCurrentScoringPeriod.entries.forEach((e) => { out.owner[e.playerId] = sd.teamId; out.slot[e.playerId] = e.lineupSlotId; });
+      }));
+      RCL[k] = out;
+      if (out.ok && !$("tab-recap").hidden && RC.day === day) renderRecap();
+    }).catch(() => { RCL[k] = {ok: false, at: Date.now()}; });
+  return x && !(x instanceof Promise) && x.ok ? x : null;
+}
 function renderRecap() {
   if (!RECAP || !GAMES) {
     $("rc-games").innerHTML = '<p class="note">Loading games&hellip;</p>';
@@ -1419,7 +1440,12 @@ function renderRecap() {
   document.querySelectorAll(".rc-next").forEach((b) => { b.disabled = di <= 0; });
 
   const lg = LGRES[L.id], mt = myTeam();
-  const fan = (id) => (lg && lg.owner[id] != null ? lg.byId[lg.owner[id]] : null);
+  // whose player he was that night and whether he was in a starting slot (ESPN's lineup for that day;
+  // today's rosters until it loads or for leagues ESPN can't serve)
+  const DL = lg ? recapLineups(RC.day) : null;
+  const ownOf = (id) => (DL ? DL.owner[id] : lg ? lg.owner[id] : undefined);
+  const counted = (id) => (DL ? DL.slot[id] !== 12 && DL.slot[id] !== 13 : true);
+  const fan = (id) => (lg && ownOf(id) != null ? lg.byId[ownOf(id)] : null);
   const games = RECAP.games.filter((g) => g[1] === RC.day);
   if (RC.g && !games.some((g) => g[0] === RC.g)) RC.g = null;
   const lines = {}, all = [];
@@ -1446,45 +1472,48 @@ function renderRecap() {
   const byFp = all.slice().sort((a, b) => b.fp - a.fp).slice(0, NL);
   const hot = wl.slice().sort((a, b) => b.lk - a.lk).filter((r) => r.lk > 0).slice(0, NL);
   const cold = wl.slice().sort((a, b) => a.lk - b.lk).filter((r) => r.lk < 0).slice(0, NL);
-  const faPop = lg ? all.filter((r) => lg.owner[r.id] == null).sort((a, b) => b.fp - a.fp).slice(0, NL) : [];
+  const faPop = lg ? all.filter((r) => ownOf(r.id) == null).sort((a, b) => b.fp - a.fp).slice(0, NL) : [];
   const minUp = all.filter((r) => BYID[r.id] && BYID[r.id].pmpg && r.min != null)
     .map((r) => Object.assign({}, r, {dm: r.min - BYID[r.id].pmpg})).filter((r) => r.dm >= 6).sort((a, b) => b.dm - a.dm).slice(0, NL);
   // quiet nights: rostered players who got real minutes (20+) and the fewest fantasy points
-  const quiet = lg ? all.filter((r) => lg.owner[r.id] != null && (r.min || 0) >= 20).sort((a, b) => a.fp - b.fp).slice(0, NL) : [];
+  const quiet = lg ? all.filter((r) => ownOf(r.id) != null && (r.min || 0) >= 20).sort((a, b) => a.fp - b.fp).slice(0, NL) : [];
   let board = "", mineCard = "";
   if (lg) {
     const T = lg.teams.map((t) => {
-      const rs = all.filter((r) => lg.owner[r.id] === t.id);
+      const rs = all.filter((r) => ownOf(r.id) === t.id && counted(r.id)), bn = all.filter((r) => ownOf(r.id) === t.id && !counted(r.id));
       return {t, n: rs.length, fp: rs.reduce((a, r) => a + r.fp, 0), lk: rs.reduce((a, r) => a + (r.lk || 0), 0),
-              top: rs.slice().sort((a, b) => b.fp - a.fp)[0]};
+              bn: bn.reduce((a, r) => a + r.fp, 0), nb: bn.length, top: rs.slice().sort((a, b) => b.fp - a.fp)[0]};
     }).sort((a, b) => b.fp - a.fp);
-    const fa = all.filter((r) => lg.owner[r.id] == null);
-    board = '<div class="card nf-board"><h4>League scoreboard <span class="dim" style="font-weight:500;text-transform:none;letter-spacing:0">(today&rsquo;s rosters)</span></h4>' +
-      '<table class="mini"><thead><tr><th class="l">Fantasy team</th><th>Played</th><th>FP</th><th title="Fantasy points minus luck-adjusted points">Luck</th><th class="l">Best</th></tr></thead><tbody>' +
+    const fa = all.filter((r) => ownOf(r.id) == null);
+    board = `<div class="card nf-board"><h4>League scoreboard <span class="dim" style="font-weight:500;text-transform:none;letter-spacing:0">(${DL ? "starters only, as each team set its lineup that night" : "today&rsquo;s rosters, loading that night&rsquo;s lineups&hellip;"})</span></h4>` +
+      '<table class="mini"><thead><tr><th class="l">Fantasy team</th><th title="Starters who played">Played</th><th title="Points from starters only: what counted">FP</th><th title="Fantasy points minus luck-adjusted points (starters)">Luck</th>' +
+      (DL ? '<th title="Points scored by players on the bench (or IR): did not count">Bench</th>' : "") + '<th class="l">Best</th></tr></thead><tbody>' +
       T.map((x, i) => `<tr class="${x.t.id === mt ? "mine" : ""}"><td class="l">${i + 1}. ${esc(x.t.name)}</td><td>${x.n}</td><td class="big">${fx(x.fp, 0)}</td>` +
-        `<td class="${lkCls(x.lk, 10)}">${sg(x.lk, 0)}</td><td class="l">${x.top ? `<span class="nm" data-id="${x.top.id}">${esc(surname(pname(x.top.id)))}</span> <span class="dim">${fx(x.top.fp, 0)}</span>` : ""}</td></tr>`).join("") +
-      `<tr class="dimrow"><td class="l">Free agents</td><td>${fa.length}</td><td>${fx(fa.reduce((a, r) => a + r.fp, 0), 0)}</td><td></td><td class="l">${faPop[0] ? esc(surname(pname(faPop[0].id))) + ' <span class="dim">' + fx(faPop[0].fp, 0) + "</span>" : ""}</td></tr>` +
+        `<td class="${lkCls(x.lk, 10)}">${sg(x.lk, 0)}</td>${DL ? `<td class="dim" title="${x.nb} bench player${x.nb === 1 ? "" : "s"} played">${x.nb ? fx(x.bn, 0) : "–"}</td>` : ""}<td class="l">${x.top ? `<span class="nm" data-id="${x.top.id}">${esc(surname(pname(x.top.id)))}</span> <span class="dim">${fx(x.top.fp, 0)}</span>` : ""}</td></tr>`).join("") +
+      `<tr class="dimrow"><td class="l">Free agents</td><td>${fa.length}</td><td>${fx(fa.reduce((a, r) => a + r.fp, 0), 0)}</td><td></td>${DL ? "<td></td>" : ""}<td class="l">${faPop[0] ? esc(surname(pname(faPop[0].id))) + ' <span class="dim">' + fx(faPop[0].fp, 0) + "</span>" : ""}</td></tr>` +
       "</tbody></table></div>";
     if (mt != null && lg.byId[mt]) {
-      const mine = all.filter((r) => lg.owner[r.id] === mt).sort((a, b) => b.fp - a.fp);
-      const tot = mine.reduce((a, r) => a + r.fp, 0), tl = mine.reduce((a, r) => a + (r.lk || 0), 0);
+      const mine = all.filter((r) => ownOf(r.id) === mt).sort((a, b) => counted(b.id) - counted(a.id) || b.fp - a.fp);
+      const st = mine.filter((r) => counted(r.id));
+      const tot = st.reduce((a, r) => a + r.fp, 0), tl = st.reduce((a, r) => a + (r.lk || 0), 0);
       mineCard = `<div class="card"><h4>Your team<b>${esc(lg.byId[mt].name)}</b></h4>` +
-        (mine.length ? mine.map((r) => srow(r, `${fx(r.fp)} <span class="${lkCls(r.lk)}">(${sg(r.lk)})</span>`, false)).join("") +
-          `<div class="srow" style="border-top:1px solid var(--rule);margin-top:.2rem;padding-top:.25rem"><b>${mine.length} played</b>` +
+        (mine.length ? mine.map((r) => (counted(r.id) ? srow(r, `${fx(r.fp)} <span class="${lkCls(r.lk)}">(${sg(r.lk)})</span>`, false)
+            : srow(r, `<span class="dim">${fx(r.fp)} · bench</span>`, false).replace('class="srow"', 'class="srow bnrow"'))).join("") +
+          `<div class="srow" style="border-top:1px solid var(--rule);margin-top:.2rem;padding-top:.25rem"><b>${st.length} started${mine.length > st.length ? ` · ${mine.length - st.length} on the bench` : ""}</b>` +
           `<span class="v"><b>${fx(tot)}</b> <span class="${lkCls(tl, 8)}">(${sg(tl)} luck)</span></span></div>`
           : '<p class="note" style="margin:0">None of your players played.</p>') +
-        `<p class="note" style="margin:.3rem 0 0;font-size:.74rem">Everyone on your roster today, started or benched.</p></div>`;
+        `<p class="note" style="margin:.3rem 0 0;font-size:.74rem">${DL ? "Your lineup that night; the total counts starters only (bench points shown dimmed)." : "Everyone on your roster today, started or benched (loading that night&rsquo;s lineup)."}</p></div>`;
     }
   }
   // ---- the lists: rank, headshot, team logo, whose player, the number, a bar for its size
   const own = (id) => {
     if (!lg) return "";
-    const o = lg.owner[id];
+    const o = ownOf(id);
     if (o == null) return '<span class="ow fa" title="Free agent">FA</span>';
     if (o === mt) return '<span class="ow me" title="Your player">YOU</span>';
     return `<span class="ow" title="${esc((lg.byId[o] || {}).name || "")}">${esc((lg.byId[o] || {}).ab || "")}</span>`;
   };
-  const lrow = (r, i, val, sub, frac, tone) => `<div class="lr${lg && lg.owner[r.id] === mt ? " mine" : ""}">` +
+  const lrow = (r, i, val, sub, frac, tone) => `<div class="lr${lg && ownOf(r.id) === mt ? " mine" : ""}">` +
     `<i class="lr-bar ${tone || ""}" style="width:${Math.max(0, Math.min(1, frac)) * 100}%"></i>` +
     `<span class="lr-k">${i + 1}</span><span class="lr-who"><span class="nm" data-id="${r.id}">${esc(pname(r.id))}</span>` +
     `<span class="lr-m"><span class="sub">${esc(r.tm)}</span>${own(r.id)}${r.min != null ? `<span class="lr-min">${r.min} min</span>` : ""}</span></span>` +
@@ -1512,7 +1541,7 @@ function renderRecap() {
     const [gid, , aw, hm, ap, hp, , , status] = g;
     const rows = Object.values(lines[gid]).flat().filter((r) => r.fp != null);
     const top = rows.slice().sort((a, b) => b.fp - a.fp)[0];
-    const mineN = mt != null && lg ? rows.filter((r) => lg.owner[r.id] === mt).length : 0;
+    const mineN = mt != null && lg ? rows.filter((r) => ownOf(r.id) === mt).length : 0;
     const side = (t, p, win) => `<div class="gteam${win ? " win" : ""}">${logo(t)}<span>${esc(t)}</span><span class="sc">${p ?? "-"}</span></div>`;
     return `<button class="gcard" data-g="${gid}" aria-pressed="${gid === RC.g}">` +
       side(aw, ap, ap > hp) + side(hm, hp, hp > ap) +
@@ -4755,7 +4784,7 @@ fetchData(false)
     initTips();
     initPhone();
     // console hooks used to verify the math (harmless for visitors)
-    window.FNBA_DEBUG = {live: () => ({LV, renderLive, liveGames}), wl: WL, weekVsProj, wkLeft, relg: () => { Object.keys(LGDATA).forEach((k) => delete LGDATA[k]); return espnLeague(L); }, sw: () => ({lg: LGRES[L.id], L, teamWeek, renderWeek, espnBase, startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
+    window.FNBA_DEBUG = {live: () => ({LV, renderLive, liveGames}), wl: WL, rcl: RCL, rc: RC, weekVsProj, wkLeft, relg: () => { Object.keys(LGDATA).forEach((k) => delete LGDATA[k]); return espnLeague(L); }, sw: () => ({lg: LGRES[L.id], L, teamWeek, renderWeek, espnBase, startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
         return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, caps: P.caps, free: P.free, n: SP.n,

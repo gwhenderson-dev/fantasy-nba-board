@@ -1020,3 +1020,4 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .lr-bar.hot { background: color-mix(in srgb, var(--warn) 75%, transparent); }
 .lr-bar.cold, .lr-bar.good { background: color-mix(in srgb, var(--good) 70%, transparent); }
 .lr-v { min-width: 3.4rem; }
+.srow.bnrow { opacity: .55; }
