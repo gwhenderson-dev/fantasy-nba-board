@@ -1442,12 +1442,15 @@ function renderRecap() {
   const srow = (r, v, own = true) => `<div class="srow"><span class="nm" data-id="${r.id}">${esc(pname(r.id))}</span>` +
     `<span class="sub">${esc(r.tm)}${own && fan(r.id) ? " · " + esc(fan(r.id).ab) : ""}</span><span class="v">${v}</span></div>`;
   const wl = all.filter((r) => r.lk != null);
-  const byFp = all.slice().sort((a, b) => b.fp - a.fp).slice(0, 6);
-  const hot = wl.slice().sort((a, b) => b.lk - a.lk).filter((r) => r.lk > 0).slice(0, 6);
-  const cold = wl.slice().sort((a, b) => a.lk - b.lk).filter((r) => r.lk < 0).slice(0, 6);
-  const faPop = lg ? all.filter((r) => lg.owner[r.id] == null).sort((a, b) => b.fp - a.fp).slice(0, 6) : [];
+  const NL = 10;                                            // owner 11-14: ten per list
+  const byFp = all.slice().sort((a, b) => b.fp - a.fp).slice(0, NL);
+  const hot = wl.slice().sort((a, b) => b.lk - a.lk).filter((r) => r.lk > 0).slice(0, NL);
+  const cold = wl.slice().sort((a, b) => a.lk - b.lk).filter((r) => r.lk < 0).slice(0, NL);
+  const faPop = lg ? all.filter((r) => lg.owner[r.id] == null).sort((a, b) => b.fp - a.fp).slice(0, NL) : [];
   const minUp = all.filter((r) => BYID[r.id] && BYID[r.id].pmpg && r.min != null)
-    .map((r) => Object.assign({}, r, {dm: r.min - BYID[r.id].pmpg})).filter((r) => r.dm >= 8).sort((a, b) => b.dm - a.dm).slice(0, 6);
+    .map((r) => Object.assign({}, r, {dm: r.min - BYID[r.id].pmpg})).filter((r) => r.dm >= 6).sort((a, b) => b.dm - a.dm).slice(0, NL);
+  // quiet nights: rostered players who got real minutes (20+) and the fewest fantasy points
+  const quiet = lg ? all.filter((r) => lg.owner[r.id] != null && (r.min || 0) >= 20).sort((a, b) => a.fp - b.fp).slice(0, NL) : [];
   let board = "", mineCard = "";
   if (lg) {
     const T = lg.teams.map((t) => {
@@ -1473,16 +1476,34 @@ function renderRecap() {
         `<p class="note" style="margin:.3rem 0 0;font-size:.74rem">Everyone on your roster today, started or benched.</p></div>`;
     }
   }
-  const list = (title, rows, fn, empty = "-") => `<div class="card"><h4>${title}</h4>${rows.map(fn).join("") || `<p class="note" style="margin:0">${empty}</p>`}</div>`;
+  // ---- the lists: rank, headshot, team logo, whose player, the number, a bar for its size
+  const own = (id) => {
+    if (!lg) return "";
+    const o = lg.owner[id];
+    if (o == null) return '<span class="ow fa" title="Free agent">FA</span>';
+    if (o === mt) return '<span class="ow me" title="Your player">YOU</span>';
+    return `<span class="ow" title="${esc((lg.byId[o] || {}).name || "")}">${esc((lg.byId[o] || {}).ab || "")}</span>`;
+  };
+  const lrow = (r, i, val, sub, frac, tone) => `<div class="lr${lg && lg.owner[r.id] === mt ? " mine" : ""}">` +
+    `<i class="lr-bar ${tone || ""}" style="width:${Math.max(0, Math.min(1, frac)) * 100}%"></i>` +
+    `<span class="lr-k">${i + 1}</span><span class="lr-who"><span class="nm" data-id="${r.id}">${esc(pname(r.id))}</span>` +
+    `<span class="lr-m"><span class="sub">${esc(r.tm)}</span>${own(r.id)}${r.min != null ? `<span class="lr-min">${r.min} min</span>` : ""}</span></span>` +
+    `<span class="lr-v">${val}${sub ? `<small>${sub}</small>` : ""}</span></div>`;
+  const mx = (rows, f) => Math.max(1e-9, ...rows.map((r) => Math.abs(f(r))));
+  const list = (cls, title, hint, rows, fn, empty = "-") => `<div class="card nf-l ${cls}"><h4><i class="nf-dot"></i>${title}<span class="nf-hint">${hint}</span></h4>` +
+    (rows.map(fn).join("") || `<p class="note" style="margin:0">${empty}</p>`) + "</div>";
+  const lkTxt = (r) => (r.lk != null ? `<span class="${lkCls(r.lk)}">${sg(r.lk)} luck</span>` : "");
   $("rc-sthead").textContent = dlabel(RC.day);
+  const mF = mx(byFp, (r) => r.fp), mH = mx(hot, (r) => r.lk), mC = mx(cold, (r) => r.lk), mA = mx(faPop, (r) => r.fp), mM = mx(minUp, (r) => r.dm);
   $("rc-stand").innerHTML =
     (board || mineCard ? `<div class="nf-top">${board}${mineCard}</div>` : "") +
-    '<div class="stand">' +
-    list("Top fantasy scores", byFp, (r) => srow(r, fx(r.fp))) +
-    list("Ran hot (box score flatters)", hot, (r) => srow(r, `<span class="pos-dn">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)) +
-    list("Ran cold (better than it looks)", cold, (r) => srow(r, `<span class="pos-up">${sg(r.lk)}</span> <span class="sub">${fx(r.fp)} fp</span>`)) +
-    (lg ? list("Free agents who popped", faPop, (r) => srow(r, `${fx(r.fp)} <span class="sub">${r.lk != null ? sg(r.lk) + " luck" : ""}</span>`, false), "No free agents played") : "") +
-    list("Minutes up (vs his usual)", minUp, (r) => srow(r, `<span class="pos-up">+${r.dm.toFixed(0)} min</span> <span class="sub">${r.min} min · ${fx(r.fp)} fp</span>`), "Nobody played 8+ minutes over his norm") +
+    '<div class="stand nf-lists">' +
+    list("t-top", "Top fantasy scores", "the night&rsquo;s best", byFp, (r, i) => lrow(r, i, fx(r.fp), lkTxt(r), r.fp / mF, "acc")) +
+    list("t-hot", "Ran hot", "the box score flatters him: fade", hot, (r, i) => lrow(r, i, `<span class="pos-dn">${sg(r.lk)}</span>`, `${fx(r.fp)} fp`, r.lk / mH, "hot")) +
+    list("t-cold", "Ran cold", "better than it looks: buy", cold, (r, i) => lrow(r, i, `<span class="pos-up">${sg(r.lk)}</span>`, `${fx(r.fp)} fp`, -r.lk / mC, "cold")) +
+    (lg ? list("t-fa", "Free agents who popped", "on nobody&rsquo;s roster", faPop, (r, i) => lrow(r, i, fx(r.fp), lkTxt(r), r.fp / mA, "good"), "No free agents played") : "") +
+    list("t-min", "Minutes up", "vs his usual minutes", minUp, (r, i) => lrow(r, i, `<span class="pos-up">+${r.dm.toFixed(0)} min</span>`, `${fx(r.fp)} fp`, r.dm / mM, "good"), "Nobody played 6+ minutes over his norm") +
+    (lg ? list("t-quiet", "Quiet nights", "rostered, 20+ minutes, fewest points", quiet, (r, i) => lrow(r, i, fx(r.fp), lkTxt(r), 0, "dim"), "-") : "") +
     "</div>";
 
   // ---- game cards
