@@ -965,3 +965,7 @@ button.sp-nt:hover { border-color: var(--accent); }
 .sp-spot b { color: var(--c, var(--accent)); }
 .sp-tll small { display: block; font-weight: 500; font-size: .66rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-stuck { margin: -.3rem 0 .8rem; }
+/* My week: a game that has tipped off locks like a played day; a small live dot while it's on */
+td.dg.lk { position: relative; }
+td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: lkp 1.6s ease-in-out infinite; }
+@keyframes lkp { 50% { opacity: .25; } }
