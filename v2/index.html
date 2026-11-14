@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=ceb52a0cbd">
+<link rel="stylesheet" href="app.css?v=3605e54e60">
 </head>
 <body>
 <header class="top">
@@ -262,14 +262,6 @@
   <section class="panel" id="tab-recap" hidden>
     <h1>Daily recap</h1>
     <p class="lede" id="rc-lede"></p>
-    <div class="controls"><div class="ctl"><label for="rc-day2">Day</label>
-      <div class="daynav"><button class="btn rc-prev" aria-label="Previous day">&lsaquo;</button>
-        <select id="rc-day2" class="rc-daysel"></select>
-        <button class="btn rc-next" aria-label="Next day">&rsaquo;</button></div></div></div>
-    <details class="card fold rc-fold" id="rc-fold" open>
-      <summary class="sp-head"><span class="sp-hi">The night in fantasy</span><span class="sp-hsub">league-wide recap: every fantasy team&rsquo;s night, top scores, who ran hot and cold</span> <span class="dim" id="rc-sthead"></span></summary>
-      <div id="rc-stand"></div>
-    </details>
     <div class="controls">
       <div class="ctl"><label for="rc-day">Day</label>
         <div class="daynav"><button class="btn rc-prev" id="rc-prev" aria-label="Previous day">&lsaquo;</button>
@@ -280,6 +272,10 @@
     <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-dn"><b>+4.2</b></span> luck: ran hot, the box score flatters him &middot; <span class="pos-up"><b>&minus;3.1</b></span> ran cold, better than it looks</span><span class="lg-i"><span class="lgrow">Name</span> your player</span><span class="lg-i"><span class="lgrow theirs">Name</span> on another fantasy team (the Fantasy column says whose; FA = free agent)</span></div>
     <div class="games" id="rc-games"></div>
     <div id="rc-box"></div>
+    <details class="card fold rc-fold" id="rc-fold" open>
+      <summary class="sp-head"><span class="sp-hi">The night in fantasy</span><span class="sp-hsub">league-wide recap: every fantasy team&rsquo;s night, top scores, who ran hot and cold</span> <span class="dim" id="rc-sthead"></span></summary>
+      <div id="rc-stand"></div>
+    </details>
   </section>
   <section class="panel" id="tab-live" hidden>
     <h1>Live</h1>
