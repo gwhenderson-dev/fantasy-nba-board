@@ -1021,3 +1021,9 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .lr-bar.cold, .lr-bar.good { background: color-mix(in srgb, var(--good) 70%, transparent); }
 .lr-v { min-width: 3.4rem; }
 .srow.bnrow { opacity: .55; }
+/* owner 11-14: calmer — no bars, no banding; your players get a subtle row tint */
+.lr-bar { display: none !important; }
+.lr:nth-child(odd of .lr) { background: none; }
+.lr + .lr { margin-top: 0; border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
+.lr.mine { box-shadow: none; background: var(--accent-bg) !important; }
+.lr.mine + .lr, .lr + .lr.mine { border-top-color: transparent; }
