@@ -2842,10 +2842,17 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
   // the visitor's per-game lineup choices: 1 = start him, 0 = bench him
   const LU = lineupMarks(wk, teamId);
   const choice = (id, d) => (LU[id] && d in LU[id] ? LU[id][d] : null);
+  // tonight, once his game has tipped off, ESPN's lineup is locked: started = start, bench = bench
+  const locked = (id, d) => { const p = BYID[id], e = d === today && WL.day === today && p && wkGame(p, d) !== "pre" ? WL.ent[id] : null;
+    return e ? (e.slot !== 12 && e.slot !== 13 ? 1 : 0) : null; };
+  // tonight: a player ESPN shows on the court counts as playing whatever his injury tag said
+  if (WL.day === today) ps.forEach((r) => { const i = days.indexOf(today); if (i < 0 || !r.p) return;
+    const x = r.days[i], L2 = wkLiveLine(r.p, x, today);
+    if (L2 && L2.played && x.g && !x.avail && !x.off) { const v = fpg(r.p.s, r.p.bp) || 0; Object.assign(x, {avail: true, val: v, v, play: 1, sd2: x.sd2 || 0, live: true}); } });
   const out = {ps, days: days.map((d, i) => ({d, past: d < today, open: 0, started: 0, playing: 0, pts: 0, over: 0}))};
   days.forEach((d, i) => {
     const playing = ps.filter((r) => r.days[i].avail);
-    playing.forEach((r) => { r.games++; r.days[i].pick = choice(r.id, d); });
+    playing.forEach((r) => { r.games++; const lk = locked(r.id, d); r.days[i].lock = lk != null; r.days[i].pick = lk != null ? lk : choice(r.id, d); });
     const av = playing.filter((r) => r.days[i].pick !== 0);
     // forced starters outrank everyone, so they get a slot whenever one fits
     const Wm = av.map((r) => SLOTS.map((s) => (r.elig.includes(s)
@@ -2854,7 +2861,10 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     av.forEach((r, k) => {
       if (res.rc[k] >= 0) {
         r.days[i].st = true; r.starts++; r.days[i].slot = SLOTS[res.rc[k]];
-        if (d >= today) { const lf = d === today ? wkLeft(r.p, d) : 1; r.pts += r.days[i].val * lf; r.var += r.days[i].sd2 * lf; }
+        if (d >= today) {
+          const L2 = d === today ? wkLiveLine(r.p, r.days[i], today) : null;
+          r.pts += L2 ? L2.rest : r.days[i].val; r.var += r.days[i].sd2 * (L2 ? L2.left : 1);
+        }
       } else if (r.days[i].pick === 1) r.days[i].noslot = true;
     });
     const D = out.days[i];
@@ -2862,7 +2872,8 @@ function teamWeek(lg, teamId, days, wk, SLOTS, today) {
     D.over = av.filter((r) => r.days[i].noslot).length;
     const used = new Set(res.rc.filter((c) => c >= 0));
     D.openSlots = SLOTS.filter((_, j) => !used.has(j)).map((sid) => ESPN_SLOT[sid]);
-    D.pts = d >= today ? av.reduce((a, r, k) => a + (res.rc[k] >= 0 ? r.days[i].val * (d === today ? wkLeft(r.p, d) : 1) : 0), 0) : 0;
+    D.pts = d >= today ? av.reduce((a, r, k) => { if (res.rc[k] < 0) return a;
+      const L2 = d === today ? wkLiveLine(r.p, r.days[i], today) : null; return a + (L2 ? L2.rest : r.days[i].val); }, 0) : 0;
   });
   out.rem = ps.reduce((a, r) => a + r.pts, 0);
   out.var = ps.reduce((a, r) => a + r.var, 0);
@@ -2944,7 +2955,7 @@ function startWeek(R, tid, days, ws, SLOTS, today) {
 // (green dot = in ESPN's starting lineup, hollow = bench), and finished games count in "Scored vs
 // expected" the same night. ESPN league feed for today's scoring period (each roster's actual lineup and
 // points) + ESPN's NBA scoreboard (game state). Re-read at most once a minute while games are on.
-const WL = {day: null, j: null, sb: null, at: 0, busy: null, timer: null, state: {}, ent: {}};
+const WL = {day: null, j: null, sb: null, at: 0, busy: null, timer: null, state: {}, ent: {}, det: {}};
 function wkLiveLoad(today, force) {
   if (L.platform !== "espn" || !/^\d+$/.test(L.id || "")) return Promise.resolve(false);
   if (WL.busy) return WL.busy;
@@ -2954,15 +2965,16 @@ function wkLiveLoad(today, force) {
     fetch(espnBase() + L.id + "?view=mMatchupScore&view=mScoreboard&scoringPeriodId=" + P, {cache: "no-store"}).then((r) => (r.ok ? r.json() : null)),
     espnSite("scoreboard", "dates=" + today.replace(/-/g, ""))]).then(([j, sb]) => {
     WL.day = today; WL.j = j; WL.sb = sb; WL.at = Date.now(); WL.P = P;
-    WL.state = {}; WL.ent = {};
+    WL.state = {}; WL.ent = {}; WL.det = {};
     ((sb && sb.events) || []).forEach((e) => {
       const st = ((e.status || {}).type || {}).state || "pre";
-      (e.competitions[0].competitors || []).forEach((t) => { WL.state[ETRI[t.team.abbreviation] || t.team.abbreviation] = st; });
+      (e.competitions[0].competitors || []).forEach((t) => { const tri = ETRI[t.team.abbreviation] || t.team.abbreviation;
+        WL.state[tri] = st; WL.det[tri] = ((e.status || {}).type || {}).shortDetail || ""; });
     });
     ((j && j.schedule) || []).forEach((m) => ["home", "away"].forEach((k) => {
       const sd = m[k]; if (!sd || !sd.rosterForCurrentScoringPeriod) return;
       sd.rosterForCurrentScoringPeriod.entries.forEach((e) => { const x = liveStat(e, P);
-        WL.ent[e.playerId] = {slot: e.lineupSlotId, fp: x ? x.appliedTotal || 0 : null}; });
+        WL.ent[e.playerId] = {slot: e.lineupSlotId, fp: x ? x.appliedTotal || 0 : null, min: x && x.stats ? x.stats[40] || 0 : 0}; });
       // the live score on the matchup cards
       const mm = (WK.mm || []).find((x) => x.id === m.id);
       if (mm && mm[k]) { mm[k].totalPointsLive = sd.totalPointsLive; mm[k].totalPoints = sd.totalPoints; }
@@ -2981,6 +2993,20 @@ function wkLeft(p, d) {
   const e = ((WL.sb && WL.sb.events) || []).find((ev) => (ev.competitions[0].competitors || []).some((t) => (ETRI[t.team.abbreviation] || t.team.abbreviation) === p.tm));
   const S = (e && e.status) || {}, per = S.period || 0, clk = S.clock != null ? S.clock : 720;
   return per > 4 ? 0 : Math.max(0, 2880 - ((per - 1) * 720 + (720 - clk))) / 2880;
+}
+// a player whose game has tipped off (owner 11-14: "pull the live projection into a Currently playing status"):
+// his ESPN lineup is locked, his points so far are known, and the rest of his game is projected as on the
+// Live tab: on the court = his per-game value if he plays (no sit odds left) x share of 48 minutes to go,
+// not yet in = the usual per-game value x that share, final = nothing left
+function wkLiveLine(p, x, today) {
+  if (!p || !x || x.d !== today || WL.day !== today) return null;
+  const st = wkGame(p, today);
+  if (st === "pre") return null;
+  const e = WL.ent[p.id] || null, played = !!e && (e.min > 0 || (e.fp || 0) !== 0), left = wkLeft(p, today);
+  const per = played ? (x.v != null ? x.v : x.val) : x.val;
+  const rest = st === "post" ? 0 : per * left;
+  return {st, e, played, left, rest, fp: e && e.fp != null ? e.fp : 0, starter: e ? e.slot !== 12 && e.slot !== 13 : null,
+    detail: WL.det[p.tm] || "", proj: (e && e.fp != null ? e.fp : 0) + rest};
 }
 function weekVsProj(p, ws, today) {
   if (!GAMES || !p) return null;
@@ -3003,6 +3029,15 @@ function weekVsProj(p, ws, today) {
 }
 // colour-coded status for a My week row: official report > IR slot > live ESPN
 function statusTag(r, lg) {
+  const td = todayET(), x = (r.days || []).find((y) => y.d === td), Lv = r.p && x ? wkLiveLine(r.p, x, td) : null;
+  if (Lv) {
+    const where = Lv.starter == null ? "" : Lv.starter ? "in your lineup" : "on your bench";
+    if (Lv.st === "post") return `<span class="tag fin" style="margin:0" title="${esc(`Final${where ? ", " + where : ""}: ${fx(Lv.fp, 1)} FP`)}">FINAL ${fx(Lv.fp, 0)}</span>`;
+    return `<span class="tag live" style="margin:0" title="${esc(`Currently playing (${Lv.detail})${where ? ", " + where : ""}.\n${fx(Lv.fp, 1)} FP so far` +
+      `${Lv.played ? "" : " (not in the game yet)"} + ${fx(Lv.rest, 1)} expected in the ${Math.round(Lv.left * 100)}% of the game left = ${fx(Lv.proj, 1)} projected` +
+      (Lv.starter === false ? "\nOn your bench: his points don't count for you" : ""))}"><i></i>PLAYING</span>` +
+      `<span class="lv-ln">${fx(Lv.fp, 0)} <span class="dim">→ ${fx(Lv.proj, 0)}</span> <small>${esc(Lv.detail)}</small></span>`;
+  }
   const o = off(r.p);
   if (o) {
     const lbl = {Out: "OUT", Doubtful: "DOUBT", Questionable: "Q", Probable: "PROB"}[o[0]];
@@ -3378,7 +3413,7 @@ function renderWeek() {
       (x.st && x.slot != null || big ? `<span class="slt">${x.st && x.slot != null ? ESPN_SLOT[x.slot] + (big ? " " : "") : ""}` +
         (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
-  const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length + (r.manual ? 1 : 0), 0);
+  const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && !x.lock && x.d >= today).length + (r.manual ? 1 : 0), 0);
   return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; ${esc(PER.label)}</h2>` +
     `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
     (SW ? (() => { const S = SW[tid], lv = liveOf(tid), now = over ? lv : T.final, dlt = now - S.tot;

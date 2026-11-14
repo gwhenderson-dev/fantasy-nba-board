@@ -969,3 +969,9 @@ button.sp-nt:hover { border-color: var(--accent); }
 td.dg.lk { position: relative; }
 td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: lkp 1.6s ease-in-out infinite; }
 @keyframes lkp { 50% { opacity: .25; } }
+/* My week: currently playing / final */
+.tag.live { color: var(--good); border: 1.5px solid var(--good); background: transparent; display: inline-flex; align-items: center; gap: .25rem; }
+.tag.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: lkp 1.6s ease-in-out infinite; }
+.tag.fin { color: var(--ink2); border: 1px solid var(--rule2); background: transparent; }
+.lv-ln { display: block; font-size: .74rem; font-variant-numeric: tabular-nums; margin-top: .1rem; white-space: nowrap; }
+.lv-ln small { color: var(--muted); }
