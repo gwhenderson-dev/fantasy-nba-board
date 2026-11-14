@@ -956,3 +956,12 @@ button.sp-nt:hover { border-color: var(--accent); }
 .sp-nt.wk2, .sp-tlh.wk2 { box-shadow: -4px 0 0 -1px var(--ink2); }
 .sp-strip i.h.wk2 { box-shadow: -3px 0 0 -1px var(--ink2); padding-left: 2px; }
 .sp-tag.mx { color: var(--accent); border-color: var(--accent); }
+/* roster spots (owner 11-14: "who replaces what player in what slot") */
+.sp-ch { display: flex; flex-direction: column; gap: .05rem; margin: -.1rem 0 .25rem 1rem; padding-left: .55rem; border-left: 2px solid var(--rule2); font-size: .78rem; line-height: 1.35; }
+.sp-ch small { color: var(--muted); font-size: .72rem; }
+.sp-sl em::before { content: "· "; }
+.sp-moves .sp-mv { border-left: 5px solid var(--c, var(--accent)); }
+.sp-spot { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.sp-spot b { color: var(--c, var(--accent)); }
+.sp-tll small { display: block; font-weight: 500; font-size: .66rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-stuck { margin: -.3rem 0 .8rem; }

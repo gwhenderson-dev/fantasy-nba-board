@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=a7e206d410">
+<link rel="stylesheet" href="app.css?v=ba9d4ed2a0">
 </head>
 <body>
 <header class="top">
@@ -197,7 +197,7 @@
     <details class="card sp-card" id="sp-box" open>
       <summary class="sp-head"><span class="sp-hi">Streaming planner</span><span class="sp-hsub">who to pick up, and on which days, for the most games</span> <span class="dim" id="sp-sum"></span></summary>
       <div class="controls" style="margin-top:.6rem">
-        <div class="ctl"><span class="lbl">Players you&rsquo;ll drop</span><div class="chips" id="sp-n">
+        <div class="ctl"><span class="lbl" title="How many of your players the planner may drop. Each one opens a roster spot to stream through: with 1, all your adds chain through the same spot">Spots to stream <span class="dim">(players you&rsquo;ll drop)</span></span><div class="chips" id="sp-n">
           <button class="chip" data-n="0" aria-pressed="false">0</button>
           <button class="chip" data-n="1" aria-pressed="true">1</button>
           <button class="chip" data-n="2" aria-pressed="false">2</button>
@@ -643,13 +643,13 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
       The planner always aims for games: it counts expected starts, each projected point worth 1/200 of a start (so a whole start always
       wins, but a much better player beats a small rest risk). In a points league a start you would otherwise leave empty is worth far more
       than the points gap between two streamers, so a separate &ldquo;most points&rdquo; aim was removed. The planner works in two steps.
-      <strong>Step 1, strategies</strong>: told by days and games only. One-move strategies are found exhaustively (every spot you&rsquo;d give
-      up &times; every free agent &times; every day you could make the move, best for each day); two- and three-move strategies are the
-      sequence search above with exactly that many adds, shown only when they beat the best single move. A last card,
-      &ldquo;every add&rdquo; (or &ldquo;max streaming&rdquo; when another add would gain nothing), uses all the adds you have left
-      (both weeks under &ldquo;Both&rdquo;), taking any add worth 0.05 expected starts or more instead of 0.3: the most games your adds can buy. Strategies that start on the
-      same nights count as one (the later add day is kept, so you hold your player and the news longer). Above them, each night shows
-      your open starter slots and how many NBA games there are; click a night to list the free agents who play it.
+      <strong>Step 1, strategies</strong>: told by days and games only, one card per number of adds from 3 up to all you have
+      left (fewer only when fewer are left), each the most starts that many adds can buy (any add worth 0.05 expected starts is
+      taken), plus up to two with the same number of adds on other days (the best plan with one of its move days ruled out). Each
+      roster spot you give up is a <em>spot</em>: its first pickup replaces your player, later pickups in that spot replace the
+      previous pickup. With one spot every add chains through it, so a 4th add often buys nothing; each extra player you let go
+      opens another spot (&ldquo;Spots to stream&rdquo;, default 2). Above the cards, each night shows your open starter slots and how
+      many NBA games there are; click a night to list the free agents who play it.
       <strong>Step 2, players</strong>: for each move of the strategy you pick, the free agents who could hold that spot on the same days,
       ranked by the plan&rsquo;s total with everything else unchanged; the best is chosen, click another to use him instead (&ldquo;rest risk&rdquo;
       = same starts, but he may sit a back-to-back night). &ldquo;Next one&rdquo; plans next matchup, Monday to Sunday, from your roster as it
@@ -791,6 +791,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=b6bf44d208"></script>
+<script src="app.js?v=9b910d89d8"></script>
 </body>
 </html>
