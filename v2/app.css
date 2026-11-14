@@ -975,3 +975,12 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .tag.fin { color: var(--ink2); border: 1px solid var(--rule2); background: transparent; }
 .lv-ln { display: block; font-size: .74rem; font-variant-numeric: tabular-nums; margin-top: .1rem; white-space: nowrap; }
 .lv-ln small { color: var(--muted); }
+/* step 2: teams that also fit a move (owner 11-14) */
+.sp-tms { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .15rem; }
+.sp-tms .lbl { margin-right: .15rem; }
+.sp-tmc { display: inline-flex; align-items: center; gap: .2rem; font: inherit; font-size: .76rem; color: var(--ink); background: var(--band);
+  border: 1px solid transparent; border-radius: 999px; padding: .15rem .55rem .15rem .35rem; cursor: pointer; }
+.sp-tmc:hover { border-color: var(--accent); }
+.sp-tmc[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); }
+.sp-tmc small { color: var(--muted); font-size: .68rem; }
+.sp-tmpk { margin-top: .3rem; padding-left: .6rem; border-left: 2px solid var(--accent); }

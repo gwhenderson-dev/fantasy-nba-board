@@ -2137,7 +2137,7 @@ function planStream() {
   });
   const tally = (Ls) => ({starts: Ls.reduce((a, x) => a + x.starts, 0), pts: Ls.reduce((a, x) => a + x.pts, 0), games: Ls.reduce((a, x) => a + x.games, 0)});
   const before = lineup(mem), b0 = tally(before);
-  const byId = new Map(pool.map((f) => [f.id, f]));
+  const byId = new Map(all.map((f) => [f.id, f]));
   // a plan = the roster it ends with (fin) + its moves; each move's holder h is in fin
   const finish = (fin, moves) => {
     const after = lineup(fin), a0 = tally(after);
@@ -2205,15 +2205,33 @@ function planStream() {
   // ---- STEP 2: the players for a chosen strategy's moves
   // every free agent who could hold that move's spot for the same days, the rest
   // of the plan as it stands, ranked by the plan's total (games or points)
-  const options = (Q, k) => {
+  // owner 11-14: top 3 (plus your own pick if it isn't one), or the best on one NBA team (team = tricode)
+  const options = (Q, k, team) => {
     const mv = Q.moves[k], h = mv.h, inPlan = new Set(Q.fin.filter((m) => m !== h).map((m) => m.id)), tot0 = total(Q.fin);
-    return pool.filter((c) => !inPlan.has(c.id) && c.w.slice(h.from, h.to).some((v) => v > 0))
+    const sc = (team ? all.filter((c) => c.p.tm === team) : pool.concat(pool.some((c) => c.id === mv.f.id) ? [] : [byId.get(mv.f.id)].filter(Boolean)))
+      .filter((c) => !inPlan.has(c.id) && c.w.slice(h.from, h.to).some((v) => v > 0))
       .map((c) => { const nh = Object.assign({}, c, {from: h.from, to: h.to}); const ms = Q.fin.map((m) => (m === h ? nh : m)); return {c, ms, v: total(ms) - tot0}; })
-      .sort((x, y) => y.v - x.v).slice(0, 4)
+      .sort((x, y) => y.v - x.v);
+    const top = sc.slice(0, 3);
+    if (!team) { const me = sc.find((x) => x.c.id === mv.f.id); if (me && !top.includes(me)) top.push(me); }
+    return top
       .map((x) => { const L2 = lineup(x.ms), t = tally(L2);
         const st = days.map((_, i) => i >= h.from && i < h.to && L2[i].ids.has(x.c.id));
         return {c: x.c, st, n: st.filter(Boolean).length, pts: days.reduce((a, _, i) => a + (st[i] ? x.c.dv[i].val : 0), 0),
           dSt: t.starts - Q.a0.starts, dPts: t.pts - Q.a0.pts, dG: t.games - Q.a0.games}; });
+  };
+  // NBA teams whose schedule fits a move: they play on every night the pickup starts, and have a free agent who'd
+  // start for you then (best first: more of the move's nights covered, then the best free agent's value)
+  const teamsFor = (Q, k) => {
+    const mv = Q.moves[k], h = mv.h, need = days.map((_, i) => i).filter((i) => mv.starts[i]);
+    const inPlan = new Set(Q.fin.map((m) => m.id)), by = {};
+    all.forEach((c) => {
+      if (inPlan.has(c.id) || !need.every((i) => c.dv[i].avail)) return;
+      const v = c.w.slice(h.from, h.to).reduce((a, x) => a + x, 0);
+      const t = (by[c.p.tm] = by[c.p.tm] || {tm: c.p.tm, n: 0, best: null, v: -1, g: c.dv.slice(h.from, h.to).filter((x) => x.avail).length});
+      t.n++; if (v > t.v) { t.v = v; t.best = c; }
+    });
+    return Object.values(by).sort((x, y) => y.g - x.g || y.v - x.v).slice(0, 8);
   };
   // a strategy with your own picks swapped in (ch: move index -> player id)
   const choose = (Q, ch) => {
@@ -2229,7 +2247,7 @@ function planStream() {
     });
     return Object.assign(finish(fin, moves), {sig: Q.sig, best: Q.best, alt: Q.alt, A: Q.A});
   };
-  return {days, PER, PERS, per, caps, canMove, stuck, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose};
+  return {days, PER, PERS, per, caps, canMove, stuck, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose, teamsFor};
 }
 const ESPN_AB = Object.fromEntries(Object.entries(ETRI).map(([k, v]) => [v, k.toLowerCase()]));
 const headshot = (id, cls = "sp-hs") => `<img class="${cls}" src="https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${id}.png&w=96&h=70&scale=crop" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`;
@@ -2365,6 +2383,16 @@ function renderPlanner() {
           `<span class="sp-pn">${a !== b ? `${b}<i>→</i><b class="${a > b ? "pos-up" : "pos-dn"}">${a}</b>` : `${a}`}<small>/${P.slots}</small></span></div>`;
       }).join("") + "</div>";
     // one card per move: the free agents who fit those days; click one to use him
+    // teams that also fit this move; click one to list its free agents for the same days
+    const teamRow = (mv, k, row) => {
+      const ts = P.teamsFor(Q, k), sel = (SP.team || {})[k], ds = dayList(mv);
+      if (!ts.length) return "";
+      const chips = ts.map((t) => `<button type="button" class="sp-tmc" data-tmv="${k}" data-tm="${t.tm}" aria-pressed="${sel === t.tm}" title="${esc(`${TEAM_NAMES[t.tm] || t.tm}: plays ${ds.join(", ")}` +
+        `${t.g > ds.length ? ` (${t.g} games in this window)` : ""}; ${t.n} free agent${t.n === 1 ? "" : "s"} who'd start then, best ${t.best.n}`)}">${teamLogo(t.tm)}<b>${t.tm}</b><small>${t.n}</small></button>`).join("");
+      const list = sel ? P.options(Q, k, sel) : [];
+      return `<div class="sp-tms"><span class="lbl" title="NBA teams that play every night this pickup starts (${esc(ds.join(", "))}); the number is how many of their free agents would start for you then">Also fits</span>${chips}</div>` +
+        (sel ? `<div class="sp-pks sp-tmpk">${list.length ? list.map(row).join("") : '<p class="note">No free agent on this team fits.</p>'}</div>` : "");
+    };
     const pickCard = (mv, k) => {
       const h = mv.h, o = dropOf(Q, mv), opts = P.options(Q, k);
       const lost = mv.prev < 0 && o && o.orig ? P.days.map((d, i) => (i >= mv.t && o.dv[i].avail && P.before[i].ids.has(o.id) ? dn(d) : null)).filter(Boolean) : [];
@@ -2385,7 +2413,7 @@ function renderPlanner() {
       return `<div class="sp-mv" style="--c:${hue(mv.spot)}"><div class="sp-when"><b>${dn(P.days[mv.t])}</b><span>${md(P.days[mv.t])}</span></div>` +
         `<div class="sp-body"><div class="sp-spot"><b>Spot ${mv.spot}</b> · pickup ${pos} of ${nIn}</div>` +
         `<div class="sp-need">${mv.prev >= 0 ? "Swap in" : "Add"} someone who plays <b>${esc(dayList(mv).join(", ") || "—")}</b></div>` +
-        `<div class="sp-out">${out}</div><div class="sp-pks">${opts.map(row).join("")}</div></div></div>`;
+        `<div class="sp-out">${out}</div><div class="sp-pks">${opts.map(row).join("")}</div>` + teamRow(mv, k, row) + "</div></div>";
     };
     step2 = '<h3 class="sp-step"><span>2</span> Pick the players <em>— best first; click another to use him instead</em></h3>' + kpis + tl +
       '<div class="sp-legend"><span><i class="sp-k st"></i> starts</span><span><i class="sp-k bn"></i> plays, no slot</span>' +
@@ -2436,10 +2464,12 @@ function bindPlanner() {
   $("sp-out").addEventListener("click", (e) => {
     if (e.target.closest("[data-sprst]")) { lsSet(spPickKey(), null); SP.dropOpen = true; renderPlanner(); return; }
     const st = e.target.closest("[data-st]");
-    if (st) { SP.sel = SP.sel === st.dataset.st ? null : st.dataset.st; SP.choice = {}; renderPlanner(); return; }
+    if (st) { SP.sel = SP.sel === st.dataset.st ? null : st.dataset.st; SP.choice = {}; SP.team = {}; renderPlanner(); return; }
+    const tmc = e.target.closest("[data-tm]");
+    if (tmc) { const k = tmc.dataset.tmv; SP.team = Object.assign({}, SP.team); SP.team[k] = SP.team[k] === tmc.dataset.tm ? null : tmc.dataset.tm; renderPlanner(); return; }
     const pk = e.target.closest("[data-pk]");
     if (pk && !e.target.closest(".name[data-id]")) { SP.choice = Object.assign({}, SP.choice, {[pk.dataset.mv]: +pk.dataset.pk}); renderPlanner(); return; }
-    if (e.target.closest("[data-spclr]")) { SP.choice = {}; renderPlanner(); return; }
+    if (e.target.closest("[data-spclr]")) { SP.choice = {}; SP.team = {}; renderPlanner(); return; }
     const nt = e.target.closest("[data-night]");
     if (nt) { WV.days = [nt.dataset.night]; WV.match = "all"; renderWaivers("list"); const t = $("wv-days"); if (t) t.scrollIntoView({behavior: "smooth", block: "start"}); return; }
     const n = e.target.closest(".name[data-id]");
