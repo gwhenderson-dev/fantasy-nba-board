@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=d355190a4e">
+<link rel="stylesheet" href="app.css?v=034da3f6b0">
 </head>
 <body>
 <header class="top">
@@ -195,7 +195,7 @@
     <h1>Waivers &amp; streaming</h1>
     <p class="lede" id="wv-lede"></p>
     <details class="card sp-card" id="sp-box" open>
-      <summary><strong>Streaming planner</strong> &mdash; the rest of this matchup <span class="dim" id="sp-sum"></span></summary>
+      <summary><strong>Streaming planner</strong> <span class="dim" id="sp-sum"></span></summary>
       <div class="controls" style="margin-top:.6rem">
         <div class="ctl"><span class="lbl">Players you&rsquo;ll drop</span><div class="chips" id="sp-n">
           <button class="chip" data-n="0" aria-pressed="false">0</button>
@@ -207,7 +207,11 @@
           <button class="chip" data-m="games" aria-pressed="true" title="Most games in a starter slot; points break ties">Most games</button>
           <button class="chip" data-m="pts" aria-pressed="false" title="Most projected fantasy points">Most points</button>
         </div></div>
-        <div class="ctl"><span class="lbl">First move</span><div class="chips" id="sp-from">
+        <div class="ctl"><span class="lbl">Matchup</span><div class="chips" id="sp-wk">
+          <button class="chip" data-w="cur" aria-pressed="true" title="The rest of the matchup in progress">This one</button>
+          <button class="chip" data-w="next" aria-pressed="false" title="Next matchup, Monday to Sunday, with its full set of adds (from your roster as it is now)">Next one</button>
+        </div></div>
+        <div class="ctl" id="sp-fromctl"><span class="lbl">First move</span><div class="chips" id="sp-from">
           <button class="chip" data-f="0" aria-pressed="true">Today</button>
           <button class="chip" data-f="1" aria-pressed="false" title="Tonight's games have started: plan from tomorrow">Tomorrow</button>
         </div></div>
@@ -216,14 +220,17 @@
       <div id="sp-out"></div>
     </details>
     <div class="controls">
-      <div class="ctl"><span class="lbl">Window</span><div class="chips" id="wv-win">
-        <button class="chip" data-w="0" aria-pressed="true">Today</button>
-        <button class="chip" data-w="1" aria-pressed="false">Tomorrow</button>
-        <button class="chip" data-w="01" aria-pressed="false">Today + tomorrow</button>
-        <button class="chip" data-w="7" aria-pressed="false">Next 7 days</button>
-        <button class="chip" data-w="rw" aria-pressed="false" title="From today through Sunday of this matchup week">Rest of week</button>
-        <button class="chip" data-w="nw" aria-pressed="false" title="Next matchup week, Monday to Sunday">Next week</button>
-      </div></div>
+      <div class="ctl wv-dayctl"><span class="lbl">Days <span class="dim" title="Tick one or more days. Only players whose team plays on the days you picked are listed, and the projection adds up those games">(pick one or more)</span></span>
+        <div class="chips wv-days" id="wv-days"></div>
+        <div class="wv-dayopts"><div class="chips" id="wv-match">
+          <button class="chip" data-m="all" aria-pressed="true" title="Only players whose team plays on EVERY day you picked">Plays every day picked</button>
+          <button class="chip" data-m="any" aria-pressed="false" title="Players whose team plays on ANY day you picked (the projection adds up all their games)">Any of them</button>
+        </div><div class="chips" id="wv-quick">
+          <button class="chip" data-q="rw" title="Today through Sunday, players with any game in it">Rest of week</button>
+          <button class="chip" data-q="nw" title="Next matchup week, Monday to Sunday, players with any game in it">Next week</button>
+          <button class="chip" data-q="0" title="Back to just today">Reset</button>
+        </div></div>
+      </div>
       <div class="ctl"><span class="lbl">Rank by</span><div class="chips" id="wv-rank">
         <button class="chip" data-r="proj" aria-pressed="true">Projected</button>
         <button class="chip" data-r="ceil" aria-pressed="false" title="A top-10% night">Ceiling (moonshot)</button>
@@ -573,7 +580,10 @@ now vs draft = actual FP/G − draft-day FP/G</div>
 
     <h2 id="how-wire">8. Waivers tab</h2>
     <div class="formula">per game = play × (ROS FP/G + matchup + boost)
-Projected = Σ per game over the window</div>
+Projected = Σ per game over the days you picked</div>
+    <p><strong>Days</strong>: tick one or more days (today through the end of next matchup week). &ldquo;Plays every day picked&rdquo; lists
+      only players whose team plays on all of them (and who aren&rsquo;t out for any of them); &ldquo;Any of them&rdquo; lists anyone with a
+      game on at least one. Rest of week / Next week tick a whole week at once and switch to &ldquo;any&rdquo;.</p>
     <p><strong>Matchup</strong>, from 224,300 player-games over 16 seasons (each factor is the opponent&rsquo;s season-to-date value
       divided by the league&rsquo;s):</p>
     <div class="formula">matchup = 22.0 × (opponent pace − 1)
@@ -637,10 +647,16 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
       found exactly by dynamic programming over day, adds used and who holds the spot, for every number of adds. The adds left this
       matchup are split across spots by a small knapsack, and the spots are re-solved against each other until the total stops improving.
       &ldquo;Most games&rdquo; counts expected starts (each projected point worth 1/200 of a start, so a whole start always wins but
-      a much better player beats a small rest risk); &ldquo;Most points&rdquo; counts projected points. Up to four options are shown: the best
-      plan, the best plan using none of its players (in case they&rsquo;re taken), the best plan for the other aim, and the best single
-      move. Under each pickup, &ldquo;Or instead&rdquo; lists the next-best free agents for exactly the same days, with the rest of the plan
-      unchanged; &ldquo;rest risk&rdquo; marks one who may sit a back-to-back night. An add must earn at least
+      a much better player beats a small rest risk); &ldquo;Most points&rdquo; counts projected points. The planner works in two steps.
+      <strong>Step 1, strategies</strong>: told by days and games only. One-move strategies are found exhaustively (every spot you&rsquo;d give
+      up &times; every free agent &times; every day you could make the move, best for each day); two- and three-move strategies are the
+      sequence search above with exactly that many adds, shown only when they beat the best single move. Strategies that start on the
+      same nights count as one (the later add day is kept, so you hold your player and the news longer). Above them, each night shows
+      your open starter slots and how many NBA games there are; click a night to list the free agents who play it.
+      <strong>Step 2, players</strong>: for each move of the strategy you pick, the free agents who could hold that spot on the same days,
+      ranked by the plan&rsquo;s total with everything else unchanged; the best is chosen, click another to use him instead (&ldquo;rest risk&rdquo;
+      = same starts, but he may sit a back-to-back night). &ldquo;Next one&rdquo; plans next matchup, Monday to Sunday, from your roster as it
+      is now, with that matchup&rsquo;s full set of adds. An add must earn at least
       0.3 starts or 2 points. Free agents only: a waiver claim doesn&rsquo;t clear in time. The planner considers the best 40 free agents over
       the window plus the best 6 on each single day. Checked: every day&rsquo;s lineup matches an independent solver, and with one droppable
       player no schedule beats the plan (brute force over every switch day and pickup).</p>
@@ -775,6 +791,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=eeb02af231"></script>
+<script src="app.js?v=c28cf1f131"></script>
 </body>
 </html>
