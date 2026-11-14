@@ -1943,7 +1943,7 @@ function dayLocked(d) {
   return x !== "pending" && (x.live || (x.tip != null && Date.now() >= x.tip));
 }
 const tipClock = (d) => { const x = LOCK[d]; return x && x.tip ? new Date(x.tip).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit", timeZoneName: "short"}) : ""; };
-const SP = {n: 1, metric: "games", wk: "cur", from: "0", pick: null, key: null, plan: null, dropOpen: false, sel: null, choice: {}};
+const SP = {n: 1, wk: "cur", noMove: new Set(), pick: null, key: null, plan: null, dropOpen: false, sel: null, choice: {}};
 const spPickKey = () => `fnba.v2.droppick.${L.key || L.id}.${myTeam()}`;
 function spSaved() { const v = lsGet(spPickKey(), null); return Array.isArray(v) ? v : null; }
 const SP_PTW = 1 / 200;                   // "Most games": one projected point = 1/200 of a start
@@ -1955,23 +1955,46 @@ function planStream() {
   if (mt == null) return {err: "Pick your team in “You are” at the top."};
   const today = todayET();
   const MPS = matchupPeriods(), ci = MPS.findIndex((p) => p.start <= today && today <= p.end);
-  const PER = SP.wk === "next" ? (ci >= 0 ? MPS[ci + 1] : MPS.find((p) => p.start > today)) : MPS[ci];
-  if (!PER) return {err: SP.wk === "next" ? "No next matchup in the schedule." : "No matchup is in progress."};
+  const CUR = ci >= 0 ? MPS[ci] : null, NXT = ci >= 0 ? MPS[ci + 1] : MPS.find((p) => p.start > today);
   // adds made after the day's first tip-off only count from tomorrow (ESPN locks the day)
-  const d0 = SP.wk === "next" ? PER.start : SP.from === "1" || dayLocked(today) ? addDays(today, 1) : today;
-  const days = [];
-  for (let d = d0; d <= PER.end; d = addDays(d, 1)) days.push(d);
+  const d0 = dayLocked(today) ? addDays(today, 1) : today;
+  // "This one" = rest of this matchup; "Next one" = next matchup Mon-Sun; "Both" = the two together
+  const PERS = (SP.wk === "next" ? [NXT] : SP.wk === "both" ? [CUR && d0 <= CUR.end ? CUR : null, NXT] : [CUR]).filter(Boolean);
+  if (!PERS.length) return {err: SP.wk === "cur" ? "No matchup is in progress." : "No next matchup in the schedule."};
+  const SLOTS = starterSlots();
+  const days = [], per = [], caps = [], parts = [];
+  PERS.forEach((PR, k) => {
+    const ds = [];
+    for (let d = PR.start > d0 ? PR.start : d0; d <= PR.end; d = addDays(d, 1)) ds.push(d);
+    const used = (lg.tx[mt] || {})[String(PR.id)] || 0;
+    caps.push(PR.adds == null ? 7 : Math.max(0, PR.adds - used));
+    parts.push({PR, T: teamWeek(lg, mt, ds, PR.id, SLOTS, today), n: ds.length, used});
+    ds.forEach((d) => { days.push(d); per.push(k); });
+  });
   if (!days.length) return {err: "This matchup ends today."};
-  const SLOTS = starterSlots(), nd = days.length;
-  const T = teamWeek(lg, mt, days, PER.id, SLOTS, today);
-  const used = (lg.tx[mt] || {})[String(PER.id)] || 0;
-  const addsLeft = PER.adds == null ? 7 : Math.max(0, PER.adds - used);
+  const nd = days.length;
+  const PER = {start: PERS[0].start, end: PERS[PERS.length - 1].end, id: PERS[0].id};
+  const addsLeft = caps.reduce((a, c) => a + c, 0), used = parts[0].used;
+  // a move can be made on a day you allow, in a matchup with adds left
+  const canMove = days.map((d, i) => !SP.noMove.has(d) && caps[per[i]] > 0);
+  // the roster across the plan's days: each matchup's own week (lineup marks, injuries), joined
+  const rows = new Map();
+  let off = 0;
+  parts.forEach(({T, n}) => {
+    T.ps.forEach((r) => {
+      if (!rows.has(r.id)) rows.set(r.id, Object.assign({}, r, {days: Array.from({length: nd}, (_, i) => ({d: days[i], g: null, avail: false, val: 0, play: 0}))}));
+      r.days.forEach((x, i) => { rows.get(r.id).days[off + i] = x; });
+    });
+    off += n;
+  });
+  const T = {ps: [...rows.values()]};
   const cap = Object.entries(L.slots).filter(([k]) => k !== "IR").reduce((a, [, c]) => a + c, 0);
   const free = Math.max(0, cap - T.ps.filter((r) => lg.slot[r.id] !== 13).length);
-  // "Most games": expected starts, each projected point worth 1/200 of a start (a
-  // whole start beats any realistic points gain, but 15 points outweighs a 2%
-  // rest risk — at 1e-4 the planner picked a 2%-safer player 15 points worse)
-  const W = (x) => (!x.avail ? 0 : SP.metric === "games" ? x.play + x.val * SP_PTW : x.val);
+  // expected starts, each projected point worth 1/200 of a start (a whole start beats
+  // any realistic points gain, but 15 points outweighs a 2% rest risk — at 1e-4 the
+  // planner picked a 2%-safer player 15 points worse). Owner 2026-11-13: always aim
+  // for games (the "Most points" aim was removed).
+  const W = (x) => (!x.avail ? 0 : x.play + x.val * SP_PTW);
   const keep = keepSet();
   // who may go: the visitor's ticks, else the n lowest rest-of-season points
   const cands = T.ps.filter((r) => r.p && lg.slot[r.id] !== 13 && !keep.has(normName(r.n)))
@@ -2005,10 +2028,12 @@ function planStream() {
   };
   const total = (ms, t0 = 0) => { let s = 0; for (let i = t0; i < nd; i++) s += dayBest(i, ms); return s; };
   const base = total(mem);
-  const COST = SP.metric === "games" ? 0.3 : 2;     // an add must earn at least this
+  const COST = 0.3;                                 // an add must earn at least 0.3 expected starts
   // solve for every drop count up to the one chosen and keep the best: allowing a
   // drop must never make the plan worse (the re-solve can settle in a local best)
-  const solve = (maxDrops, pl, A0) => {
+  // CP = adds allowed in each matchup period of the plan ([this] or [this, next]),
+  // TOT = adds allowed in all; a move can only be made on a day you allow (canMove)
+  const solve = (maxDrops, pl, CP, TOT) => {
     const spots = Array.from({length: free}, () => ({o: null, seq: []})).concat(mem.filter((m) => m.ok).map((o) => ({o, seq: []})));
     const fixed = mem.filter((m) => !m.ok);
     const segs = (sp) => {                         // who holds this spot on which days
@@ -2018,27 +2043,30 @@ function planStream() {
       return out;
     };
     const roster = (but) => fixed.concat(...spots.filter((sp) => sp !== but).map(segs));
-    // best schedule for one spot at each number of adds, the rest of the roster as it stands
-    const curve = (sp, A) => {
+    // best schedule for one spot at each count of adds per period (state j = a0 x (c1 + 1) + a1),
+    // the rest of the roster as it stands
+    const curve = (sp, C2) => {
       const oth = roster(sp), taken = new Set(oth.map((m) => m.id));
       const C = [sp.o].concat(pl.filter((f) => !taken.has(f.id)));
       const mv = C.map((c) => days.map((_, i) => (c ? dayBest(i, oth.concat(Object.assign({}, c, {from: 0, to: nd}))) - dayBest(i, oth) : 0)));
-      const NC = C.length, NEG = -1e18;
-      let dp = Array.from({length: A + 1}, () => new Array(NC).fill(NEG));
+      const n1 = (C2[1] || 0) + 1, NS = (C2[0] + 1) * n1, NC = C.length, NEG = -1e18;
+      const prevOf = (j, p) => (p === 0 ? (j >= n1 ? j - n1 : -1) : (j % n1 >= 1 ? j - 1 : -1));
+      let dp = Array.from({length: NS}, () => new Array(NC).fill(NEG));
       dp[0][0] = 0;                                // day 0 starts with the original holder (or nobody)
       const back = [];
       for (let i = 0; i < nd; i++) {
-        const nx = Array.from({length: A + 1}, () => new Array(NC).fill(NEG)), bk = Array.from({length: A + 1}, () => new Array(NC));
-        for (let j = 0; j <= A; j++) {
-          let b1 = -1, b2 = -1;                    // two best holders after j-1 adds (to switch from)
-          if (j > 0) dp[j - 1].forEach((v, c) => { if (b1 < 0 || v > dp[j - 1][b1]) { b2 = b1; b1 = c; } else if (b2 < 0 || v > dp[j - 1][b2]) b2 = c; });
+        const nx = Array.from({length: NS}, () => new Array(NC).fill(NEG)), bk = Array.from({length: NS}, () => new Array(NC));
+        for (let j = 0; j < NS; j++) {
+          const pj = canMove[i] ? prevOf(j, per[i]) : -1;
+          let b1 = -1, b2 = -1;                    // two best holders one add earlier (to switch from)
+          if (pj >= 0) dp[pj].forEach((v, c) => { if (b1 < 0 || v > dp[pj][b1]) { b2 = b1; b1 = c; } else if (b2 < 0 || v > dp[pj][b2]) b2 = c; });
           for (let c = 0; c < NC; c++) {
             let v = dp[j][c], from = [j, c];
-            if (c > 0 && j > 0) {                  // add free agent c today (the original can't come back)
+            if (c > 0 && pj >= 0) {                // add free agent c today (the original can't come back)
               const pc = b1 !== c ? b1 : b2;
               // ties go to the switch: the pickup lands on the LAST day it costs nothing,
               // so you keep your player (and the news) as long as possible
-              if (pc >= 0 && dp[j - 1][pc] >= v) { v = dp[j - 1][pc]; from = [j - 1, pc]; }
+              if (pc >= 0 && dp[pj][pc] >= v) { v = dp[pj][pc]; from = [pj, pc]; }
             }
             if (v <= NEG / 2) continue;
             nx[j][c] = v + mv[c][i]; bk[j][c] = from;
@@ -2047,7 +2075,7 @@ function planStream() {
         back.push(bk); dp = nx;
       }
       const stay = mv[0].reduce((x, y) => x + y, 0);
-      return Array.from({length: A + 1}, (_, j) => {
+      return Array.from({length: NS}, (_, j) => {
         let c = dp[j].indexOf(Math.max(...dp[j]));
         if (dp[j][c] <= NEG / 2) return null;
         const hold = new Array(nd);
@@ -2055,24 +2083,24 @@ function planStream() {
         for (let i = nd - 1; i >= 0; i--) { hold[i] = c; [jj, c] = back[i][jj][c]; }
         const seq = [];
         hold.forEach((h, i) => { if (h > 0 && (i === 0 || hold[i - 1] !== h)) seq.push({m: C[h], t: i}); });
-        return {gain: dp[j][hold[nd - 1]] - stay, seq, adds: seq.length};
+        return {gain: dp[j][hold[nd - 1]] - stay, seq, adds: seq.length, a: [Math.floor(j / n1), j % n1]};
       });
     };
     let cur = total(roster(null));
     for (let round = 0; round < 4; round++) {
-      const cv = spots.map((sp) => curve(sp, A0));
-      // split the adds (and the drops you allow) across spots: knapsack on (adds, drops)
-      let best = new Map([["0,0", {v: 0, pick: []}]]);
+      const cv = spots.map((sp) => curve(sp, CP));
+      // split the adds (per period, in all) and the drops you allow across spots: knapsack
+      let best = new Map([["0,0,0", {v: 0, pick: []}]]);
       spots.forEach((sp, k) => {
         const nx = new Map();
         best.forEach((st, key) => {
-          const [a, d] = key.split(",").map(Number);
+          const [a0, a1, d] = key.split(",").map(Number);
           cv[k].forEach((o, j) => {
             if (!o || (j > 0 && !o.adds)) return;
-            const a2 = a + o.adds, d2 = d + (o.adds && sp.o ? 1 : 0);
-            if (a2 > A0 || d2 > maxDrops) return;
-            const v = st.v + (o.adds ? o.gain - COST * o.adds : 0), k2 = a2 + "," + d2;
-            if (!nx.has(k2) || nx.get(k2).v < v - 1e-9) nx.set(k2, {v, pick: st.pick.concat([o.adds ? o.seq : []])});
+            const b0 = a0 + o.a[0], b1 = a1 + o.a[1], d2 = d + (o.adds && sp.o ? 1 : 0);
+            if (b0 > CP[0] || b1 > (CP[1] || 0) || b0 + b1 > TOT || d2 > maxDrops) return;
+            const v = st.v + (o.adds ? o.gain - COST * o.adds : 0), k2 = b0 + "," + b1 + "," + d2;
+            if (!nx.has(k2) || nx.get(k2).v < v - 1e-9) nx.set(k2, {v, pick: st.pick.concat([o.adds ? o.a : null])});
           });
         });
         best = nx;
@@ -2082,12 +2110,13 @@ function planStream() {
       // the curves above each assumed the other spots unchanged, so two spots can
       // want the same player: clear them and re-solve one at a time with the adds
       // the knapsack gave each, every spot seeing the ones already set
+      const gk = (k) => { const a = top.pick[k]; return a ? (cv[k][a[0] * ((CP[1] || 0) + 1) + a[1]] || {gain: 0}).gain : 0; };
       spots.forEach((sp) => { sp.seq = []; });
-      spots.map((sp, k) => k).sort((x, y) => (cv[y][top.pick[y].length] || {gain: 0}).gain - (cv[x][top.pick[x].length] || {gain: 0}).gain)
+      spots.map((sp, k) => k).sort((x, y) => gk(y) - gk(x))
         .forEach((k) => {
-          const A = top.pick[k].length;
-          if (!A) return;
-          const c = curve(spots[k], A).filter(Boolean).sort((x, y) => (y.gain - COST * y.adds) - (x.gain - COST * x.adds))[0];
+          const a = top.pick[k];
+          if (!a) return;
+          const c = curve(spots[k], [a[0], a[1]]).filter(Boolean).sort((x, y) => (y.gain - COST * y.adds) - (x.gain - COST * x.adds))[0];
           spots[k].seq = c && c.adds && c.gain - COST * c.adds > 0 ? c.seq : [];
         });
       const now = total(roster(null));
@@ -2132,7 +2161,7 @@ function planStream() {
   const strats = [];
   // (a) one move: for each day you could make it, the best single add that day
   //     (exhaustive: every spot you'd give up x every free agent x every day)
-  if (addsLeft >= 1) {
+  if (canMove.some(Boolean)) {
     const spots = (free > 0 ? [null] : []).concat(SP.n > 0 ? mem.filter((m) => m.ok) : []);
     const baseD = days.map((_, i) => dayBest(i, mem));
     const best = new Array(nd).fill(null);
@@ -2149,16 +2178,17 @@ function planStream() {
     });
     for (let t = nd - 1; t >= 0; t--) {
       const b = best[t];
-      if (!b || b.g - COST <= 1e-9) continue;
+      if (!canMove[t] || !b || b.g - COST <= 1e-9) continue;
       const fin = (b.s ? mem.map((m) => (m === b.s ? Object.assign({}, m, {to: t}) : m)) : mem.slice())
         .concat(Object.assign({}, b.f, {from: t, to: nd}));
       strats.push(finish(fin, [{t, f: b.f, o: b.s, h: fin[fin.length - 1], prev: -1}]));
     }
   }
   // (b) two and three moves: the planner's best plan with exactly that many adds
+  const CP = [caps[0], caps[1] || 0];
   for (let A = 2; A <= Math.min(addsLeft, 3); A++) {
-    let sol = solve(0, pool, A);
-    for (let k = 1; k <= SP.n; k++) { const s2 = solve(k, pool, A); if (s2.obj > sol.obj + 1e-9) sol = s2; }
+    let sol = solve(0, pool, CP, A);
+    for (let k = 1; k <= SP.n; k++) { const s2 = solve(k, pool, CP, A); if (s2.obj > sol.obj + 1e-9) sol = s2; }
     const Q = fromSol(sol);
     if (Q.moves.length === A) strats.push(Q);
   }
@@ -2201,7 +2231,7 @@ function planStream() {
     });
     return Object.assign(finish(fin, moves), {sig: Q.sig, best: Q.best});
   };
-  return {days, PER, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose};
+  return {days, PER, PERS, per, caps, canMove, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose};
 }
 const ESPN_AB = Object.fromEntries(Object.entries(ETRI).map(([k, v]) => [v, k.toLowerCase()]));
 const headshot = (id, cls = "sp-hs") => `<img class="${cls}" src="https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${id}.png&w=96&h=70&scale=crop" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`;
@@ -2216,14 +2246,7 @@ function renderPlanner() {
   const lg = LGRES[L.id];
   if (lg && !lg._spRet) { lg._spRet = 1; loadReturns(lg).then(() => { SP.key = null; renderPlanner(); }); }
   const locked = dayLocked(todayET());
-  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.metric, SP.wk, SP.from, spSaved(), DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length]);
-  $("sp-fromctl").hidden = SP.wk === "next";
-  const tb = document.querySelector('#sp-from .chip[data-f="0"]');
-  if (tb) {
-    tb.disabled = locked;
-    tb.title = locked ? `Today's pickups closed when the first game tipped off${tipClock(todayET()) ? " (" + tipClock(todayET()) + ")" : ""}: planning from tomorrow` : "Plan from today (before the first tip-off)";
-    document.querySelectorAll("#sp-from .chip").forEach((c) => c.setAttribute("aria-pressed", String(locked ? c.dataset.f === "1" : c.dataset.f === SP.from)));
-  }
+  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.wk, [...SP.noMove].sort(), spSaved(), DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length]);
   const lockNote = $("sp-lock");
   if (lockNote && SP.wk === "next") lockNote.innerHTML = (lg ? `Next matchup, from your roster as of ${new Date(lg.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})}; injuries and matchups as they look today.` : "");
   else if (lockNote) {
@@ -2237,33 +2260,43 @@ function renderPlanner() {
     if (!SP.plan.err && !SP.plan.strats.some((Q) => Q.sig === SP.sel)) { SP.sel = null; SP.choice = {}; }
   }
   const P = SP.plan;
-  if (P.err) { box.innerHTML = `<p class="note">${esc(P.err)}</p>`; $("sp-sum").textContent = ""; return; }
-  const isG = SP.metric === "games", nd = P.days.length;
+  const md0 = $("sp-mdays");
+  if (P.err) { box.innerHTML = `<p class="note">${esc(P.err)}</p>`; $("sp-sum").textContent = ""; if (md0) md0.innerHTML = ""; return; }
+  const nd = P.days.length;
+  // the days you can make a move: tap to rule one out (today drops off after the first tip-off)
+  if (md0) md0.innerHTML = P.days.map((d, i) => {
+    const capOut = P.caps[P.per[i]] <= 0, on = !SP.noMove.has(d) && !capOut;
+    return (i && P.per[i] !== P.per[i - 1] ? '<span class="wv-wk">next week</span>' : "") +
+      `<button class="chip dchip${capOut ? " shut" : ""}" data-md="${d}" aria-pressed="${on}"${capOut ? " disabled" : ""} title="${esc(capOut ? "No adds left in this matchup" : on ? niceDay(d) + ": the planner may add or drop this day. Tap to rule it out" : niceDay(d) + ": ruled out. Tap to allow moves this day")}">` +
+      `<b>${d === todayET() ? "Today" : new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"})}</b><small>${d.slice(5).replace("-", "/")}</small></button>`;
+  }).join("");
   const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
   const md = (d) => d.slice(5).replace("-", "/");
   const last = (n) => String(n).split(" ").slice(1).join(" ") || n;
   const gameDay = (i) => nbaGamesOn(P.days[i]) > 0;
   const top = P.strats.find((Q) => Q.best);
-  $("sp-sum").textContent = (SP.wk === "next" ? "— next matchup" : "— rest of this matchup") + (top ? ` · best: ${sg(top.dSt, 0)} starts, ${sg(top.dPts, 0)} pts` : " · no move worth making");
+  $("sp-sum").textContent = (SP.wk === "next" ? "next matchup" : SP.wk === "both" && P.PERS.length > 1 ? "this matchup + next" : "rest of this matchup") + (top ? ` · best: ${sg(top.dSt, 0)} starts, ${sg(top.dPts, 0)} pts` : " · no move worth making");
   // the whole matchup week stays on screen: days already played (or locked) are greyed
   const past = [], tdy = todayET();
   for (let d = P.PER.start; d < P.days[0]; d = addDays(d, 1)) past.push(d);
   const np = past.length;
   const pastLbl = (d) => (d === tdy ? (dayLocked(tdy) ? "locked" : "skipped") : "done");
   const dropOf = (Q, mv) => (mv.prev >= 0 ? Q.moves[mv.prev].h : mv.o);
-  const dayList = (mv) => P.days.filter((_, i) => mv.starts[i]).map(dn);
+  const two = P.PERS.length > 1;                    // two weeks on screen: day names repeat, so add the date
+  const dnd = (d) => (two ? dn(d) + " " + +d.slice(8) : dn(d));
+  const dayList = (mv) => P.days.filter((_, i) => mv.starts[i]).map(dnd);
   // ---- your nights: open starter slots and NBA games, the raw material of a plan
   const nights = `<div class="sp-nights" style="--nd:${np + nd}">` +
     past.map((d) => `<div class="sp-nt past"><b>${dn(d)}</b><span>${md(d)}</span><em>${pastLbl(d)}</em></div>`).join("") +
     P.days.map((d, i) => {
       const open = P.slots - P.before[i].starts, g = nbaGamesOn(d);
-      return `<button type="button" class="sp-nt${g ? "" : " dim"}${open > 0 && g ? " open" : ""}" data-night="${d}" title="${esc(`${niceDay(d)}: ${g} NBA game${g === 1 ? "" : "s"}; ${P.before[i].starts} of your ${P.slots} starter slots filled, ${open} open.\nClick to list free agents who play this night`)}">` +
+      return `<button type="button" class="sp-nt${g ? "" : " dim"}${open > 0 && g ? " open" : ""}${i && P.per[i] !== P.per[i - 1] ? " wk2" : ""}" data-night="${d}" title="${esc(`${niceDay(d)}: ${g} NBA game${g === 1 ? "" : "s"}; ${P.before[i].starts} of your ${P.slots} starter slots filled, ${open} open.\nClick to list free agents who play this night`)}">` +
         `<b>${dn(d)}</b><span>${md(d)}</span><em>${g ? (open > 0 ? `${open} open` : "full") : "no games"}</em><small>${g} games</small></button>`;
     }).join("") + "</div>";
   // ---- STEP 1: strategy cards, days and games only
-  const strip = (Q) => `<span class="sp-strip" style="--nd:${np + nd}">` +
-    past.map(() => '<i class="p"></i>').join("") + P.days.map((d) => `<i class="h">${dn(d).slice(0, 2)}</i>`).join("") +
-    Q.moves.map((mv, k) => past.map(() => '<i class="p"></i>').join("") + P.days.map((_, i) => {
+  const strip = (Q) => `<span class="sp-strip" style="--nd:${nd}">` +
+    P.days.map((d, i) => `<i class="h${i && P.per[i] !== P.per[i - 1] ? " wk2" : ""}">${dn(d).slice(0, 2)}</i>`).join("") +
+    Q.moves.map((mv, k) => P.days.map((_, i) => {
       const h = mv.h, x = h.dv[i];
       if (i < h.from || i >= h.to) return "<i></i>";
       const c = mv.starts[i] ? "st" : x.avail ? "bn" : "no";
@@ -2273,7 +2306,7 @@ function renderPlanner() {
     const on = Q.sig === SP.sel;
     const lines = Q.moves.map((mv, k) => {
       const ds = dayList(mv), o = dropOf(Q, mv);
-      return `<span class="sp-sl"><i style="--c:${SP_HUES[k % SP_HUES.length]}"></i><b>${dn(P.days[mv.t])}</b> ${mv.prev >= 0 ? "swap" : "add"} · ${ds.length} start${ds.length === 1 ? "" : "s"}${ds.length ? " (" + ds.join(" ") + ")" : ""}` +
+      return `<span class="sp-sl"><i style="--c:${SP_HUES[k % SP_HUES.length]}"></i><b>${dnd(P.days[mv.t])}</b> ${mv.prev >= 0 ? "swap" : "add"} · ${ds.length} start${ds.length === 1 ? "" : "s"}${ds.length ? " (" + ds.join(" ") + ")" : ""}` +
         (mv.prev < 0 ? `<em>${o ? "drop " + esc(last(o.n)) : "open spot"}</em>` : "") + "</span>";
     }).join("");
     return `<button type="button" class="sp-opt sp-st${on ? " on" : ""}" data-st="${esc(Q.sig)}" aria-pressed="${on}">` +
@@ -2283,7 +2316,7 @@ function renderPlanner() {
   };
   const step1 = '<h3 class="sp-step"><span>1</span> Pick a strategy <em>— which days to add, by games alone</em></h3>' + nights +
     (P.strats.length ? `<div class="sp-opts">${P.strats.map(card).join("")}</div>`
-      : `<p class="msg info">No pickup adds at least ${isG ? "0.3 starts" : "2 points"} with ${SP.n ? "these drops" : "no drops"}${P.addsLeft ? "" : " (no adds left this matchup)"}.</p>`);
+      : `<p class="msg info">No pickup adds at least 0.3 starts with ${SP.n ? "these drops" : "no drops"}${!P.addsLeft ? (P.PERS.length > 1 ? " (no adds left in either matchup)" : " (no adds left this matchup)") : !P.canMove.some(Boolean) ? " (no day left to make a move)" : ""}.</p>`);
   // ---- STEP 2: players for the chosen strategy
   let step2 = "";
   const S0 = P.strats.find((Q) => Q.sig === SP.sel);
@@ -2294,7 +2327,7 @@ function renderPlanner() {
     const kpis = '<div class="sp-kpis">' +
       kpi("Starts left", P.b0.starts, Q.a0.starts, Q.dSt, Q.dSt ? sg(Q.dSt, 0) + " starts" : "no change") +
       kpi("Points", fx(P.b0.pts, 0), fx(Q.a0.pts, 0), Q.dPts, Q.dPts ? sg(Q.dPts, 0) + " pts" : "no change") +
-      kpi("Adds", `${Q.moves.length}`, null, 0, `of ${P.addsLeft} left`) + "</div>";
+      kpi("Adds", `${Q.moves.length}`, null, 0, P.caps.length > 1 ? `of ${P.caps[0]} left this week + ${P.caps[1]} next` : `of ${P.addsLeft} left`) + "</div>";
     // timeline: each roster spot that changes hands, day by day
     const rows = [];
     Q.moves.filter((m) => m.prev < 0).forEach((m0) => {
@@ -2308,7 +2341,7 @@ function renderPlanner() {
           : `<i class="bn" title="${esc(dn(P.days[i]) + ": plays, but no open slot")}"></i>`; }).join("") + "</span>";
     const tl = `<div class="sp-tl" style="--nd:${np + nd}">` +
       '<div class="sp-tlh"></div>' + past.map((d) => `<div class="sp-tlh past">${dn(d)}<span>${md(d)}</span><em>${pastLbl(d)}</em></div>`).join("") +
-      P.days.map((d, i) => `<div class="sp-tlh${gameDay(i) ? "" : " dim"}">${dn(d)}<span>${md(d)}</span></div>`).join("") +
+      P.days.map((d, i) => `<div class="sp-tlh${gameDay(i) ? "" : " dim"}${i && P.per[i] !== P.per[i - 1] ? " wk2" : ""}">${dn(d)}<span>${md(d)}</span>${i && P.per[i] !== P.per[i - 1] ? "<em>next wk</em>" : ""}</div>`).join("") +
       rows.map((r, k) => `<div class="sp-tll">${r.o ? k + 1 : "Open"}</div>` +
         (np ? `<div class="sp-seg past" style="grid-column:2/${2 + np}"></div>` : "") +
         (r.o && r.t0 > 0 ? `<div class="sp-seg keep" style="grid-column:${2 + np}/${2 + np + r.t0}">${headshot(r.o.id, "sp-av")}<span class="sp-sn">${esc(last(r.o.n))}</span>` +
@@ -2367,8 +2400,13 @@ function bindPlanner() {
     renderPlanner();
   }));
   chips("sp-n", "n", (v) => { SP.n = +v; });
-  chips("sp-metric", "m", (v) => { SP.metric = v; });
-  chips("sp-from", "f", (v) => { SP.from = v; });
+  $("sp-mdays").addEventListener("click", (e) => {
+    const c = e.target.closest("[data-md]");
+    if (!c || c.disabled) return;
+    const d = c.dataset.md;
+    if (SP.noMove.has(d)) SP.noMove.delete(d); else SP.noMove.add(d);
+    renderPlanner();
+  });
   chips("sp-wk", "w", (v) => { SP.wk = v; SP.sel = null; SP.choice = {}; });
   $("sp-out").addEventListener("change", (e) => {
     const cb = e.target.closest("input[data-spd]");
@@ -4545,7 +4583,7 @@ fetchData(false)
     window.FNBA_DEBUG = {live: () => ({LV, renderLive, liveGames}), relg: () => { Object.keys(LGDATA).forEach((k) => delete LGDATA[k]); return espnLeague(L); }, sw: () => ({lg: LGRES[L.id], L, teamWeek, renderWeek, espnBase, startWeek, weekVsProj, rosAt, outAt, espnPeriod, starterSlots, GAMES, BYID, STATS, fpg, todayET}), boosts: () => computeBoosts(), lock: LOCK, sp: SP, rerender: () => renderWaivers(), rosAt: (id, T) => rosAt(BYID[id], T), seasonLine: (id) => seasonLine(BYID[id]), loadGames,
       plan: (o) => { Object.assign(SP, o, {key: null}); const P = planStream();
         const pk = (m) => ({id: m.id, n: m.n, elig: m.elig, w: m.w, val: m.dv.map((x) => x.val), play: m.dv.map((x) => x.play), ok: !!m.ok});
-        return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, free: P.free, n: SP.n, metric: SP.metric,
+        return {SLOTS: P.SLOTS, nd: P.days.length, addsLeft: P.addsLeft, caps: P.caps, free: P.free, n: SP.n,
           mem: P.mem.map(pk), pool: P.pool.map(pk), before: P.before.map((x) => [x.starts, x.pts]),
           strats: P.strats.map((Q) => ({sig: Q.sig, best: !!Q.best, dSt: Q.dSt, dPts: Q.dPts, obj: Q.obj, moves: Q.moves.map((m, k) => ({t: m.t, add: m.f.id, drop: m.o ? m.o.id : null, prev: m.prev,
             from: m.h.from, to: m.h.to, starts: m.starts, opts: P.options(Q, k).map((x) => [x.c.id, x.n, x.dSt, x.dPts])})), after: Q.after.map((x) => [x.starts, x.pts])})), P}; },

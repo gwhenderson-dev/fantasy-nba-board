@@ -928,3 +928,18 @@ button.sp-nt:hover { border-color: var(--accent); }
   .sp-nt em { font-size: .64rem; }
 }
 .sp-moves .sp-when { justify-content: flex-start; padding-top: .7rem; }
+/* planner header: a clear, clickable bar (owner 2026-11-13: "more noticeable") */
+#sp-box { border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--rule)); }
+#sp-box > summary.sp-head { list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .7rem;
+  margin: -.2rem -.3rem 0; padding: .55rem .7rem .55rem 2.3rem; border-radius: 10px; background: var(--accent-bg); position: relative; }
+#sp-box > summary.sp-head::-webkit-details-marker { display: none; }
+#sp-box > summary.sp-head::before { content: ""; position: absolute; left: .8rem; top: 50%; width: .5rem; height: .5rem;
+  border-right: 2.5px solid var(--accent); border-bottom: 2.5px solid var(--accent); transform: translateY(-70%) rotate(45deg); transition: transform .15s; }
+#sp-box:not([open]) > summary.sp-head::before { transform: translateY(-50%) rotate(-45deg); }
+#sp-box > summary.sp-head:hover { background: color-mix(in srgb, var(--accent) 18%, var(--paper)); }
+.sp-hi { font-family: var(--display); font-size: 1.2rem; font-weight: 750; color: var(--accent); }
+.sp-hsub { font-size: .84rem; color: var(--ink2); }
+#sp-sum { font-size: .84rem; }
+.sp-mdctl { flex-basis: 100%; }
+.sp-nt.wk2, .sp-tlh.wk2 { box-shadow: -4px 0 0 -1px var(--ink2); }
+.sp-strip i.h.wk2 { box-shadow: -3px 0 0 -1px var(--ink2); padding-left: 2px; }
