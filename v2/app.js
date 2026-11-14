@@ -1644,7 +1644,9 @@ function dvpTip(opp, c) {
 // end of NEXT matchup week. "Plays every day picked" (default) keeps players whose
 // team plays on all of them; "Any of them" keeps a game on any; the projection
 // always adds up the games on the picked days.
-const wvDay0 = () => (todayET() > META.asof ? todayET() : META.asof);
+// the first day offered: today, or tomorrow once today's first game has tipped off
+// (no more moves count today, so the list opens on tomorrow's games)
+const wvDay0 = () => { const t = todayET(), d = t > META.asof ? t : META.asof; return d === t && dayLocked(t) ? addDays(t, 1) : d; };
 function wvWeeks() {
   const d0 = wvDay0(), W = META.weeks || [];
   const k = W.findIndex((w) => w[1] <= d0 && d0 <= w[2]);
@@ -1835,8 +1837,8 @@ function renderWaivers(only) {
     `<tr><td class="l dim" colspan="15">No ${WV.avail ? "available " : ""}players have a game ${esc(windowLabel())}.</td></tr>`;
   const wl = windowLabel();
   $("wv-count").textContent = `${list.length} of ${rows.length} with a game ${wl}`;
-  const shut = days.includes(META.asof) && META.asof === todayET() && dayLocked(META.asof);
-  $("wv-lede").innerHTML = (shut ? `<b>Today&rsquo;s pickups are closed</b> (first tip-off${tipClock(META.asof) ? " " + esc(tipClock(META.asof)) : ""}): anyone you add now plays from tomorrow. ` : "") +
+  const tdy = todayET(), shut = dayLocked(tdy);
+  $("wv-lede").innerHTML = (shut ? `<b>Today&rsquo;s pickups are closed</b> (first tip-off${tipClock(tdy) ? " " + esc(tipClock(tdy)) : ""}), so the list starts with tomorrow&rsquo;s games: anyone you add now plays from tomorrow. ` : "") +
     (!days.length ? "No fantasy week left in the schedule for this window. " : `Pickups with a game ${wl}, scored under <strong>${esc(L.name)}</strong>${days.length > 1 ? " (the projection adds up their games on those days)" : ""}. ` +
     (lg ? `Available = not on any roster in your league${Object.keys(lg.wv).length ? "; WVR = on waivers (a claim, not an instant add)" : ""}. `
       : (L.platform === "espn" ? "Loading your league&rsquo;s rosters&hellip; " : (L.platform === "sleeper" ? "Loading your Sleeper league&hellip; " : PLAT_NAME[L.platform] ? `${PLAT_NAME[L.platform]} rosters aren&rsquo;t read yet, so everyone is listed; ESPN&rsquo;s rostered % is your guide. ` : "This league isn&rsquo;t a public ESPN league, so everyone is listed; ESPN&rsquo;s rostered % is your guide. "))) +
