@@ -2388,12 +2388,16 @@ function renderPlanner() {
   } else if (P.strats.length) {
     step2 = '<p class="note sp-hint">Pick a strategy above to see who to add.</p>';
   }
-  box.innerHTML = step1 + step2 +
-    `<details class="sp-dropbox"${SP.dropOpen ? " open" : ""}><summary class="note">Who can be dropped (${P.pick.size} ticked${spSaved() ? ", your choice" : ""})</summary>` +
+  // who can be dropped: a clear button above the strategies (it's an input to them)
+  const tickedNames = P.cands.filter((c) => P.pick.has(c.r.id)).map((c) => surname(c.r.n));
+  const dropbox = `<details class="sp-dropbox"${SP.dropOpen ? " open" : ""}><summary class="sp-dsum">` +
+    `<span class="sp-dl">Who can be dropped</span><span class="sp-dv">${tickedNames.length ? esc(tickedNames.join(", ")) : "nobody ticked"}</span>` +
+    `<span class="sp-dc">${spSaved() ? "your choice" : "default"} · change</span></summary>` +
     '<div class="sp-drops">' + P.cands.map((c) => `<label class="sp-dp${P.pick.has(c.r.id) ? " on" : ""}"><input type="checkbox" data-spd="${c.r.id}"${P.pick.has(c.r.id) ? " checked" : ""}>` +
       `<span class="sp-dn" title="${esc(c.r.n)}">${esc(c.r.n)}</span><span class="sp-dt" title="rest-of-season points">${fx(c.tot, 0)} pts</span></label>`).join("") + "</div>" +
     `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list excluded. Tick more to let the planner choose. ` +
     `Your ticks are remembered in this browser.${spSaved() ? ' <button type="button" class="linkbtn" data-sprst>Back to the default</button>' : ""}</p></details>`;
+  box.innerHTML = dropbox + step1 + step2;
 }
 function bindPlanner() {
   const chips = (id, attr, fn) => document.querySelectorAll(`#${id} .chip`).forEach((c) => c.addEventListener("click", () => {

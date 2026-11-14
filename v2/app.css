@@ -582,8 +582,17 @@ select { max-width: 100%; }
 .sp-teams { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: .9rem 0 .2rem; }
 .sp-teams .lbl { margin-right: .2rem; }
 .sp-team { cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; background: var(--band); border-radius: 999px; padding: .15rem .55rem .15rem .35rem; }
-.sp-dropbox { margin-top: .6rem; }
-.sp-dropbox summary { cursor: pointer; }
+.sp-dropbox { margin: 0 0 .9rem; }
+.sp-dropbox > summary.sp-dsum { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .6rem;
+  border: 1.5px solid var(--rule2); border-radius: 10px; padding: .55rem .9rem; background: var(--paper); }
+.sp-dropbox > summary.sp-dsum::-webkit-details-marker { display: none; }
+.sp-dropbox > summary.sp-dsum::before { content: ""; flex: none; width: .42rem; height: .42rem; border-right: 2px solid var(--ink2); border-bottom: 2px solid var(--ink2);
+  transform: rotate(-45deg); transition: transform .15s; margin-right: .1rem; }
+.sp-dropbox[open] > summary.sp-dsum::before { transform: translateY(-25%) rotate(45deg); }
+.sp-dropbox > summary.sp-dsum:hover { border-color: var(--accent); }
+.sp-dl { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.sp-dv { font-weight: 700; font-size: .9rem; }
+.sp-dc { margin-left: auto; font-size: .78rem; font-weight: 650; color: var(--accent); }
 .sp-drops { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .35rem; font-size: .85rem; margin: .5rem 0; }
 .sp-dp { display: flex; align-items: center; gap: .45rem; min-width: 0; padding: .35rem .55rem; border: 1px solid var(--rule2); border-radius: 8px; cursor: pointer; }
 .sp-dp:hover { border-color: var(--accent); }
@@ -930,12 +939,15 @@ button.sp-nt:hover { border-color: var(--accent); }
 .sp-moves .sp-when { justify-content: flex-start; padding-top: .7rem; }
 /* planner header: a clear, clickable bar (owner 2026-11-13: "more noticeable") */
 #sp-box { border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--rule)); }
-#sp-box > summary.sp-head { list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .7rem;
-  margin: -.2rem -.3rem 0; padding: .55rem .7rem .55rem 2.3rem; border-radius: 10px; background: var(--accent-bg); position: relative; }
+/* the header fills the card edge to edge: same space on every side, chevron in the flow */
+#sp-box > summary.sp-head { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .7rem;
+  margin: -1rem -1.1rem; padding: .8rem 1.1rem; border-radius: calc(var(--r) - 1px); background: var(--accent-bg); }
+#sp-box[open] > summary.sp-head { margin-bottom: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--rule)); }
 #sp-box > summary.sp-head::-webkit-details-marker { display: none; }
-#sp-box > summary.sp-head::before { content: ""; position: absolute; left: .8rem; top: 50%; width: .5rem; height: .5rem;
-  border-right: 2.5px solid var(--accent); border-bottom: 2.5px solid var(--accent); transform: translateY(-70%) rotate(45deg); transition: transform .15s; }
-#sp-box:not([open]) > summary.sp-head::before { transform: translateY(-50%) rotate(-45deg); }
+#sp-box > summary.sp-head::before { content: ""; flex: none; width: .5rem; height: .5rem; margin: 0 .15rem 0 .1rem;
+  border-right: 2.5px solid var(--accent); border-bottom: 2.5px solid var(--accent); transform: translateY(-25%) rotate(45deg); transition: transform .15s; }
+#sp-box:not([open]) > summary.sp-head::before { transform: rotate(-45deg); }
 #sp-box > summary.sp-head:hover { background: color-mix(in srgb, var(--accent) 18%, var(--paper)); }
 .sp-hi { font-family: var(--display); font-size: 1.2rem; font-weight: 750; color: var(--accent); }
 .sp-hsub { font-size: .84rem; color: var(--ink2); }
