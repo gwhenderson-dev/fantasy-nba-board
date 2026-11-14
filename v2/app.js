@@ -2035,7 +2035,7 @@ function planStream() {
   // drop must never make the plan worse (the re-solve can settle in a local best)
   // CP = adds allowed in each matchup period of the plan ([this] or [this, next]),
   // TOT = adds allowed in all; a move can only be made on a day you allow (canMove)
-  const solve = (maxDrops, pl, CP, TOT) => {
+  const solve = (maxDrops, pl, CP, TOT, cost = COST) => {
     const spots = Array.from({length: free}, () => ({o: null, seq: []})).concat(mem.filter((m) => m.ok).map((o) => ({o, seq: []})));
     const fixed = mem.filter((m) => !m.ok);
     const segs = (sp) => {                         // who holds this spot on which days
@@ -2101,7 +2101,7 @@ function planStream() {
             if (!o || (j > 0 && !o.adds)) return;
             const b0 = a0 + o.a[0], b1 = a1 + o.a[1], d2 = d + (o.adds && sp.o ? 1 : 0);
             if (b0 > CP[0] || b1 > (CP[1] || 0) || b0 + b1 > TOT || d2 > maxDrops) return;
-            const v = st.v + (o.adds ? o.gain - COST * o.adds : 0), k2 = b0 + "," + b1 + "," + d2;
+            const v = st.v + (o.adds ? o.gain - cost * o.adds : 0), k2 = b0 + "," + b1 + "," + d2;
             if (!nx.has(k2) || nx.get(k2).v < v - 1e-9) nx.set(k2, {v, pick: st.pick.concat([o.adds ? o.a : null])});
           });
         });
@@ -2118,15 +2118,15 @@ function planStream() {
         .forEach((k) => {
           const a = top.pick[k];
           if (!a) return;
-          const c = curve(spots[k], [a[0], a[1]]).filter(Boolean).sort((x, y) => (y.gain - COST * y.adds) - (x.gain - COST * x.adds))[0];
-          spots[k].seq = c && c.adds && c.gain - COST * c.adds > 0 ? c.seq : [];
+          const c = curve(spots[k], [a[0], a[1]]).filter(Boolean).sort((x, y) => (y.gain - cost * y.adds) - (x.gain - cost * x.adds))[0];
+          spots[k].seq = c && c.adds && c.gain - cost * c.adds > 0 ? c.seq : [];
         });
       const now = total(roster(null));
       if (now <= cur + 1e-6) { spots.forEach((sp, k) => { sp.seq = keepSeq[k]; }); break; }
       cur = now;
     }
     const fin = roster(null);
-    return {spots, fin, obj: total(fin) - COST * spots.reduce((x, sp) => x + sp.seq.length, 0)};
+    return {spots, fin, obj: total(fin) - cost * spots.reduce((x, sp) => x + sp.seq.length, 0)};
   };
   // final lineups: who starts each day
   const lineup = (ms) => days.map((_, i) => {
@@ -2194,6 +2194,15 @@ function planStream() {
     const Q = fromSol(sol);
     if (Q.moves.length === A) strats.push(Q);
   }
+  // (c) MAX STREAMING (owner 11-14): use every add left (up to 4 a week; both weeks under "Both"),
+  //     taking any add worth 0.05+ expected starts (vs 0.3 for the others) — the most games the adds can buy
+  let maxQ = null;
+  if (addsLeft >= 2 && canMove.some(Boolean)) {
+    let sol = solve(0, pool, CP, addsLeft, 0.05);
+    for (let k = 1; k <= SP.n; k++) { const s2 = solve(k, pool, CP, addsLeft, 0.05); if (s2.obj > sol.obj + 1e-9) sol = s2; }
+    maxQ = fromSol(sol);
+    if (!maxQ.moves.length || maxQ.dSt <= 0) maxQ = null;
+  }
   // the same starting nights are one strategy, whatever the add day or the drop:
   // keep the best, and on a tie the later day (you keep your player and the news
   // longer); then one move first, best first
@@ -2203,6 +2212,11 @@ function planStream() {
   const ones = [...seen.values()].filter((Q) => Q.moves.length === 1).sort((x, y) => y.obj - x.obj).slice(0, 3);
   const more = [...seen.values()].filter((Q) => Q.moves.length > 1 && Q.obj > (ones[0] ? ones[0].obj : 0) + 1e-9).sort((x, y) => x.moves.length - y.moves.length);
   const list = ones.concat(more);
+  if (maxQ) {
+    const k = shape(maxQ), same = list.find((Q) => shape(Q) === k);
+    if (same) same.max = true;
+    else if (maxQ.moves.length > Math.max(0, ...list.map((Q) => Q.moves.length))) { maxQ.max = true; list.push(maxQ); }
+  }
   list.forEach((Q) => { Q.sig = shape(Q); });
   const top = list.reduce((a, Q) => (!a || Q.obj > a.obj ? Q : a), null);
   if (top) top.best = true;
@@ -2231,7 +2245,7 @@ function planStream() {
       fin = fin.map((m) => (m === mv.h ? nh : m));
       mv.h = nh; mv.f = c;
     });
-    return Object.assign(finish(fin, moves), {sig: Q.sig, best: Q.best});
+    return Object.assign(finish(fin, moves), {sig: Q.sig, best: Q.best, max: Q.max});
   };
   return {days, PER, PERS, per, caps, canMove, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose};
 }
@@ -2312,7 +2326,8 @@ function renderPlanner() {
         (mv.prev < 0 ? `<em>${o ? "drop " + esc(last(o.n)) : "open spot"}</em>` : "") + "</span>";
     }).join("");
     return `<button type="button" class="sp-opt sp-st${on ? " on" : ""}" data-st="${esc(Q.sig)}" aria-pressed="${on}">` +
-      `<span class="sp-ol">${Q.moves.length} move${Q.moves.length > 1 ? "s" : ""}${Q.best ? ' <span class="sp-tag">best</span>' : ""}</span>` +
+      `<span class="sp-ol">${Q.moves.length} move${Q.moves.length > 1 ? "s" : ""}${Q.best ? ' <span class="sp-tag">best</span>' : ""}` +
+      (Q.max ? ` <span class="sp-tag mx" title="${esc(Q.moves.length >= P.addsLeft ? "Uses every add you have left: the most starts your adds can buy" : `The most starts your adds can buy: ${Q.moves.length} of your ${P.addsLeft} adds; another add gains nothing`)}">${Q.moves.length >= P.addsLeft ? "every add" : "max streaming"}</span>` : "") + "</span>" +
       `<span class="sp-ov"><b class="${Q.dSt > 0 ? "pos-up" : ""}">${sg(Q.dSt, 0)}</b> starts · <b class="${Q.dPts > 0 ? "pos-up" : ""}">${sg(Q.dPts, 0)}</b> pts</span>` +
       strip(Q) + lines + "</button>";
   };

@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=cd0c1f3022">
+<link rel="stylesheet" href="app.css?v=a7e206d410">
 </head>
 <body>
 <header class="top">
@@ -645,7 +645,9 @@ prior = his game-to-game SD last season (else 9.06 + 0.145 × FP/G)</div>
       than the points gap between two streamers, so a separate &ldquo;most points&rdquo; aim was removed. The planner works in two steps.
       <strong>Step 1, strategies</strong>: told by days and games only. One-move strategies are found exhaustively (every spot you&rsquo;d give
       up &times; every free agent &times; every day you could make the move, best for each day); two- and three-move strategies are the
-      sequence search above with exactly that many adds, shown only when they beat the best single move. Strategies that start on the
+      sequence search above with exactly that many adds, shown only when they beat the best single move. A last card,
+      &ldquo;every add&rdquo; (or &ldquo;max streaming&rdquo; when another add would gain nothing), uses all the adds you have left
+      (both weeks under &ldquo;Both&rdquo;), taking any add worth 0.05 expected starts or more instead of 0.3: the most games your adds can buy. Strategies that start on the
       same nights count as one (the later add day is kept, so you hold your player and the news longer). Above them, each night shows
       your open starter slots and how many NBA games there are; click a night to list the free agents who play it.
       <strong>Step 2, players</strong>: for each move of the strategy you pick, the free agents who could hold that spot on the same days,
@@ -789,6 +791,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=5eafcc3306"></script>
+<script src="app.js?v=2cb584f7f0"></script>
 </body>
 </html>

@@ -955,3 +955,4 @@ button.sp-nt:hover { border-color: var(--accent); }
 .sp-mdctl { flex-basis: 100%; }
 .sp-nt.wk2, .sp-tlh.wk2 { box-shadow: -4px 0 0 -1px var(--ink2); }
 .sp-strip i.h.wk2 { box-shadow: -3px 0 0 -1px var(--ink2); padding-left: 2px; }
+.sp-tag.mx { color: var(--accent); border-color: var(--accent); }
