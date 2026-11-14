@@ -2986,6 +2986,7 @@ const normCdf = (x) => {   // Abramowitz-Stegun
 // The league's matchup periods: ESPN's map (matchup id -> its fantasy weeks)
 // when the league was pulled, else built from the League tab's playoff weeks
 // and weeks per round. Playoff rounds are named from the end (Finals, ...).
+const mdShort = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"});
 function matchupPeriods() {
   const W = Object.fromEntries(META.weeks.map((w) => [w[0], w]));
   let per = [];
@@ -3004,7 +3005,9 @@ function matchupPeriods() {
   const gameDays = new Set(Object.values(META.sched).flatMap((g) => g.map((x) => x[0])));
   per.forEach((p) => {
     p.start = W[p.weeks[0]][1]; p.end = W[p.weeks[p.weeks.length - 1]][2];
-    if (!p.label) p.label = `Week ${p.weeks[0]}`;
+    if (!p.label) p.label = `Matchup ${p.id}`;          // owner 11-14: matchups, not weeks (some span two weeks)
+    p.span = Math.round((Date.parse(p.end) - Date.parse(p.start)) / 864e5) + 1;
+    p.dates = `${mdShort(p.start)} – ${mdShort(p.end)}`;
     let n = 0;
     for (let d = p.start; d <= p.end; d = addDays(d, 1)) if (gameDays.has(d)) n++;
     p.gameDays = n;
@@ -3180,7 +3183,7 @@ function renderWeekLock(lg, PER, days, today) {
       days.map((d) => cell(r, d)).join("") + `<td class="big">${fx(r.lw.value, 1)}</td></tr>`
       : `<tr><td class="l"><span class="slt-s">${esc(r.slot)}</span></td><td class="l dim" colspan="${days.length + 3}">${r.sid ? "A player the site doesn&rsquo;t project (Sleeper id " + esc(r.sid) + ")" : "Empty slot"}</td></tr>`).join("");
     const bench = t.bench.map((r) => `<tr class="isout"><td class="l"><span class="slt-s">BN</span></td><td class="l name" data-id="${r.id}">${esc(r.p.n)}</td><td class="l dim">bench: can&rsquo;t be locked</td>${days.map(() => '<td class="dg"></td>').join("")}<td class="dim">&ndash;</td></tr>`).join("");
-    return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(lg.byId[tid].name)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
+    return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(lg.byId[tid].name)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; ${esc(PER.label)}</h2>` +
       `<span class="count" style="margin-left:0">${over ? "final " + fx(t.live, 0) : "projected " + fx(t.proj, 0) + " · live " + fx(t.live, 0)}</span></div>` +
       '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l">Slot</th><th class="l">Player</th><th class="l">Lock-In</th>' +
       days.map((d) => `<th class="dcol${d < today ? " past" : ""}">${dn(d)}<br><span class="dim">${d.slice(5)}</span></th>`).join("") +
@@ -3191,7 +3194,7 @@ function renderWeekLock(lg, PER, days, today) {
     `<strong>Worth</strong> is the locked game when the rule would have locked one, otherwise what his remaining games are worth if you lock smartly (the expected best you can bank, not his average). ` +
     `Sleeper doesn&rsquo;t say which games you actually locked, so the projection assumes the rule; the live score is Sleeper&rsquo;s own. Bench players can&rsquo;t be locked.</p>`;
   $("wk-count").textContent = `${ms.length} matchups`;
-  $("wk-lede").innerHTML = `Every matchup in week ${wk} (${PER.start.slice(5)} to ${PER.end.slice(5)}), scored under <strong>${esc(L.name)}</strong> with Sleeper&rsquo;s <strong>Lock-In</strong> rules: one game per starter counts. ` +
+  $("wk-lede").innerHTML = `${esc(PER.label)} (${PER.dates}), every pairing, scored under <strong>${esc(L.name)}</strong> with Sleeper&rsquo;s <strong>Lock-In</strong> rules: one game per starter counts. ` +
     `<strong>Proj</strong> adds each starter&rsquo;s locked game, or what his remaining games are worth if you lock smartly.`;
   $("wk-note").innerHTML = "Lineups and live scores are read from Sleeper; projections from this morning&rsquo;s build. Win chances aren&rsquo;t shown for Lock-In yet.";
 }
@@ -3217,8 +3220,8 @@ function renderWeek() {
     WK.week = cur.id;
   }
   const pstate = (p) => (p.end < today ? "final" : p.start <= today ? "now" : "upcoming");
-  const opt = (p) => `<option value="${p.id}"${p.id === WK.week ? " selected" : ""}>${p.label}` +
-    `${p.playoff ? ` · weeks ${p.weeks[0]}${p.weeks.length > 1 ? "–" + p.weeks[p.weeks.length - 1] : ""}` : ""} (${p.start.slice(5)} to ${p.end.slice(5)}) · ${pstate(p)}</option>`;
+  const opt = (p) => `<option value="${p.id}"${p.id === WK.week ? " selected" : ""}>${p.label}: ${p.dates}` +
+    `${p.span > 8 ? ` (${Math.round(p.span / 7)} weeks)` : ""} · ${pstate(p)}</option>`;
   const reg = periods.filter((p) => !p.playoff), po = periods.filter((p) => p.playoff);
   $("wk-week").innerHTML = `<optgroup label="Regular season">${reg.map(opt).join("")}</optgroup>` +
     (po.length ? `<optgroup label="Playoffs">${po.map(opt).join("")}</optgroup>` : "");
@@ -3321,14 +3324,14 @@ function renderWeek() {
         (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && x.d >= today).length + (r.manual ? 1 : 0), 0);
-  return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; week ${wk}</h2>` +
+  return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; ${esc(PER.label)}</h2>` +
     `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
     (SW ? (() => { const S = SW[tid], lv = liveOf(tid), now = over ? lv : T.final, dlt = now - S.tot;
       const sofar = lv - S.past, rest = over ? 0 : T.rem - S.rem;
       return `<span class="count wk-sw" title="${esc(`Projected at the start of the week: ${fx(S.tot, 0)} for the whole week (opening-day roster, projections from games before ${ws}).` +
         `\nScored so far: ${fx(lv, 0)} vs ${fx(S.past, 0)} expected by now` + (over ? "" : ` (days before today; tonight's games count once they start)\nRest of the week: ${fx(T.rem, 0)} projected now vs ${fx(S.rem, 0)} at the start (injuries, roster moves, lineup choices)`))}">` +
-        `start of week ${fx(S.tot, 0)} <b class="${dlt >= 0 ? "pos-up" : "pos-dn"}">${sg(dlt, 0)}</b>` +
-        ` <span class="dim">· so far ${sg(sofar, 0)}${over ? "" : ` · rest of week ${sg(rest, 0)}`}</span></span>`; })() : "") +
+        `start of matchup ${fx(S.tot, 0)} <b class="${dlt >= 0 ? "pos-up" : "pos-dn"}">${sg(dlt, 0)}</b>` +
+        ` <span class="dim">· so far ${sg(sofar, 0)}${over ? "" : ` · rest of matchup ${sg(rest, 0)}`}</span></span>`; })() : "") +
     (nPicks ? `<button class="btn" data-reset="${tid}">Reset lineup choices (${nPicks})</button>` : "") + "</div>" +
     '<div class="tablewrap" style="max-height:none"><table><thead><tr><th class="l" title="Untick a player you know won\'t play this week">Plays</th><th class="l">Player</th><th class="l">Status</th>' +
     days.map((d, i) => { const D = T.days[i];
@@ -3355,7 +3358,7 @@ function renderWeek() {
     `<td class="grp"></td><td></td><td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>";
   };
-  $("wk-detail").innerHTML = (over ? `<p class="note">Week ${wk} is over: scores are ESPN&rsquo;s finals. The grid below uses <em>today&rsquo;s</em> rosters, so it shows what the best lineup would have been, not what was played.</p>` : "") +
+  $("wk-detail").innerHTML = (over ? `<p class="note">${esc(PER.label)} is over: scores are ESPN&rsquo;s finals. The grid below uses <em>today&rsquo;s</em> rosters, so it shows what the best lineup would have been, not what was played.</p>` : "") +
     WK.pair.map(block).join("") +
     `<p class="note">Each remaining game has a box, pre-ticked with the best possible lineup (${SLOTS.length} starter slots, positions respected). ` +
     "Untick a game to bench him that night, tick one to start him; the projection follows your lineup. Outlined boxes are your choices; a red one means every slot he can fill is already taken. " +
@@ -3363,9 +3366,9 @@ function renderWeek() {
     "All choices are saved for this week in your browser.</p>";
   const myM = ms.find((m) => m.home.teamId === mt || m.away.teamId === mt);
   $("wk-count").textContent = `${ms.length} matchups`;
-  $("wk-lede").innerHTML = `Every matchup in ${PER.playoff ? "the " + PER.label + " (weeks " + PER.weeks.join("–") + ")" : "week " + wk}: ${PER.gameDays} game days, ${lim != null ? lim + " adds" : "adds per your league"}. Scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
+  $("wk-lede").innerHTML = `${PER.playoff ? "The " + PER.label : PER.label} (${PER.dates}${PER.span > 8 ? `, ${Math.round(PER.span / 7)} weeks` : ""}), every pairing: ${PER.gameDays} game days, ${lim != null ? lim + " adds" : "adds per your league"}. Scored under <strong>${esc(L.name)}</strong>. <strong>Proj</strong> = the live ESPN score plus the best possible lineup on each remaining day ` +
     `(${SLOTS.length} starter slots, filled by an exact assignment of who plays that day), at rest-of-season FP/G with the matchup and back-to-back adjustments from the Waivers tab. ` +
-    `Players out or on IR count from ESPN&rsquo;s expected return date when it has one. Click a matchup to see both teams below. Pick any week, past or future.` +
+    `Players out or on IR count from ESPN&rsquo;s expected return date when it has one. Click a matchup to see both teams below. Pick any matchup, past or future.` +
     (myM ? "" : "");
   $("wk-note").innerHTML = "Win chance is rough: it treats each remaining game as independent, with each player&rsquo;s game-to-game spread (the same one behind the Waivers ceiling). " +
     "While tonight&rsquo;s games are being played, players already in action count twice (in the live score and the projection) until the next morning&rsquo;s build. Rosters, injuries, live scores and adds are read from ESPN; projections are from this morning.";
@@ -4022,13 +4025,16 @@ function renderSchedule() {
     SC.week = cur[0];
   }
   const md = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"});
-  $("sc-week").innerHTML = W.map((w) => `<option value="${w[0]}"${w[0] === SC.week ? " selected" : ""}>Week ${w[0]}: ${md(w[1])} – ${md(w[2])}` +
+  const MP = matchupPeriods();
+  const wname = (n) => { const p = MP.find((q) => q.weeks.includes(n)); if (!p) return `After the fantasy season`;
+    return p.weeks.length > 1 ? `${p.label}, part ${p.weeks.indexOf(n) + 1} of ${p.weeks.length}` : p.label; };
+  $("sc-week").innerHTML = W.map((w) => `<option value="${w[0]}"${w[0] === SC.week ? " selected" : ""}>${wname(w[0])}: ${md(w[1])} – ${md(w[2])}` +
     `${w[2] < today ? " · done" : w[1] <= today ? " · now" : ""}</option>`).join("");
   const wk = W.find((w) => w[0] === SC.week);
   const days = [];
   for (let d = wk[1]; d <= wk[2]; d = addDays(d, 1)) days.push(d);
   const extra = [addDays(wk[2], 1), addDays(wk[2], 2)];            // next Monday + Tuesday
-  const all = days.concat(extra);
+  const all = days.concat(extra), ND = days.length;      // a two-week stretch (All-Star break) has 14 days
   const dn = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, {weekday: "short"});
   $("sc-days").innerHTML = days.map((d) => `<button type="button" class="chip" data-d="${d}" aria-pressed="${SC.days.has(d)}">${dn(d)}</button>`).join("");
   const game = {};                                                   // team -> date -> [opp, home]
@@ -4043,12 +4049,12 @@ function renderSchedule() {
     : SC.dir * ((game[a.tm][SC.sort] ? 1 : 0) - (game[b.tm][SC.sort] ? 1 : 0)) || a.tm.localeCompare(b.tm));
   const on = (k) => (SC.sort === k ? ` on${SC.dir > 0 ? " asc" : ""}` : "");
   // column classes: alternate shading, a heavier line where next week starts, today outlined
-  const cc = (d, i) => `sc-d${i % 2 ? " alt" : ""}${i >= 7 ? " sc-next" : ""}${i === 7 ? " wkb" : ""}${d < today ? " past" : ""}${d === today ? " today" : ""}`;
+  const cc = (d, i) => `sc-d${i % 2 ? " alt" : ""}${i >= ND ? " sc-next" : ""}${i === ND ? " wkb" : ""}${d < today ? " past" : ""}${d === today ? " today" : ""}`;
   $("sc-table").querySelector("thead").innerHTML = `<tr><th class="l${on("tm")}" data-k="tm">Team</th><th class="sc-gc${on("n")}" data-k="n" title="Games this week (Mon–Sun)"><span class="sc-full">Games</span><span class="sc-ab">G</span></th>` +
     all.map((d, i) => `<th class="${cc(d, i)}${on(d)}" data-k="${d}" title="Click to sort by who plays this day">` +
-      `<span class="sc-tag">${d === today ? "Today" : i >= 7 ? "Next wk" : "&nbsp;"}</span><span class="sc-dn">${dn(d)}</span><span class="sc-dt">${d.slice(5).replace("-", "/")}</span></th>`).join("") + "</tr>" +
+      `<span class="sc-tag">${d === today ? "Today" : i >= ND ? "Next wk" : "&nbsp;"}</span><span class="sc-dn">${dn(d)}</span><span class="sc-dt">${d.slice(5).replace("-", "/")}</span></th>`).join("") + "</tr>" +
     `<tr class="sc-tot"><th class="l"><span class="sc-full">Games that day</span><span class="sc-ab">Per day</span></th><th class="sc-gc"></th>` +
-    perDay.map((n, i) => `<th class="${cc(all[i], i)}"><span class="${i < 7 && n && n === light ? "sc-lt" : ""}">${n}</span></th>`).join("") + "</tr>";
+    perDay.map((n, i) => `<th class="${cc(all[i], i)}"><span class="${i < ND && n && n === light ? "sc-lt" : ""}">${n}</span></th>`).join("") + "</tr>";
   $("sc-table").querySelector("tbody").innerHTML = rows.map((r) => `<tr><td class="l sc-team">${teamLogo(r.tm)}<span class="name"><span class="sc-full">${esc(TEAM_NAMES[r.tm] || r.tm)}</span><span class="sc-ab">${esc(r.tm)}</span></span></td>` +
     `<td class="sc-gc"><span class="sc-gn${r.n >= 4 ? " hi" : r.n <= 2 ? " lo" : ""}">${r.n}</span></td>` +
     all.map((d, i) => { const g = game[r.tm][d];
