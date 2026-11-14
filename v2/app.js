@@ -1474,7 +1474,7 @@ function renderRecap() {
     }
   }
   const list = (title, rows, fn, empty = "-") => `<div class="card"><h4>${title}</h4>${rows.map(fn).join("") || `<p class="note" style="margin:0">${empty}</p>`}</div>`;
-  $("rc-sthead").textContent = `The night in fantasy — ${dlabel(RC.day)}`;
+  $("rc-sthead").textContent = dlabel(RC.day);
   $("rc-stand").innerHTML =
     (board || mineCard ? `<div class="nf-top">${board}${mineCard}</div>` : "") +
     '<div class="stand">' +
@@ -1556,6 +1556,12 @@ function renderRecap() {
       (showFan ? " Fantasy owners are today's rosters, not the rosters on the night." : "") + "</p></div>";
 }
 function bindRecap() {
+  // the league-wide recap folds like the streaming planner; open or closed is remembered in this browser
+  const fold = $("rc-fold");
+  if (fold) {
+    if (lsGet("fnba.v2.rcfold", 1) === 0) fold.open = false;
+    fold.addEventListener("toggle", () => lsSet("fnba.v2.rcfold", fold.open ? 1 : 0));
+  }
   document.querySelectorAll(".rc-daysel").forEach((el) => el.addEventListener("change", (e) => { RC.day = e.target.value; RC.g = null; RC.auto = false; renderRecap(); }));
   const step = (d) => {
     const days = [...new Set(RECAP.games.map((g) => g[1]))].sort().reverse();

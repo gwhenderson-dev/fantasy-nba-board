@@ -938,17 +938,17 @@ button.sp-nt:hover { border-color: var(--accent); }
 }
 .sp-moves .sp-when { justify-content: flex-start; padding-top: .7rem; }
 /* planner header: a clear, clickable bar (owner 2026-11-13: "more noticeable") */
-#sp-box { border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--rule)); }
+.fold { border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--rule)); }
 /* the header fills the card edge to edge: same space on every side, chevron in the flow */
-#sp-box > summary.sp-head { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .7rem;
+.fold > summary.sp-head { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .7rem;
   margin: -1rem -1.1rem; padding: .8rem 1.1rem; border-radius: calc(var(--r) - 1px); background: var(--accent-bg); }
-#sp-box[open] > summary.sp-head { margin-bottom: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0;
+.fold[open] > summary.sp-head { margin-bottom: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--rule)); }
-#sp-box > summary.sp-head::-webkit-details-marker { display: none; }
-#sp-box > summary.sp-head::before { content: ""; flex: none; width: .5rem; height: .5rem; margin: 0 .15rem 0 .1rem;
+.fold > summary.sp-head::-webkit-details-marker { display: none; }
+.fold > summary.sp-head::before { content: ""; flex: none; width: .5rem; height: .5rem; margin: 0 .15rem 0 .1rem;
   border-right: 2.5px solid var(--accent); border-bottom: 2.5px solid var(--accent); transform: translateY(-25%) rotate(45deg); transition: transform .15s; }
-#sp-box:not([open]) > summary.sp-head::before { transform: rotate(-45deg); }
-#sp-box > summary.sp-head:hover { background: color-mix(in srgb, var(--accent) 18%, var(--paper)); }
+.fold:not([open]) > summary.sp-head::before { transform: rotate(-45deg); }
+.fold > summary.sp-head:hover { background: color-mix(in srgb, var(--accent) 18%, var(--paper)); }
 .sp-hi { font-family: var(--display); font-size: 1.2rem; font-weight: 750; color: var(--accent); }
 .sp-hsub { font-size: .84rem; color: var(--ink2); }
 #sp-sum { font-size: .84rem; }
@@ -984,3 +984,6 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .sp-tmc[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); }
 .sp-tmc small { color: var(--muted); font-size: .68rem; }
 .sp-tmpk { margin-top: .3rem; padding-left: .6rem; border-left: 2px solid var(--accent); }
+/* Recap: the league-wide night in its own fold */
+.rc-fold { margin: .4rem 0 1.1rem; }
+.rc-fold[open] > #rc-stand { margin-top: 1rem; }

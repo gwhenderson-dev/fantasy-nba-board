@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=4e9007a249">
+<link rel="stylesheet" href="app.css?v=ceb52a0cbd">
 </head>
 <body>
 <header class="top">
@@ -194,7 +194,7 @@
   <section class="panel" id="tab-wire" hidden>
     <h1>Waivers &amp; streaming</h1>
     <p class="lede" id="wv-lede"></p>
-    <details class="card sp-card" id="sp-box" open>
+    <details class="card sp-card fold" id="sp-box" open>
       <summary class="sp-head"><span class="sp-hi">Streaming planner</span><span class="sp-hsub">who to pick up, and on which days, for the most games</span> <span class="dim" id="sp-sum"></span></summary>
       <div class="controls" style="margin-top:.6rem">
         <div class="ctl"><span class="lbl" title="How many of your players the planner may drop. Each one opens a roster spot to stream through: with 1, all your adds chain through the same spot">Spots to stream <span class="dim">(players you&rsquo;ll drop)</span></span><div class="chips" id="sp-n">
@@ -266,8 +266,10 @@
       <div class="daynav"><button class="btn rc-prev" aria-label="Previous day">&lsaquo;</button>
         <select id="rc-day2" class="rc-daysel"></select>
         <button class="btn rc-next" aria-label="Next day">&rsaquo;</button></div></div></div>
-    <h2 id="rc-sthead" style="margin-top:.4rem">The night in fantasy</h2>
-    <div id="rc-stand"></div>
+    <details class="card fold rc-fold" id="rc-fold" open>
+      <summary class="sp-head"><span class="sp-hi">The night in fantasy</span><span class="sp-hsub">league-wide recap: every fantasy team&rsquo;s night, top scores, who ran hot and cold</span> <span class="dim" id="rc-sthead"></span></summary>
+      <div id="rc-stand"></div>
+    </details>
     <div class="controls">
       <div class="ctl"><label for="rc-day">Day</label>
         <div class="daynav"><button class="btn rc-prev" id="rc-prev" aria-label="Previous day">&lsaquo;</button>
@@ -791,6 +793,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=9d52187d69"></script>
+<script src="app.js?v=03e3d271f6"></script>
 </body>
 </html>
