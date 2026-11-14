@@ -1104,3 +1104,16 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 @media (max-width: 640px) { .lv-t th:first-child, .lv-t td.slt-c { width: 2rem; } .lv-t th:last-child { width: 3.6rem; } }
 .lv-t td.l, .lv-ln, .lv-gm { white-space: normal; }
 @media (max-width: 640px) { .lv-t th { font-size: .62rem; } }
+/* who leads (owner 11-14) */
+.lv-vs { max-width: 11rem; }
+.lv-lead { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .45rem .8rem; border-radius: 12px; background: var(--band); line-height: 1.15; }
+.lv-lead span { font-size: .8rem; font-weight: 600; color: var(--ink2); }
+.lv-lead span em { font-style: normal; font-weight: 750; color: var(--ink); }
+.lv-lead b { font-family: var(--display); font-size: 1.6rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.lv-lead.up { background: color-mix(in srgb, var(--good) 14%, transparent); }
+.lv-lead.up span, .lv-lead.up b { color: var(--good); }
+.lv-lead.dn { background: color-mix(in srgb, var(--red) 13%, transparent); }
+.lv-lead.dn span, .lv-lead.dn b { color: var(--red); }
+@media (max-width: 640px) { .lv-vs { max-width: 5.5rem; } .lv-lead { padding: .35rem .45rem; } .lv-lead span { font-size: .66rem; text-align: center; } .lv-lead b { font-size: 1.15rem; } }
+.lv-lead span { text-align: center; }
+.lv-lead span em { display: block; }

@@ -4412,8 +4412,17 @@ function renderLive() {
   };
   const wbar = isToday ? `<div class="wrow lv-w" title="Rough win chance: projected final margin against the spread of the games still to come (normal approximation, games independent; untested as a probability)"><b class="wa">${Math.round(cur.A.win * 100)}%</b>` +
     `<div class="wbar"><span class="a" style="width:${(cur.A.win * 100).toFixed(0)}%"></span><span class="h"></span></div><b class="wh">${Math.round(cur.H.win * 100)}%</b></div>` : "";
-  const score = `<div class="card lv-score">${sideHead(cur.A, "a")}<div class="lv-vs">${(() => { const d = cur.A.live - cur.H.live, ld = d > 0 ? cur.A : cur.H;
-    return Math.round(d) === 0 ? '<b>tied</b>' : `<span class="dim">${ld.teamId === mt ? "you lead by" : tn(ld.teamId) + " by"}</span><b>${fx(Math.abs(d), 0)}</b>`; })()}</div>${sideHead(cur.H, "h")}${wbar}</div>`;
+  // who leads, said plainly (owner 11-14): "You lead by 3" / "You trail by 12" in your matchup,
+  // "<team> leads by N" in the others
+  const lead = (() => {
+    const d = cur.A.live - cur.H.live, n = fx(Math.abs(d), 0);
+    if (Math.round(d) === 0) return '<div class="lv-lead tie"><b>Tied</b></div>';
+    const ld = d > 0 ? cur.A : cur.H, tr = d > 0 ? cur.H : cur.A;
+    const mine = cur.A.teamId === mt || cur.H.teamId === mt;
+    if (mine) return ld.teamId === mt ? `<div class="lv-lead up"><span>You lead by</span><b>${n}</b></div>` : `<div class="lv-lead dn"><span>You trail by</span><b>${n}</b></div>`;
+    return `<div class="lv-lead"><span><em>${tn(ld.teamId)}</em> leads by</span><b>${n}</b></div>`;
+  })();
+  const score = `<div class="card lv-score">${sideHead(cur.A, "a")}<div class="lv-vs">${lead}</div>${sideHead(cur.H, "h")}${wbar}</div>`;
   // ---- NBA games that day with this matchup's players in them
   const own = {};
   [cur.A, cur.H].forEach((X, k) => X.rows.forEach((r) => { if (r.g && r.starter) { const o = own[r.g.id] = own[r.g.id] || [0, 0]; o[k]++; } }));
