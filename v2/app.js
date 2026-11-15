@@ -2279,6 +2279,13 @@ function planStream() {
     const st = on.filter((_, k) => res.rc[k] >= 0);
     return {starts: st.length, pts: st.reduce((a, m) => a + m.dv[i].val, 0), games: st.reduce((a, m) => a + m.dv[i].play, 0), ids: new Set(st.map((m) => m.id))};
   });
+  // a pickup's REAL starts (owner 11-15: "Wednesday has a lot of games, a streamer that day most likely won't
+  // play"): a night counts only if the roster gets one more start with him than without him. On a full night
+  // the lineup may still slot him ahead of a regular, but that regular then sits: no start gained, so it isn't
+  // listed as his. (The plan's totals were always this way; the per-pickup lists and dots weren't.)
+  const startsOn = (ms, i, but) => { const on = ms.filter((m) => m !== but && m.from <= i && i < m.to && m.w[i] > 0);
+    return assignMax(on.map((m) => SLOTS.map((s) => (m.elig.includes(s) ? m.w[i] : 0)))).rc.filter((c) => c >= 0).length; };
+  const realStarts = (ms, h, Ls) => days.map((_, i) => i >= h.from && i < h.to && Ls[i].ids.has(h.id) && startsOn(ms, i, h) < Ls[i].starts);
   const tally = (Ls) => ({starts: Ls.reduce((a, x) => a + x.starts, 0), pts: Ls.reduce((a, x) => a + x.pts, 0), games: Ls.reduce((a, x) => a + x.games, 0)});
   // the IR steps of a scenario, with the player a returning IR player replaces (read off the solved spots)
   const irActs = (S, spots) => S.acts.map((a) => {
@@ -2300,7 +2307,7 @@ function planStream() {
     const after = lineup(fin), a0 = tally(after);
     moves.forEach((mv) => {
       const h = mv.h;
-      mv.starts = days.map((_, i) => i >= h.from && i < h.to && after[i].ids.has(h.id));
+      mv.starts = realStarts(fin, h, after);
       mv.pts = days.reduce((x, _, i) => x + (mv.starts[i] ? h.dv[i].val : 0), 0);
     });
     // roster spots: each chain of moves (add, then swaps of that pickup) is one spot, numbered by its first day
@@ -2376,13 +2383,13 @@ function planStream() {
     const mv = Q.moves[k], h = mv.h, inPlan = new Set(Q.fin.filter((m) => m !== h).map((m) => m.id)), tot0 = total(Q.fin);
     const sc = (team ? all.filter((c) => c.p.tm === team) : pool.concat(pool.some((c) => c.id === mv.f.id) ? [] : [byId.get(mv.f.id)].filter(Boolean)))
       .filter((c) => !inPlan.has(c.id) && c.w.slice(h.from, h.to).some((v) => v > 0))
-      .map((c) => { const nh = Object.assign({}, c, {from: h.from, to: h.to}); const ms = Q.fin.map((m) => (m === h ? nh : m)); return {c, ms, v: total(ms) - tot0}; })
+      .map((c) => { const nh = Object.assign({}, c, {from: h.from, to: h.to}); const ms = Q.fin.map((m) => (m === h ? nh : m)); return {c, ms, nh, v: total(ms) - tot0}; })
       .sort((x, y) => y.v - x.v);
     const top = sc.slice(0, 3);
     if (!team) { const me = sc.find((x) => x.c.id === mv.f.id); if (me && !top.includes(me)) top.push(me); }
     return top
       .map((x) => { const L2 = lineup(x.ms), t = tally(L2);
-        const st = days.map((_, i) => i >= h.from && i < h.to && L2[i].ids.has(x.c.id));
+        const st = realStarts(x.ms, x.nh, L2);
         return {c: x.c, st, n: st.filter(Boolean).length, pts: days.reduce((a, _, i) => a + (st[i] ? x.c.dv[i].val : 0), 0),
           dSt: t.starts - Q.a0.starts, dPts: t.pts - Q.a0.pts, dG: t.games - Q.a0.games}; });
   };
@@ -2576,7 +2583,7 @@ function renderPlanner() {
     const marks = (m, from, to, starts) => `<span class="sp-mk" style="grid-template-columns:repeat(${to - from},1fr)">` +
       Array.from({length: to - from}, (_, k) => { const i = from + k, x = m.dv[i];
         return !x.avail ? '<i class="no"></i>' : starts(i) ? `<i class="st" title="${esc(dn(P.days[i]) + ": starts — " + fx(x.val, 0) + " pts projected")}"></i>`
-          : `<i class="bn" title="${esc(dn(P.days[i]) + ": plays, but no open slot")}"></i>`; }).join("") + "</span>";
+          : `<i class="bn" title="${esc(dn(P.days[i]) + ": plays, but adds no start (your lineup is already full that night)")}"></i>`; }).join("") + "</span>";
     const tl = `<div class="sp-tl" style="--nd:${np + nd}">` +
       '<div class="sp-tlh"></div>' + past.map((d) => `<div class="sp-tlh past">${dn(d)}<span>${md(d)}</span><em>${pastLbl(d)}</em></div>`).join("") +
       P.days.map((d, i) => `<div class="sp-tlh${gameDay(i) ? "" : " dim"}${i && P.per[i] !== P.per[i - 1] ? " wk2" : ""}">${dn(d)}<span>${md(d)}</span>${i && P.per[i] !== P.per[i - 1] ? "<em>next wk</em>" : ""}</div>`).join("") +
@@ -2632,7 +2639,7 @@ function renderPlanner() {
     };
     step2 = '<h3 class="sp-step"><span>2</span> Pick the players <em>— best first; click another to use him instead</em></h3>' + kpis +
       (irLine(Q.acts) ? `<p class="sp-irplan">${irLine(Q.acts)}<span class="dim">IR moves are drops and lineup moves, not adds.</span></p>` : "") + tl +
-      '<div class="sp-legend"><span><i class="sp-k st"></i> starts</span><span><i class="sp-k bn"></i> plays, no slot</span>' +
+      '<div class="sp-legend"><span><i class="sp-k st"></i> starts</span><span><i class="sp-k bn"></i> plays, adds no start</span>' +
       '<span><i class="sp-k n"></i> slot filled by the plan</span><span><i class="sp-k f"></i> already filled</span></div>' +
       `<div class="sp-moves">${Q.moves.map((mv, k) => [mv, k]).sort((x, y) => x[0].spot - y[0].spot || x[0].t - y[0].t).map(([mv, k]) => pickCard(mv, k)).join("")}</div>` +
       (Object.keys(SP.choice || {}).length ? '<p class="note"><button type="button" class="linkbtn" data-spclr>Back to the best players</button></p>' : "");
