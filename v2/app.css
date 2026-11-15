@@ -1,7 +1,7 @@
 :root {
   --bg: #eef1f4; --paper: #ffffff; --ink: #141a33; --ink2: #353d5c; --muted: #626a86;
   --rule: #dde1ea; --rule2: #c5cbd9; --band: #f2f3f7;
-  --accent: #3a3fa8; --accent-bg: #e7e8f6; --tm2: #b5367a; --accent-ink: #ffffff; --top: #141a33; --top-acc: #b8b6ff; --theirs: rgba(20, 26, 51, .05);
+  --accent: #3a3fa8; --accent-bg: #e7e8f6; --tm2: #d9640f; --accent-ink: #ffffff; --top: #141a33; --top-acc: #b8b6ff; --theirs: rgba(20, 26, 51, .05);
   --good: #2e7d32; --good-bg: #e3f1e3; --warn: #b4441f; --warn-bg: #fbe9e1;
   --gold: #a87400; --gold-bg: #fbf1d9;
   --red: #c8343a; --red-bg: #fbe4e4; --yel: #8a6d00; --yel-bg: #fff3bf; --org: #b45309; --org-bg: #ffedd5;
@@ -17,7 +17,7 @@
   :root:not([data-theme="light"]) {
     --bg: #121316; --paper: #1a1b1f; --ink: #ecedf0; --ink2: #c4c6cc; --muted: #8b8e97;
     --rule: #2a2c33; --rule2: #3a3d45; --band: #202228;
-    --accent: #b8b6ff; --accent-bg: #272845; --tm2: #f28cc2; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
+    --accent: #b8b6ff; --accent-bg: #272845; --tm2: #ff9a4d; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
     --good: #4fc287; --good-bg: #16291f; --warn: #f08a62; --warn-bg: #33201a;
     --gold: #e0b44e; --gold-bg: #2e2715;
     --red: #ff6b6b; --red-bg: #3a1a1c; --yel: #f5d04a; --yel-bg: #332b0e; --org: #fb923c; --org-bg: #36210f;
@@ -29,7 +29,7 @@
 :root[data-theme="dark"] {
   --bg: #121316; --paper: #1a1b1f; --ink: #ecedf0; --ink2: #c4c6cc; --muted: #8b8e97;
   --rule: #2a2c33; --rule2: #3a3d45; --band: #202228;
-  --accent: #b8b6ff; --accent-bg: #272845; --tm2: #f28cc2; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
+  --accent: #b8b6ff; --accent-bg: #272845; --tm2: #ff9a4d; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
   --good: #4fc287; --good-bg: #16291f; --warn: #f08a62; --warn-bg: #33201a;
   --gold: #e0b44e; --gold-bg: #2e2715;
   --red: #ff6b6b; --red-bg: #3a1a1c; --yel: #f5d04a; --yel-bg: #332b0e; --org: #fb923c; --org-bg: #36210f;
