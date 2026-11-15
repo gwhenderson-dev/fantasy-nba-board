@@ -2088,13 +2088,14 @@ function planStream() {
   };
   const total = (ms, t0 = 0) => { let s = 0; for (let i = t0; i < nd; i++) s += dayBest(i, ms); return s; };
   // ---- THE IR SLOT (owner 11-15: "calculate what is in my IR spot ... and see if that player is droppable").
-  // ESPN: any injury tag keeps a player IR-eligible (owner 11-15: day-to-day does NOT block adds; a
-  // HEALTHY player on IR does), and while an ineligible player sits there ESPN processes no adds. Activating him needs an
+  // ESPN (owner 11-15): a player can only be MOVED onto IR while it lists him OUT; one already there who
+  // goes day-to-day can stay without blocking adds; a HEALTHY player on IR blocks adds until he's moved. Activating him needs an
   // open roster spot: put an OUT player on IR in his place, or drop someone (a drop, not an add). If you
   // tick him under "Who can be dropped", dropping him frees the slot for an OUT player, which opens a
   // roster spot to stream. Each way of handling the slot is a SCENARIO; the same exact solver runs on each.
-  const IR_OK = ["OUT", "INJURY_RESERVE", "DAY_TO_DAY"];
-  const irOk = (id) => IR_OK.includes(lg.inj[id]);
+  const IR_IN = ["OUT", "INJURY_RESERVE"], IR_STAY = IR_IN.concat(["DAY_TO_DAY"]);
+  const irOk = (id) => IR_STAY.includes(lg.inj[id]);          // may stay on IR without blocking adds
+  const irIn = (id) => IR_IN.includes(lg.inj[id]);            // may be moved onto IR
   const nIR = +((L.slots || {}).IR || 0);
   const irs = T.ps.filter((r) => lg.slot[r.id] === 13).map((r) => {
     const p = r.p, hurt = p ? isAbsent(p) || espnOut(p, r.inj) : true;
@@ -2111,7 +2112,8 @@ function planStream() {
       m: {id: r.id, n: r.n, p, elig: r.elig, dv, w: dv.map(W), orig: true, ir: true}};
   });
   // OUT players on the active roster who won't play in the plan: they can go on IR at no cost
-  const Xs = mem.filter((m) => irOk(m.id) && m.w.every((v) => v <= 0));
+  // (day-to-day players can't be moved onto IR)
+  const Xs = mem.filter((m) => irIn(m.id) && m.w.every((v) => v <= 0));
   // who goes to make room for him: the players you ticked (each a spot he can take back); with none
   // ticked, your lowest by rest-of-season points. Never chosen by this week alone: a player who
   // misses this week (Brandon Miller, 11-15) costs nothing now but is worth more for the season
