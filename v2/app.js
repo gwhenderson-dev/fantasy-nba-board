@@ -3500,7 +3500,7 @@ function renderWeek() {
         (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && !x.lock && x.d >= today).length + (r.manual ? 1 : 0), 0);
-  return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0">${esc(tname)}${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; ${esc(PER.label)}</h2>` +
+  return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0"><span class="${tid === mt ? "tn-mine" : ""}">${esc(tname)}</span>${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; ${esc(PER.label)}</h2>` +
     `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
     (SW ? (() => { const S = SW[tid], lv = liveOf(tid), now = over ? lv : T.final, dlt = now - S.tot;
       const sofar = lv - S.past, rest = over ? 0 : T.rem - S.rem;
@@ -4395,7 +4395,7 @@ function renderLive() {
   const tn = (id) => esc((lg.byId[id] || {}).name || "Team " + id);
   // ---- strip of every matchup (click to switch)
   const strip = `<div class="lv-strip">${all.map((x) => `<button class="lv-mini${x === cur ? " sel" : ""}${[x.A.teamId, x.H.teamId].includes(mt) ? " mine" : ""}" data-pair="${x.key}">` +
-    `<span class="tn">${tn(x.A.teamId)}</span><b>${fx(x.A.live, 0)}</b><span class="tn">${tn(x.H.teamId)}</span><b>${fx(x.H.live, 0)}</b></button>`).join("")}</div>`;
+    `<span class="tn${x.A.teamId === mt ? " mine" : ""}">${tn(x.A.teamId)}</span><b>${fx(x.A.live, 0)}</b><span class="tn${x.H.teamId === mt ? " mine" : ""}">${tn(x.H.teamId)}</span><b>${fx(x.H.live, 0)}</b></button>`).join("")}</div>`;
   // ---- the score
   // score header (owner 11-14: keep the format, make it better): the live score, a bar of what's banked against
   // the projected final, and the starters playing / still to play / done as pills
