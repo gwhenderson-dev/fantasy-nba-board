@@ -2046,7 +2046,10 @@ function planStream() {
     });
     off += n;
   });
-  const T = {ps: [...rows.values()]};
+  // the planner only ever moves from tomorrow once today has tipped off: use the roster AFTER your
+  // moves (owner 11-15: Burries, dropped after tip-off, was still listed and ticked as a drop).
+  // teamWeek also carries today's locked roster for My week; leave those players out here
+  const T = {ps: [...rows.values()].filter((r) => lg.owner[r.id] === mt)};
   const cap = Object.entries(L.slots).filter(([k]) => k !== "IR").reduce((a, [, c]) => a + c, 0);
   const free = Math.max(0, cap - T.ps.filter((r) => lg.slot[r.id] !== 13).length);
   // expected starts, each projected point worth 1/200 of a start (a whole start beats
