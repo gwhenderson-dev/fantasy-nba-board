@@ -1,7 +1,7 @@
 :root {
   --bg: #eef1f4; --paper: #ffffff; --ink: #141a33; --ink2: #353d5c; --muted: #626a86;
   --rule: #dde1ea; --rule2: #c5cbd9; --band: #f2f3f7;
-  --accent: #3a3fa8; --accent-bg: #e7e8f6; --accent-ink: #ffffff; --top: #141a33; --top-acc: #b8b6ff; --theirs: rgba(20, 26, 51, .05);
+  --accent: #3a3fa8; --accent-bg: #e7e8f6; --tm2: #b5367a; --accent-ink: #ffffff; --top: #141a33; --top-acc: #b8b6ff; --theirs: rgba(20, 26, 51, .05);
   --good: #2e7d32; --good-bg: #e3f1e3; --warn: #b4441f; --warn-bg: #fbe9e1;
   --gold: #a87400; --gold-bg: #fbf1d9;
   --red: #c8343a; --red-bg: #fbe4e4; --yel: #8a6d00; --yel-bg: #fff3bf; --org: #b45309; --org-bg: #ffedd5;
@@ -17,7 +17,7 @@
   :root:not([data-theme="light"]) {
     --bg: #121316; --paper: #1a1b1f; --ink: #ecedf0; --ink2: #c4c6cc; --muted: #8b8e97;
     --rule: #2a2c33; --rule2: #3a3d45; --band: #202228;
-    --accent: #b8b6ff; --accent-bg: #272845; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
+    --accent: #b8b6ff; --accent-bg: #272845; --tm2: #f28cc2; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
     --good: #4fc287; --good-bg: #16291f; --warn: #f08a62; --warn-bg: #33201a;
     --gold: #e0b44e; --gold-bg: #2e2715;
     --red: #ff6b6b; --red-bg: #3a1a1c; --yel: #f5d04a; --yel-bg: #332b0e; --org: #fb923c; --org-bg: #36210f;
@@ -29,7 +29,7 @@
 :root[data-theme="dark"] {
   --bg: #121316; --paper: #1a1b1f; --ink: #ecedf0; --ink2: #c4c6cc; --muted: #8b8e97;
   --rule: #2a2c33; --rule2: #3a3d45; --band: #202228;
-  --accent: #b8b6ff; --accent-bg: #272845; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
+  --accent: #b8b6ff; --accent-bg: #272845; --tm2: #f28cc2; --accent-ink: #121316; --top: #1d2240; --top-acc: #b8b6ff; --theirs: rgba(255, 255, 255, .045);
   --good: #4fc287; --good-bg: #16291f; --warn: #f08a62; --warn-bg: #33201a;
   --gold: #e0b44e; --gold-bg: #2e2715;
   --red: #ff6b6b; --red-bg: #3a1a1c; --yel: #f5d04a; --yel-bg: #332b0e; --org: #fb923c; --org-bg: #36210f;
@@ -300,11 +300,11 @@ table.tbrk td, table.tbrk th { white-space: normal; }
 .mcard { padding-top: .9rem; padding-bottom: .9rem; }
 .mside .sw { display: inline-block; width: .55rem; height: .55rem; border-radius: 2px; margin-right: .4rem; vertical-align: .05rem; }
 .sw.a, .wbar .a { background: var(--accent); }
-.sw.h, .wbar .h { background: var(--muted); opacity: .55; }
+.sw.h, .wbar .h { background: var(--tm2); }
 .wrow { display: grid; grid-template-columns: 2.6rem 1fr 2.6rem; align-items: center; gap: .45rem; margin: .7rem 0 .55rem; }
 .wrow b { font-size: .95rem; font-variant-numeric: tabular-nums; }
 .wrow .wa { color: var(--accent); }
-.wrow .wh { color: var(--muted); text-align: right; }
+.wrow .wh { color: var(--tm2); text-align: right; }
 .wbar { height: 12px; border-radius: 6px; background: var(--rule); overflow: hidden; display: flex; }
 .wbar .h { flex: 1; }
 .mstat { display: grid; grid-template-columns: 2.6rem 1fr 2.6rem; gap: .2rem .45rem; align-items: baseline; border-top: 1px solid var(--rule); padding-top: .45rem; }
@@ -1070,11 +1070,11 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 /* score header */
 .lv-score { padding: 1.1rem 1.3rem 1rem; }
 .lv-sw { display: inline-block; width: .6rem; height: .6rem; border-radius: 3px; margin-right: .4rem; vertical-align: 1px; }
-.lv-sw.a { background: var(--accent); } .lv-sw.h { background: var(--ink2); }
+.lv-sw.a { background: var(--accent); } .lv-sw.h { background: var(--tm2); }
 .lv-pbar { height: 6px; border-radius: 3px; background: var(--rule); margin: .35rem 0 .3rem; overflow: hidden; max-width: 16rem; }
 .lv-sc.h .lv-pbar { margin-left: auto; }
 .lv-pbar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
-.lv-sc.h .lv-pbar i { background: var(--ink2); margin-left: auto; }
+.lv-sc.h .lv-pbar i { background: var(--tm2); margin-left: auto; }
 .lv-sub b { font-variant-numeric: tabular-nums; }
 .lv-sub .sep { color: var(--muted); }
 .lv-cnt { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .4rem; }
