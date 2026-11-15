@@ -2055,13 +2055,14 @@ function planStream() {
   const W = (x) => (!x.avail ? 0 : x.play + x.val * SP_PTW);
   const keep = keepSet();
   // who may go: the visitor's ticks, else the n lowest rest-of-season points
-  const cands = T.ps.filter((r) => r.p && lg.slot[r.id] !== 13 && !keep.has(normName(r.n)))
-    .map((r) => ({r, tot: seasonLine(r.p).tot})).sort((a, b) => a.tot - b.tot);
+  // (IR players can be ticked too, owner 11-15; the default never picks them)
+  const cands = T.ps.filter((r) => r.p && !keep.has(normName(r.n)))
+    .map((r) => ({r, tot: seasonLine(r.p).tot, ir: lg.slot[r.id] === 13})).sort((a, b) => a.tot - b.tot);
   // your own ticks are remembered in this browser (per league + team); players no
   // longer on the roster drop out of the list, and with none left it's the default
   const sv = spSaved(), mine = sv ? new Set(sv.filter((id) => cands.some((c) => c.r.id === id))) : null;
-  const pick = mine && mine.size ? mine : new Set(cands.slice(0, SP.n).map((c) => c.r.id));
-  const mem = T.ps.map((r) => ({id: r.id, n: r.n, p: r.p, elig: r.elig, dv: r.days, w: r.days.map(W),
+  const pick = mine && mine.size ? mine : new Set(cands.filter((c) => !c.ir).slice(0, SP.n).map((c) => c.r.id));
+  const mem = T.ps.filter((r) => lg.slot[r.id] !== 13).map((r) => ({id: r.id, n: r.n, p: r.p, elig: r.elig, dv: r.days, w: r.days.map(W),
     from: 0, to: nd, orig: true, ok: pick.has(r.id)}));
   const all = PLAYERS.filter((p) => lg.owner[p.id] == null && !lg.wv[p.id] && p.s && !isAbsent(p) && !benched(p))
     .map((p) => {
@@ -2085,28 +2086,105 @@ function planStream() {
     return v;
   };
   const total = (ms, t0 = 0) => { let s = 0; for (let i = t0; i < nd; i++) s += dayBest(i, ms); return s; };
-  const base = total(mem);
+  // ---- THE IR SLOT (owner 11-15: "calculate what is in my IR spot ... and see if that player is droppable").
+  // ESPN: only players it lists OUT may sit on IR (assumed: OUT / INJURY_RESERVE; day-to-day is not), and
+  // while a player who is no longer eligible sits there ESPN processes no adds. Activating him needs an
+  // open roster spot: put an OUT player on IR in his place, or drop someone (a drop, not an add). If you
+  // tick him under "Who can be dropped", dropping him frees the slot for an OUT player, which opens a
+  // roster spot to stream. Each way of handling the slot is a SCENARIO; the same exact solver runs on each.
+  const IR_OK = ["OUT", "INJURY_RESERVE"];
+  const irOk = (id) => IR_OK.includes(lg.inj[id]);
+  const nIR = +((L.slots || {}).IR || 0);
+  const irs = T.ps.filter((r) => lg.slot[r.id] === 13).map((r) => {
+    const p = r.p, hurt = p ? isAbsent(p) || espnOut(p, r.inj) : true;
+    const ret = p && isAbsent(p) ? absWindow(p).ret : lg.ret[r.id] || null;
+    const dv = p ? dayVals(p, days, false, (d, sp) => !(hurt && (!ret || d < ret)) && !outOn(p, d) && sp >= 0.05)
+      : days.map((d) => ({d, g: null, avail: false, val: 0, play: 0}));
+    const ok = irOk(r.id), first = dv.findIndex((x) => x.avail);
+    // the day he has to come off IR: now if ESPN no longer lists him OUT, else his first game back
+    const rIdx = !ok ? 0 : first >= 0 ? first : nd;
+    return {id: r.id, n: r.n, p, inj: r.inj, ok, ret, rIdx, tick: pick.has(r.id), tot: p ? seasonLine(p).tot : 0,
+      m: {id: r.id, n: r.n, p, elig: r.elig, dv, w: dv.map(W), orig: true, ir: true}};
+  });
+  // OUT players on the active roster who won't play in the plan: they can go on IR at no cost
+  const Xs = mem.filter((m) => irOk(m.id) && m.w.every((v) => v <= 0));
+  // who goes to make room for him: the players you ticked (each a spot he can take back); with none
+  // ticked, your lowest by rest-of-season points. Never chosen by this week alone: a player who
+  // misses this week (Brandon Miller, 11-15) costs nothing now but is worth more for the season
+  const lowNT = pick.size ? [] : cands.filter((c) => !c.ir).slice(0, 1).map((c) => c.r.id);
+  const SS = (() => {
+    let L0 = [{key: "", mods: {}, add: [], free, end: {}, endOpen: null, lock: null, acts: [], xu: new Set()}];
+    const cl = (S) => Object.assign({}, S, {mods: Object.assign({}, S.mods), add: S.add.slice(), end: Object.assign({}, S.end), acts: S.acts.slice(), xu: new Set(S.xu)});
+    const nextX = (S) => Xs.find((x) => !S.xu.has(x.id) && !S.mods[x.id]);
+    const xin = (S, t) => { const x = nextX(S); if (!x) return null;
+      const S2 = cl(S); S2.mods[x.id] = {to: t, ok: false}; S2.xu.add(x.id); return [S2, x]; };
+    irs.forEach((R) => {
+      const nx = [];
+      L0.forEach((S) => {
+        const t = R.rIdx, Rm = Object.assign({}, R.m, {from: t, to: nd});
+        // leave him there (from his return ESPN takes no adds)
+        { const S2 = cl(S); if (t < nd) S2.lock = S2.lock == null ? t : Math.min(S2.lock, t);
+          S2.acts.push({k: t < nd ? "lock" : "stay", t, R}); nx.push(S2); }
+        if (t < nd) {
+          const a = xin(S, t);                                    // an OUT player takes his IR place
+          if (a) { const [S2, x] = a; S2.add.push(Rm); S2.acts.push({k: "swap", t, R, X: x}); nx.push(S2); }
+          if (S.free > 0 && !S.endOpen) { const S2 = cl(S); S2.endOpen = {end: t, after: R.m}; S2.acts.push({k: "spot", t, R, key: "open"}); nx.push(S2); }
+          mem.filter((m) => m.ok && !S.end[m.id] && !S.mods[m.id]).forEach((m) => {   // a spot you'd stream: he takes it back
+            const S2 = cl(S); S2.end[m.id] = {end: t, after: R.m}; S2.acts.push({k: "spot", t, R, key: m.id}); nx.push(S2); });
+          lowNT.filter((id) => !S.mods[id]).forEach((id) => {                         // drop your lowest player for him
+            const S2 = cl(S); S2.mods[id] = {to: t}; S2.add.push(Rm);
+            S2.acts.push({k: "dropY", t, R, Y: mem.find((m) => m.id === id)}); nx.push(S2); });
+        }
+        if (R.tick) {                                             // drop him: the slot is free for an OUT player
+          const a = xin(S, 0);
+          if (a) { const [S2, x] = a; S2.free++; S2.acts.push({k: "dropR", t: 0, R}, {k: "xin", t: 0, X: x}); nx.push(S2); }
+          else if (t < nd) { const S2 = cl(S); S2.acts.push({k: "dropR", t: 0, R}); nx.push(S2); }
+        }
+      });
+      L0 = nx;
+    });
+    for (let k = irs.length; k < nIR; k++) {                    // an empty IR slot: an OUT player there opens a spot
+      const nx = [];
+      L0.forEach((S) => { nx.push(S); const a = xin(S, 0);
+        if (a) { const [S2, x] = a; S2.free++; S2.acts.push({k: "xin", t: 0, X: x}); nx.push(S2); } });
+      L0 = nx;
+    }
+    L0.forEach((S, k) => { S.key = "s" + k; });
+    return L0;
+  })();
+  // a roster spot's holders day by day (its original, then each pickup; a player coming off IR takes it at .end)
+  const segs = (sp) => {
+    const E = sp.end != null ? sp.end : nd, out = [];
+    if (sp.o) out.push(Object.assign({}, sp.o, {from: 0, to: sp.seq.length ? sp.seq[0].t : E}));
+    sp.seq.forEach((x, k) => out.push(Object.assign({}, x.m, {from: x.t, to: k + 1 < sp.seq.length ? sp.seq[k + 1].t : E})));
+    if (sp.end != null) out.push(Object.assign({}, sp.after, {from: sp.end, to: nd}));
+    return out;
+  };
+  const mkState = (S) => {
+    const ms = mem.map((m) => (S.mods[m.id] ? Object.assign({}, m, S.mods[m.id]) : m)).concat(S.add);
+    const spots = Array.from({length: S.free}, (_, k) => Object.assign({o: null, seq: []}, k === 0 && S.endOpen ? S.endOpen : {}))
+      .concat(ms.filter((m) => m.ok).map((o) => Object.assign({o, seq: []}, S.end[o.id] || {})));
+    return {spots, fixed: ms.filter((m) => !m.ok)};
+  };
+  const rosterOf = (st, but) => st.fixed.concat(...st.spots.filter((sp) => sp !== but).map(segs));
+  let base = 0;
   const COST = 0.3;                                 // an add must earn at least 0.3 expected starts
   // solve for every drop count up to the one chosen and keep the best: allowing a
   // drop must never make the plan worse (the re-solve can settle in a local best)
   // CP = adds allowed in each matchup period of the plan ([this] or [this, next]),
   // TOT = adds allowed in all; a move can only be made on a day you allow (canMove)
-  const solve = (maxDrops, pl, CP, TOT, cost = COST, cm = canMove) => {
-    const spots = Array.from({length: free}, () => ({o: null, seq: []})).concat(mem.filter((m) => m.ok).map((o) => ({o, seq: []})));
-    const fixed = mem.filter((m) => !m.ok);
-    const segs = (sp) => {                         // who holds this spot on which days
-      const out = [];
-      if (sp.o) out.push(Object.assign({}, sp.o, {from: 0, to: sp.seq.length ? sp.seq[0].t : nd}));
-      sp.seq.forEach((x, k) => out.push(Object.assign({}, x.m, {from: x.t, to: k + 1 < sp.seq.length ? sp.seq[k + 1].t : nd})));
-      return out;
-    };
-    const roster = (but) => fixed.concat(...spots.filter((sp) => sp !== but).map(segs));
+  const solve = (maxDrops, pl, CP, TOT, cost = COST, cm = canMove, S = SS[0]) => {
+    const st = mkState(S), spots = st.spots;
+    if (S.lock != null) cm = cm.map((v, i) => v && i < S.lock);      // healthy player stuck on IR: no adds
+    const roster = (but) => rosterOf(st, but);
     // best schedule for one spot at each count of adds per period (state j = a0 x (c1 + 1) + a1),
     // the rest of the roster as it stands
     const curve = (sp, C2) => {
-      const oth = roster(sp), taken = new Set(oth.map((m) => m.id));
+      // a spot the IR player takes back at E: nobody else can hold it from then on
+      const E = sp.end != null ? sp.end : nd;
+      const oth = roster(sp).concat(sp.end != null ? [Object.assign({}, sp.after, {from: sp.end, to: nd})] : []), taken = new Set(oth.map((m) => m.id));
       const C = [sp.o].concat(pl.filter((f) => !taken.has(f.id)));
-      const mv = C.map((c) => days.map((_, i) => (c ? dayBest(i, oth.concat(Object.assign({}, c, {from: 0, to: nd}))) - dayBest(i, oth) : 0)));
+      const mv = C.map((c) => days.map((_, i) => (c && i < E ? dayBest(i, oth.concat(Object.assign({}, c, {from: 0, to: nd}))) - dayBest(i, oth) : 0)));
       const n1 = (C2[1] || 0) + 1, NS = (C2[0] + 1) * n1, NC = C.length, NEG = -1e18;
       const prevOf = (j, p) => (p === 0 ? (j >= n1 ? j - n1 : -1) : (j % n1 >= 1 ? j - 1 : -1));
       let dp = Array.from({length: NS}, () => new Array(NC).fill(NEG));
@@ -2115,7 +2193,7 @@ function planStream() {
       for (let i = 0; i < nd; i++) {
         const nx = Array.from({length: NS}, () => new Array(NC).fill(NEG)), bk = Array.from({length: NS}, () => new Array(NC));
         for (let j = 0; j < NS; j++) {
-          const pj = cm[i] ? prevOf(j, per[i]) : -1;
+          const pj = cm[i] && i < E ? prevOf(j, per[i]) : -1;
           let b1 = -1, b2 = -1;                    // two best holders one add earlier (to switch from)
           if (pj >= 0) dp[pj].forEach((v, c) => { if (b1 < 0 || v > dp[pj][b1]) { b2 = b1; b1 = c; } else if (b2 < 0 || v > dp[pj][b2]) b2 = c; });
           for (let c = 0; c < NC; c++) {
@@ -2155,7 +2233,8 @@ function planStream() {
           const [a0, a1, d] = key.split(",").map(Number);
           cv[k].forEach((o, j) => {
             if (!o || (j > 0 && !o.adds)) return;
-            const b0 = a0 + o.a[0], b1 = a1 + o.a[1], d2 = d + (o.adds && sp.o ? 1 : 0);
+            // (a spot the IR player takes back loses its player anyway: not one of your drops)
+            const b0 = a0 + o.a[0], b1 = a1 + o.a[1], d2 = d + (o.adds && sp.o && sp.end == null ? 1 : 0);
             if (b0 > CP[0] || b1 > (CP[1] || 0) || b0 + b1 > TOT || d2 > maxDrops) return;
             const v = st.v + (o.adds ? o.gain - cost * o.adds : 0), k2 = b0 + "," + b1 + "," + d2;
             if (!nx.has(k2) || nx.get(k2).v < v - 1e-9) nx.set(k2, {v, pick: st.pick.concat([o.adds ? o.a : null])});
@@ -2192,7 +2271,20 @@ function planStream() {
     return {starts: st.length, pts: st.reduce((a, m) => a + m.dv[i].val, 0), games: st.reduce((a, m) => a + m.dv[i].play, 0), ids: new Set(st.map((m) => m.id))};
   });
   const tally = (Ls) => ({starts: Ls.reduce((a, x) => a + x.starts, 0), pts: Ls.reduce((a, x) => a + x.pts, 0), games: Ls.reduce((a, x) => a + x.games, 0)});
-  const before = lineup(mem), b0 = tally(before);
+  // the IR steps of a scenario, with the player a returning IR player replaces (read off the solved spots)
+  const irActs = (S, spots) => S.acts.map((a) => {
+    if (a.k !== "spot") return a;
+    const sp = spots.find((x) => x.end != null && (a.key === "open" ? !x.o : x.o && x.o.id === a.key));
+    const h = sp ? (sp.seq.length ? sp.seq[sp.seq.length - 1].m : sp.o) : null;
+    return {k: h ? "dropY" : "open", t: a.t, R: a.R, Y: h, pk: !!(sp && sp.seq.length)};
+  });
+  const irKey = (A) => A.map((a) => a.k + a.t + ":" + ((a.X || a.Y || {}).id || "")).join(",");
+  // with no adds: the best way to handle the IR slot (what "now" means in every comparison)
+  const B0 = SS.map((S) => { const st = mkState(S), fin = rosterOf(st, null); return {S, st, fin, v: total(fin)}; })
+    .reduce((a, x) => (!a || x.v > a.v + 1e-9 ? x : a), null);
+  base = B0.v;
+  const baseActs = irActs(B0.S, B0.st.spots);
+  const before = lineup(B0.fin), b0 = tally(before);
   const byId = new Map(all.map((f) => [f.id, f]));
   // a plan = the roster it ends with (fin) + its moves; each move's holder h is in fin
   const finish = (fin, moves) => {
@@ -2208,27 +2300,36 @@ function planStream() {
     return {moves, fin, after, a0, nSpots: roots.length, dSt: a0.starts - b0.starts, dPts: a0.pts - b0.pts, dG: a0.games - b0.games,
       obj: total(fin) - base - COST * moves.length};
   };
-  const fromSol = (sol) => {
+  const fromSol = (sol, S) => {
     const moves = [];
-    sol.spots.forEach((sp) => sp.seq.forEach((x, k) => moves.push({t: x.t, f: x.m, o: k ? null : sp.o, pf: k ? sp.seq[k - 1].m.id : null})));
+    sol.spots.forEach((sp) => sp.seq.forEach((x, k) => moves.push({t: x.t, f: x.m, o: k ? null : sp.o, pf: k ? sp.seq[k - 1].m.id : null,
+      back: sp.end != null && k === sp.seq.length - 1 ? {t: sp.end, m: sp.after} : null})));
     moves.sort((x, y) => x.t - y.t);
     moves.forEach((mv) => {
       mv.h = sol.fin.find((m) => m.id === mv.f.id && !m.orig);
       mv.prev = mv.pf == null ? -1 : moves.findIndex((m) => m.f.id === mv.pf);
     });
-    return finish(sol.fin, moves);
+    const acts = irActs(S, sol.spots);
+    return Object.assign(finish(sol.fin, moves), {acts, irk: irKey(acts)});
   };
   // ---- STEP 1: strategies, told by days and games only (owner, 2026-11-13). Owner 11-14: "I'll almost
   // always use 3-4 adds, maybe 5+ in a long week" -> one card per number of adds from 3 up to all you
   // have left (fewer only when fewer are left), each the most starts that many adds can buy (any add
   // worth 0.05+ expected starts is taken), plus the same number of adds on other days
   const CP = [caps[0], caps[1] || 0], SC = 0.05;
+  // each IR scenario solved; with many, the three best at full adds (plus the no-add best) go on
+  let SPR = [B0.S].concat(SS.filter((S) => S !== B0.S));
+  if (SPR.length > 4 && canMove.some(Boolean) && addsLeft > 0) {
+    const sc = SPR.map((S) => ({S, v: solve(SP.n, pool, CP, addsLeft, SC, canMove, S).obj})).sort((a, b) => b.v - a.v);
+    const k3 = new Set(sc.slice(0, 3).map((x) => x.S));
+    SPR = SPR.filter((S) => S === B0.S || k3.has(S));
+  }
   const bestFor = (A, cm) => {
-    let sol = solve(0, pool, CP, A, SC, cm);
-    for (let k = 1; k <= SP.n; k++) { const s2 = solve(k, pool, CP, A, SC, cm); if (s2.obj > sol.obj + 1e-9) sol = s2; }
-    return Object.assign(fromSol(sol), {A});
+    let sol = null, SB = null;
+    SPR.forEach((S) => { for (let k = 0; k <= SP.n; k++) { const s2 = solve(k, pool, CP, A, SC, cm, S); if (!sol || s2.obj > sol.obj + 1e-9) { sol = s2; SB = S; } } });
+    return Object.assign(fromSol(sol, SB), {A});
   };
-  const shape = (Q) => Q.moves.map((m) => m.starts.map(Number).join("") + ":" + m.prev).join("|");
+  const shape = (Q) => Q.irk + "#" + Q.moves.map((m) => m.starts.map(Number).join("") + ":" + m.prev).join("|");
   const list = [], seen = new Set();
   let stuck = null;                                   // more adds than this gain nothing with these drops
   const push = (Q, extra) => {
@@ -2301,9 +2402,16 @@ function planStream() {
       fin = fin.map((m) => (m === mv.h ? nh : m));
       mv.h = nh; mv.f = c;
     });
-    return Object.assign(finish(fin, moves), {sig: Q.sig, best: Q.best, alt: Q.alt, A: Q.A});
+    return Object.assign(finish(fin, moves), {sig: Q.sig, best: Q.best, alt: Q.alt, A: Q.A, acts: Q.acts, irk: Q.irk});
   };
-  return {days, PER, PERS, per, caps, canMove, stuck, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose, teamsFor};
+  const base5 = (p) => eligFromPos(p && p.pos).filter((s) => s <= 4);
+  irs.forEach((R) => {
+    const e = new Set(base5(R.p));
+    R.fa = PLAYERS.filter((f) => lg.owner[f.id] == null && !lg.wv[f.id] && f.s && !isAbsent(f) && !benched(f) && base5(f).some((s) => e.has(s)))
+      .map((f) => ({f, tot: seasonLine(f).tot})).reduce((a, x) => (!a || x.tot > a.tot ? x : a), null);
+  });
+  return {days, PER, PERS, per, caps, canMove, stuck, addsLeft, used, free, pool, cands, pick, slots: SLOTS.length, mem, SLOTS, before, b0, strats: list, options, choose, teamsFor,
+    irs, Xs, nIR, baseActs};
 }
 const ESPN_AB = Object.fromEntries(Object.entries(ETRI).map(([k, v]) => [v, k.toLowerCase()]));
 const headshot = (id, cls = "sp-hs") => `<img class="${cls}" src="https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${id}.png&w=96&h=70&scale=crop" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`;
@@ -2358,6 +2466,42 @@ function renderPlanner() {
   const two = P.PERS.length > 1;                    // two weeks on screen: day names repeat, so add the date
   const dnd = (d) => (two ? dn(d) + " " + +d.slice(8) : dn(d));
   const dayList = (mv) => P.days.filter((_, i) => mv.starts[i]).map(dnd);
+  // ---- the IR slot: what each plan does with it
+  const dOf = (t) => (P.days[t] === tdy ? "Today" : dnd(P.days[t]));
+  const actTxt = (a) => {
+    const R = a.R ? esc(last(a.R.n)) : "", X = a.X ? esc(last(a.X.n)) : "", Y = a.Y ? esc(last(a.Y.n)) : "";
+    return {stay: `${R} stays on IR`,
+      lock: `${R} stays on IR — from ${dOf(a.t)} ESPN takes no adds`,
+      swap: `${dOf(a.t)}: ${X} to IR, ${R} back`,
+      dropY: `${dOf(a.t)}: drop ${a.pk ? "your pickup " : ""}${Y} to bring ${R} back`,
+      open: `${dOf(a.t)}: ${R} back into your open spot`,
+      dropR: `Drop ${R} (IR)`,
+      xin: `${X} to IR — opens a roster spot`}[a.k] || "";
+  };
+  const irLine = (A) => { const t = (A || []).filter((a) => a.k !== "stay").map(actTxt);
+    return t.length ? `<span class="sp-ir"><b>IR</b>${t.map((x) => `<span>${x}</span>`).join("")}</span>` : ""; };
+  const irPanel = (() => {
+    if (!P.irs.length && !(P.nIR && P.Xs.length)) return "";
+    const rows = P.irs.map((R) => {
+      const st = R.ok ? "OUT" : {DAY_TO_DAY: "day-to-day", ACTIVE: "healthy"}[R.inj] || String(R.inj || "healthy").toLowerCase();
+      const when = !R.ok ? `ESPN lists him <b>${esc(st)}</b>, so he's no longer IR-eligible: ESPN takes no adds until he's off IR.`
+        : R.rIdx < nd ? `Out — first game back ${dOf(R.rIdx)}${R.ret ? ` (back about ${esc(niceDay(R.ret))})` : ""}. Once he's healthy, ESPN takes no adds until he's off IR.`
+        : `Out for this whole plan${R.ret ? ` (back about ${esc(niceDay(R.ret))})` : ""}.`;
+      const fa = R.fa, drop = fa && fa.tot > R.tot * (1 + DROP_MARGIN);
+      const ros = `Rest of season: <b>${fx(R.tot, 0)}</b> pts · best free agent at his position: ${fa ? `<span class="name" data-id="${fa.f.id}">${esc(fa.f.n)}</span> <b>${fx(fa.tot, 0)}</b>` : "none"}` +
+        ` — <b class="${drop ? "pos-dn" : "pos-up"}">${drop ? "droppable" : "worth holding"}</b>`;
+      const mine = P.baseActs.filter((a) => a.R && a.R.id === R.id && a.k !== "stay").map(actTxt);
+      return `<div class="sp-irr">${headshot(R.id, "sp-av")}<div><div><span class="name" data-id="${R.id}">${esc(R.n)}</span> ${R.p ? tags(R.p) : ""}</div>` +
+        `<div class="sp-irw">${when}</div>` +
+        (mine.length ? `<div class="sp-irw">With no adds, best: <b>${mine.join("; ")}</b> (no add used).</div>` : "") +
+        `<div class="sp-irw">${ros}${R.tick ? " · ticked: the planner may drop him" : " · tick him under <b>Who can be dropped</b> to let the planner drop him"}</div></div></div>`;
+    }).join("");
+    const empty = P.nIR - P.irs.length;
+    const xs = P.Xs.map((x) => esc(x.n)).join(", ");
+    const tail = empty > 0 ? `<p class="note">Your IR slot is open. ${xs ? `${xs} ${P.Xs.length > 1 ? "are" : "is"} OUT for the whole plan: the planner can put him there to open a roster spot (no add used).` : "Nobody on your roster is OUT for the whole plan, so it can't open a spot yet."}</p>`
+      : P.Xs.length ? `<p class="note">OUT for the whole plan, so ${P.Xs.length > 1 ? "they" : "he"} could go on IR: ${xs}.</p>` : "";
+    return `<div class="sp-irbox"><h4>IR slot</h4>${rows}${tail}</div>`;
+  })();
   // ---- your nights: open starter slots and NBA games, the raw material of a plan
   const nights = `<div class="sp-nights" style="--nd:${np + nd}">` +
     past.map((d) => `<div class="sp-nt past"><b>${dn(d)}</b><span>${md(d)}</span><em>${pastLbl(d)}</em></div>`).join("") +
@@ -2391,7 +2535,7 @@ function renderPlanner() {
       (all ? ' <span class="sp-tag mx" title="Uses every add you have left">every add</span>' : "") +
       (Q.alt ? ` <span class="sp-tag mx" title="The same number of adds, with one of the best plan&rsquo;s move days ruled out">other days</span>` : "") + "</span>" +
       `<span class="sp-ov"><b class="${Q.dSt > 0 ? "pos-up" : ""}">${sg(Q.dSt, 0)}</b> starts · <b class="${Q.dPts > 0 ? "pos-up" : ""}">${sg(Q.dPts, 0)}</b> pts</span>` +
-      strip(Q) + spotLines(Q) + "</button>";
+      strip(Q) + spotLines(Q) + irLine(Q.acts) + "</button>";
   };
   const stuckNote = P.stuck ? `<p class="note sp-stuck">A ${ordinal(P.stuck.A)} add ${P.stuck.pts ? "gains no extra start (points only)" : "gains nothing"} with ${SP.n} spot${SP.n === 1 ? "" : "s"} to stream` +
     (SP.n < 3 ? `: each extra player you allow to go opens another roster spot to stream through (<b>Spots to stream</b> above).` : ".") + "</p>" : "";
@@ -2430,7 +2574,9 @@ function renderPlanner() {
         (!r.o && r.t0 > 0 ? `<div class="sp-seg empty" style="grid-column:${2 + np}/${2 + np + r.t0}"></div>` : "") +
         r.chain.map((m) => { const h = m.h, c = hue(m.spot);
           return `<div class="sp-seg add" style="grid-column:${2 + np + h.from}/${2 + np + h.to};--c:${c}" title="${esc(m.f.n + " · " + m.f.p.tm)}">${headshot(m.f.id, "sp-av")}` +
-            `<span class="sp-sn">${esc(last(m.f.n))}</span>` + marks(h, h.from, h.to, (i) => m.starts[i]) + "</div>"; }).join("")).join("") +
+            `<span class="sp-sn">${esc(last(m.f.n))}</span>` + marks(h, h.from, h.to, (i) => m.starts[i]) + "</div>" +
+            (m.back ? `<div class="sp-seg irb" style="grid-column:${2 + np + m.back.t}/${2 + np + nd}" title="${esc(m.back.m.n + " back from IR")}">${headshot(m.back.m.id, "sp-av")}` +
+              `<span class="sp-sn">${esc(last(m.back.m.n))} <small>IR</small></span>` + marks(m.back.m, m.back.t, nd, (i) => Q.after[i].ids.has(m.back.m.id)) + "</div>" : ""); }).join("")).join("") +
       '<div class="sp-tll" title="Starter slots filled each night">Slots</div>' + past.map((d) => `<div class="sp-pc past">${pastLbl(d)}</div>`).join("") + P.days.map((d, i) => {
         if (!gameDay(i)) return '<div class="sp-pc dim">no games</div>';
         const b = P.before[i].starts, a = Q.after[i].starts;
@@ -2471,7 +2617,8 @@ function renderPlanner() {
         `<div class="sp-need">${mv.prev >= 0 ? "Swap in" : "Add"} someone who plays <b>${esc(dayList(mv).join(", ") || "—")}</b></div>` +
         `<div class="sp-out">${out}</div><div class="sp-pks">${opts.map(row).join("")}</div>` + teamRow(mv, k, row) + "</div></div>";
     };
-    step2 = '<h3 class="sp-step"><span>2</span> Pick the players <em>— best first; click another to use him instead</em></h3>' + kpis + tl +
+    step2 = '<h3 class="sp-step"><span>2</span> Pick the players <em>— best first; click another to use him instead</em></h3>' + kpis +
+      (irLine(Q.acts) ? `<p class="sp-irplan">${irLine(Q.acts)}<span class="dim">IR moves are drops and lineup moves, not adds.</span></p>` : "") + tl +
       '<div class="sp-legend"><span><i class="sp-k st"></i> starts</span><span><i class="sp-k bn"></i> plays, no slot</span>' +
       '<span><i class="sp-k n"></i> slot filled by the plan</span><span><i class="sp-k f"></i> already filled</span></div>' +
       `<div class="sp-moves">${Q.moves.map((mv, k) => [mv, k]).sort((x, y) => x[0].spot - y[0].spot || x[0].t - y[0].t).map(([mv, k]) => pickCard(mv, k)).join("")}</div>` +
@@ -2485,10 +2632,10 @@ function renderPlanner() {
     `<span class="sp-dl">Who can be dropped</span><span class="sp-dv">${tickedNames.length ? esc(tickedNames.join(", ")) : "nobody ticked"}</span>` +
     `<span class="sp-dc">${spSaved() ? "your choice" : "default"} · change</span></summary>` +
     '<div class="sp-drops">' + P.cands.map((c) => `<label class="sp-dp${P.pick.has(c.r.id) ? " on" : ""}"><input type="checkbox" data-spd="${c.r.id}"${P.pick.has(c.r.id) ? " checked" : ""}>` +
-      `<span class="sp-dn" title="${esc(c.r.n)}">${esc(c.r.n)}</span><span class="sp-dt" title="rest-of-season points">${fx(c.tot, 0)} pts</span></label>`).join("") + "</div>" +
-    `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list excluded. Tick more to let the planner choose. ` +
+      `<span class="sp-dn" title="${esc(c.r.n)}">${esc(c.r.n)}${c.ir ? ' <span class="tag inj" style="margin:0">IR</span>' : ""}</span><span class="sp-dt" title="rest-of-season points">${fx(c.tot, 0)} pts</span></label>`).join("") + "</div>" +
+    `<p class="note">Default: your ${SP.n} lowest by rest-of-season points, keep list and IR excluded. Tick more to let the planner choose. ` +
     `Your ticks are remembered in this browser.${spSaved() ? ' <button type="button" class="linkbtn" data-sprst>Back to the default</button>' : ""}</p></details>`;
-  box.innerHTML = dropbox + step1 + step2;
+  box.innerHTML = dropbox + irPanel + step1 + step2;
 }
 function bindPlanner() {
   const chips = (id, attr, fn) => document.querySelectorAll(`#${id} .chip`).forEach((c) => c.addEventListener("click", () => {
