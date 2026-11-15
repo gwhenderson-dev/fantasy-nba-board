@@ -255,6 +255,7 @@ function sleeperLeague(lg) {
 const leagueData = (lg) => (lg && lg.platform === "sleeper" ? sleeperLeague(lg) : espnLeague(lg));
 function refreshLeagueData() {
   const lg = STORE.list[STORE.active];
+  PT.p = null;                              // trades: re-read the league's activity feed
   return leagueData(lg).then((d) => {
     if (!d || STORE.list[STORE.active] !== lg) return;
     lg.tl = d.teams.map((t) => [t.id, t.name, t.ab]);
@@ -2087,12 +2088,12 @@ function planStream() {
   };
   const total = (ms, t0 = 0) => { let s = 0; for (let i = t0; i < nd; i++) s += dayBest(i, ms); return s; };
   // ---- THE IR SLOT (owner 11-15: "calculate what is in my IR spot ... and see if that player is droppable").
-  // ESPN: only players it lists OUT may sit on IR (assumed: OUT / INJURY_RESERVE; day-to-day is not), and
-  // while a player who is no longer eligible sits there ESPN processes no adds. Activating him needs an
+  // ESPN: any injury tag keeps a player IR-eligible (owner 11-15: day-to-day does NOT block adds; a
+  // HEALTHY player on IR does), and while an ineligible player sits there ESPN processes no adds. Activating him needs an
   // open roster spot: put an OUT player on IR in his place, or drop someone (a drop, not an add). If you
   // tick him under "Who can be dropped", dropping him frees the slot for an OUT player, which opens a
   // roster spot to stream. Each way of handling the slot is a SCENARIO; the same exact solver runs on each.
-  const IR_OK = ["OUT", "INJURY_RESERVE"];
+  const IR_OK = ["OUT", "INJURY_RESERVE", "DAY_TO_DAY"];
   const irOk = (id) => IR_OK.includes(lg.inj[id]);
   const nIR = +((L.slots || {}).IR || 0);
   const irs = T.ps.filter((r) => lg.slot[r.id] === 13).map((r) => {
@@ -2101,9 +2102,12 @@ function planStream() {
     const dv = p ? dayVals(p, days, false, (d, sp) => !(hurt && (!ret || d < ret)) && !outOn(p, d) && sp >= 0.05)
       : days.map((d) => ({d, g: null, avail: false, val: 0, play: 0}));
     const ok = irOk(r.id), first = dv.findIndex((x) => x.avail);
-    // the day he has to come off IR: now if ESPN no longer lists him OUT, else his first game back
-    const rIdx = !ok ? 0 : first >= 0 ? first : nd;
-    return {id: r.id, n: r.n, p, inj: r.inj, ok, ret, rIdx, tick: pick.has(r.id), tot: p ? seasonLine(p).tot : 0,
+    // act = the first day bringing him back can help (his first playable day); lockT = the day ESPN
+    // stops taking adds while he sits there: now if it lists him healthy; for an OUT player his first
+    // game back (healthy by then); a day-to-day player stays eligible (when ESPN clears him is unknown)
+    const act = first >= 0 ? first : nd;
+    const lockT = !ok ? 0 : r.inj === "DAY_TO_DAY" ? nd : act;
+    return {id: r.id, n: r.n, p, inj: r.inj, ok, ret, rIdx: act, act, lockT, tick: pick.has(r.id), tot: p ? seasonLine(p).tot : 0,
       m: {id: r.id, n: r.n, p, elig: r.elig, dv, w: dv.map(W), orig: true, ir: true}};
   });
   // OUT players on the active roster who won't play in the plan: they can go on IR at no cost
@@ -2121,10 +2125,10 @@ function planStream() {
     irs.forEach((R) => {
       const nx = [];
       L0.forEach((S) => {
-        const t = R.rIdx, Rm = Object.assign({}, R.m, {from: t, to: nd});
-        // leave him there (from his return ESPN takes no adds)
-        { const S2 = cl(S); if (t < nd) S2.lock = S2.lock == null ? t : Math.min(S2.lock, t);
-          S2.acts.push({k: t < nd ? "lock" : "stay", t, R}); nx.push(S2); }
+        const t = R.act, lk = R.lockT, Rm = Object.assign({}, R.m, {from: t, to: nd});
+        // leave him there (from the day he's healthy ESPN takes no adds)
+        { const S2 = cl(S); if (lk < nd) S2.lock = S2.lock == null ? lk : Math.min(S2.lock, lk);
+          S2.acts.push({k: lk < nd ? "lock" : "stay", t: lk < nd ? lk : t, R}); nx.push(S2); }
         if (t < nd) {
           const a = xin(S, t);                                    // an OUT player takes his IR place
           if (a) { const [S2, x] = a; S2.add.push(Rm); S2.acts.push({k: "swap", t, R, X: x}); nx.push(S2); }
@@ -2138,7 +2142,7 @@ function planStream() {
         if (R.tick) {                                             // drop him: the slot is free for an OUT player
           const a = xin(S, 0);
           if (a) { const [S2, x] = a; S2.free++; S2.acts.push({k: "dropR", t: 0, R}, {k: "xin", t: 0, X: x}); nx.push(S2); }
-          else if (t < nd) { const S2 = cl(S); S2.acts.push({k: "dropR", t: 0, R}); nx.push(S2); }
+          else if (lk < nd) { const S2 = cl(S); S2.acts.push({k: "dropR", t: 0, R}); nx.push(S2); }
         }
       });
       L0 = nx;
@@ -2470,7 +2474,7 @@ function renderPlanner() {
   const dOf = (t) => (P.days[t] === tdy ? "Today" : dnd(P.days[t]));
   const actTxt = (a) => {
     const R = a.R ? esc(last(a.R.n)) : "", X = a.X ? esc(last(a.X.n)) : "", Y = a.Y ? esc(last(a.Y.n)) : "";
-    return {stay: `${R} stays on IR`,
+    return {stay: `${R} stays on IR (he doesn't block adds)`,
       lock: `${R} stays on IR — from ${dOf(a.t)} ESPN takes no adds`,
       swap: `${dOf(a.t)}: ${X} to IR, ${R} back`,
       dropY: `${dOf(a.t)}: drop ${a.pk ? "your pickup " : ""}${Y} to bring ${R} back`,
@@ -2478,14 +2482,18 @@ function renderPlanner() {
       dropR: `Drop ${R} (IR)`,
       xin: `${X} to IR — opens a roster spot`}[a.k] || "";
   };
-  const irLine = (A) => { const t = (A || []).filter((a) => a.k !== "stay").map(actTxt);
+  // "stays on IR" only when it differs from the no-add plan (which would bring him back)
+  const baseMoves = new Set(P.baseActs.filter((a) => a.k !== "stay" && a.R).map((a) => a.R.id));
+  const irLine = (A) => { const t = (A || []).filter((a) => a.k !== "stay" || baseMoves.has(a.R.id)).map(actTxt);
     return t.length ? `<span class="sp-ir"><b>IR</b>${t.map((x) => `<span>${x}</span>`).join("")}</span>` : ""; };
   const irPanel = (() => {
     if (!P.irs.length && !(P.nIR && P.Xs.length)) return "";
     const rows = P.irs.map((R) => {
       const st = R.ok ? "OUT" : {DAY_TO_DAY: "day-to-day", ACTIVE: "healthy"}[R.inj] || String(R.inj || "healthy").toLowerCase();
-      const when = !R.ok ? `ESPN lists him <b>${esc(st)}</b>, so he's no longer IR-eligible: ESPN takes no adds until he's off IR.`
-        : R.rIdx < nd ? `Out — first game back ${dOf(R.rIdx)}${R.ret ? ` (back about ${esc(niceDay(R.ret))})` : ""}. Once he's healthy, ESPN takes no adds until he's off IR.`
+      const when = !R.ok ? `ESPN lists him <b>healthy</b>, so he's no longer IR-eligible: ESPN takes no adds until he's off IR.`
+        : R.inj === "DAY_TO_DAY" ? `ESPN lists him <b>day-to-day</b>: still IR-eligible, so he doesn't block adds.` +
+          (R.act < nd ? ` He can play from ${dOf(R.act)}: bring him back only if he's worth a roster spot.` : " Not expected to play in this plan.")
+        : R.act < nd ? `Out — first game back ${dOf(R.act)}${R.ret ? ` (back about ${esc(niceDay(R.ret))})` : ""}. Once ESPN lists him healthy, it takes no adds until he's off IR.`
         : `Out for this whole plan${R.ret ? ` (back about ${esc(niceDay(R.ret))})` : ""}.`;
       const fa = R.fa, drop = fa && fa.tot > R.tot * (1 + DROP_MARGIN);
       const ros = `Rest of season: <b>${fx(R.tot, 0)}</b> pts · best free agent at his position: ${fa ? `<span class="name" data-id="${fa.f.id}">${esc(fa.f.n)}</span> <b>${fx(fa.tot, 0)}</b>` : "none"}` +
@@ -4100,7 +4108,7 @@ function renderTrade() {
 // only the games before the trade date, x availability x team games left
 // then. Now = fantasy points actually scored since the trade + today's
 // rest-of-season points. Plain sums (no roster-spot adjustment).
-const PT = {key: null, p: null, trades: null};
+const PT = {key: null, p: null, trades: null, at: 0, err: false};
 function rosAt(p, T) {
   const C = GAMES.C, rows = (GAMES.byP[p.id] || []).filter((r) => r[C.d] < T);
   const approx = !p.ps;
@@ -4164,36 +4172,41 @@ function sinceFP(p, T) {
     .reduce((a, r) => a + fpgRow(r), 0);
 }
 function loadPastTrades(lg) {
+  // Owner 11-15: a trade went through and the tab didn't show it. ESPN's transaction log
+  // (mTransactions2) never exposes a completed trade's players to a public read: only the
+  // acceptance, the league's uphold votes and cancelled proposals. The league's activity feed
+  // (ESPN's "Recent Activity") does: message type 244 = player traded (from team -> to team),
+  // 245 = dropped to make room in that trade. Re-read after 5 minutes and on Refresh.
   const key = L.id;
-  if (PT.key === key && PT.p) return PT.p;
-  PT.key = key; PT.trades = null;
-  const days = [...new Set(Object.values(META.sched).flatMap((g) => g.map((x) => x[0])))].sort();
-  const n = days.filter((d) => d <= nowDay()).length;            // ESPN scoring periods = game days
-  const flt = JSON.stringify({transactions: {filterType: {value: ["TRADE_ACCEPT", "TRADE_UPHOLD", "TRADE_PROPOSAL", "TRADE_VETO", "TRADE_DECLINE"]}}});
-  const ids = Array.from({length: n}, (_, i) => i + 1);
-  const out = [];
-  const one = (sp) => fetch(espnBase() + key + "?view=mTransactions2&scoringPeriodId=" + sp, {headers: {"x-fantasy-filter": flt}})
-    .then((r) => (r.ok ? r.json() : {transactions: []})).catch(() => ({transactions: []}))
-    .then((j) => (j.transactions || []).forEach((t) => out.push(t)));
-  const pool = async () => { while (ids.length) { await one(ids.shift()); } };
-  PT.p = Promise.all(Array.from({length: 6}, pool)).then(() => {
-    const seen = new Set();
-    PT.trades = out.filter((t) => t.status === "EXECUTED" && /TRADE/.test(t.type) && !seen.has(t.id) && seen.add(t.id))
-      .map((t) => {
-        const ts = t.processDate || t.proposedDate || 0;
-        const d = new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York"}).format(new Date(ts));
-        const items = (t.items || []).filter((i) => i.playerId > 0 && i.toTeamId != null && i.fromTeamId != null);
-        return {id: t.id, d, items};
-      }).filter((t) => t.items.length).sort((a, b) => (a.d < b.d ? 1 : -1));
-    return PT.trades;
-  });
+  if (PT.key === key && PT.p && Date.now() - PT.at < 3e5) return PT.p;
+  if (PT.key !== key) PT.trades = null;     // another league: don't show the last one's trades
+  PT.key = key; PT.at = Date.now();
+  const flt = JSON.stringify({communication: {topics: {filterType: {value: ["ACTIVITY_TRANSACTIONS"]}, limit: 200, offset: 0,
+    sortMessageDate: {sortPriority: 1, sortAsc: false}, filterIncludeMessageTypeIds: {value: [244, 245]}}}});
+  const et = (ms) => new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York"}).format(new Date(ms));
+  PT.p = fetch(espnBase() + key + "?view=kona_league_communication", {headers: {"x-fantasy-filter": flt}, cache: "no-store"})
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    .then((j) => {
+      PT.err = !j;
+      if (!j) { if (PT.trades == null) PT.trades = []; return PT.trades; }
+      const tops = ((j.communication || {}).topics || []).filter((t) => (t.messages || []).some((m) => m.messageTypeId === 244));
+      PT.trades = tops.map((t) => {
+        const ms = t.messages || [];
+        return {id: t.id, d: et(t.date), at: t.date,
+          items: ms.filter((m) => m.messageTypeId === 244 && m.targetId > 0).map((m) => ({playerId: m.targetId, fromTeamId: m.from, toTeamId: m.to})),
+          drops: ms.filter((m) => m.messageTypeId === 245 && m.targetId > 0).map((m) => ({playerId: m.targetId, teamId: m.from}))};
+      }).filter((t) => t.items.length).sort((a, b) => b.at - a.at);
+      return PT.trades;
+    });
   return PT.p;
 }
 function renderPastTrades() {
   const el = $("tr-past"), lg = LGRES[L.id];
   if (!lg) { el.innerHTML = '<p class="note">Past trades are read from a public ESPN league.</p>'; return; }
+  // stale (5 min, Refresh, another league): show what we have and re-read
+  if (GAMES && PT.trades != null && (PT.key !== L.id || !PT.p || Date.now() - PT.at >= 3e5)) loadPastTrades(lg).then(() => renderPastTrades());
   if (!GAMES || PT.trades == null) {
-    el.innerHTML = '<p class="note">Reading the league&rsquo;s transaction log from ESPN&hellip;</p>';
+    el.innerHTML = '<p class="note">Reading the league&rsquo;s trades from ESPN&hellip;</p>';
     Promise.all([loadGames(), loadPastTrades(lg)]).then(() => renderPastTrades());
     return;
   }
@@ -4249,7 +4262,8 @@ function renderPastTrades() {
       `<div class="tverd"><span><span class="k">At the time</span><b>${who(thenEdge)}</b></span><span class="arr">&rarr;</span>` +
       `<span><span class="k">Now</span><b class="${flip ? "pos-dn" : ""}">${who(nowEdge)}</b></span>` +
       `<span class="dim">${flip ? "The trade has flipped since it was made." : Math.abs(nowEdge - thenEdge) < 50 ? "Playing out about as projected." : "Same winner, margin " + (Math.abs(nowEdge) > Math.abs(thenEdge) ? "wider" : "narrower") + " than projected."}</span></div>` +
-      `<div class="tcols" style="margin-top:.6rem">${teams.map(sideHtml).join("")}</div></div>`;
+      `<div class="tcols" style="margin-top:.6rem">${teams.map(sideHtml).join("")}</div>` +
+      ((t.drops || []).length ? `<p class="note" style="margin:.5rem 0 0">To make room: ${t.drops.map((x) => `${tn(x.teamId)} dropped ${BYID[x.playerId] ? `<span class="name" data-id="${x.playerId}">${esc(BYID[x.playerId].n)}</span>` : esc(lg.name[x.playerId] || "#" + x.playerId)}`).join("; ")}.</p>` : "") + "</div>";
   };
   // the example (owner asked to keep it on the page): a made-up Oct 24 swap,
   // Jamal Murray for Anthony Edwards, valued exactly like a real trade
@@ -4258,6 +4272,7 @@ function renderPastTrades() {
   const sample = BYID[3936299] && BYID[4594268] && B != null && META.weeks.length && META.weeks[0][1] <= "2026-10-24" && "2026-10-24" <= (META.last_game_day || "")
     ? {id: "sample", d: "2026-10-24", items: [{playerId: 3936299, fromTeamId: A, toTeamId: B}, {playerId: 4594268, fromTeamId: B, toTeamId: A}]} : null;
   el.innerHTML = (PT.trades.length ? PT.trades.map((t) => tradeCard(t, false)).join("")
+      : PT.err ? '<div class="card" style="margin-bottom:.8rem"><p class="note" style="margin:0">Couldn&rsquo;t read the league&rsquo;s trade log from ESPN just now. Press <b>Refresh</b> to try again.</p></div>'
       : '<div class="card" style="margin-bottom:.8rem"><p class="note" style="margin:0">No trades have gone through in this league yet this season. When one does, it shows here like the example below.</p></div>') +
     (sample ? tradeCard(sample, true) : "") + '<p class="note">Each player has three columns: <strong>On the trade date</strong> (the model&rsquo;s projected FP/G × games left as it stood that day), <strong>Since</strong> (what he has actually scored for his new team) and <strong>From today</strong> (today&rsquo;s rest-of-season projection). <b>Value now</b> = points scored since + points still to come. ' +
     'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums, no roster-spot adjustment.</p>';
