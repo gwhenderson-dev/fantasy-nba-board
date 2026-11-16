@@ -697,14 +697,19 @@ const offCleared = (p) => {
 // When the official report lists him, it decides; ESPN only fills the gaps.
 const espnOut = (p, inj) => !off(p) && OUT_SET.includes(inj === undefined ? p.inj : inj) && !offCleared(p);
 const outNow = (p) => espnOut(p) || longOut(p);
-// Healthy but out of the rotation: no minutes in any of his team's last 5
-// games (3+ played) and not just back from the injury report. His games
-// don't count on Waivers / My week, and he can't inherit an absentee's minutes.
+// Healthy but out of the rotation: never more than ROT_MIN minutes in any of
+// his team's last 5 games (3+ played; none at all counts) and not just back
+// from the injury report. 2021-26 game logs: players whose most minutes in
+// the team's last 5 was under 10 averaged 2.4-3.8 MPG over the next 5 team
+// games (DNPs as 0) and reached 15 minutes in 5-9% of them (owner 11-16:
+// Zikarsky, one 2-minute cameo in 13 games, was projected at 14.9 MPG).
+// His games don't count on Waivers / My week, and he can't inherit an absentee's minutes.
+const ROT_MIN = 10;
 const teamPlayed = (tm) => { const l = META.last_game_day || ""; return (META.sched[tm] || []).filter((g) => g[0] <= l).length; };
 // "Healthy" means BOTH sources agree: not on the official report at all and
 // ESPN ACTIVE — a returning player (Claxton: out all season, Doubtful
 // tonight) hasn't played either, but that is injury, not the coach's choice.
-const benched = (p) => !!p && !isAbsent(p) && !off(p) && (!p.inj || p.inj === "ACTIVE") && !p.fresh &&
+const benched = (p) => !!p && !isAbsent(p) && !off(p) && (!p.inj || p.inj === "ACTIVE") && (!p.fresh || (p.m5 != null && p.m5 < ROT_MIN)) &&
   teamPlayed(p.tm) >= 3 && !(OFF.cleared && OFF.cleared[p.id]);
 // Game-day status -> chance he plays THAT game, measured on the official
 // 5 PM reports 2023-26 (src/backtest/status_play.py): Doubtful 1%,
@@ -730,7 +735,7 @@ function rampFor(p) {
     .filter((d) => d > last && d >= back && !outOn(p, d) && statusPlay(p, d) >= 0.5);
   return (d) => { const i = up.indexOf(d); return i >= 0 && i < S.ramp.length ? S.ramp[i] : 1; };
 }
-const benchTip = (p) => `Not in the rotation: no minutes in any of ${p.tm}'s last ${Math.min(5, teamPlayed(p.tm))} games while healthy` +
+const benchTip = (p) => `Not in the rotation: ${p.fresh ? `never more than ${(p.m5 || 0).toFixed(0)} min` : "no minutes"} in any of ${p.tm}'s last ${Math.min(5, teamPlayed(p.tm))} games while healthy` +
   `${p.gp ? ` (${p.gp} games played this season)` : " (hasn't played this season)"}.\nHis games don't count here until he plays.`;
 const outOn = (p, d) => { const o = off(p); return !!o && o[0] === "Out" && o[1] === d; };
 function offTitle(o, p) {
@@ -1903,7 +1908,7 @@ function renderWaivers(only) {
     `a player listed out on his team&rsquo;s last two or more reports is dropped entirely, a one-night Out removes just that game, and Doubtful / Questionable are tagged. ` +
     `Rank by <strong>Ceiling</strong> when you need a big night more than a safe one.`);
   const sk = (rows.skipped || []).sort((a, b) => fpg(b.s, b.bp) - fpg(a.s, a.bp));
-  $("wv-note").innerHTML = (sk.length ? `<strong>Left off — not in the rotation</strong> (healthy, but no minutes in any of their team&rsquo;s last 5 games; they come back the day they play): ` +
+  $("wv-note").innerHTML = (sk.length ? `<strong>Left off — not in the rotation</strong> (healthy, but under 10 minutes in every one of their team&rsquo;s last 5 games; they come back once they play real minutes): ` +
     sk.slice(0, 12).map((p) => `<span class="name" data-id="${p.id}">${esc(p.n)}</span> <span class="dim">${esc(p.tm)}</span>`).join(", ") + (sk.length > 12 ? ` and ${sk.length - 12} more` : "") + ".<br><br>" : "") +
     "Matchup chips: the one-game adjustment tested on 16 seasons (opponent pace, fantasy points it allows to the player's position, " +
     "FG% it allows, home court), worth about ±2–3 points at the extremes. A dashed chip is the second night of a back-to-back. " +
