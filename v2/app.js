@@ -4179,7 +4179,7 @@ function renderTrade() {
 // only the games before the trade date, x availability x team games left
 // then. Now = fantasy points actually scored since the trade + today's
 // rest-of-season points. Plain sums (no roster-spot adjustment).
-const PT = {key: null, p: null, trades: null, at: 0, err: false};
+const PT = {key: null, p: null, trades: null, at: 0, err: false, open: new Set()};   // open = trade ids showing player detail
 function rosAt(p, T) {
   const C = GAMES.C, rows = (GAMES.byP[p.id] || []).filter((r) => r[C.d] < T);
   const approx = !p.ps;
@@ -4303,6 +4303,8 @@ function renderPastTrades() {
     return {pool: PLAYERS.filter((p) => owned[p.id] == null && p.s && !skip.has(p.id) && !outAt(p, t.d))
       .map((p) => ({p, v: rosAtC(p, t.d).tot})).sort((a, b) => b.v - a.v).slice(0, n).map((x) => x.p.id), today: !!R.fail};
   };
+  const detNote = '<p class="note">Each player has three columns: <strong>On the trade date</strong> (the model&rsquo;s projected FP/G × games left as it stood that day), <strong>Since</strong> (what he has actually scored for his new team) and <strong>From today</strong> (today&rsquo;s rest-of-season projection). <b>Value now</b> = points scored since + points still to come. ' +
+    'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums; when one team got fewer players, the best available waiver player(s) on the trade date are added to its side (dashed gold) so both sides have the same number.</p>';
   const tradeCard = (t, sample) => {
     const sides = {};
     t.items.forEach((i) => { (sides[i.toTeamId] = sides[i.toTeamId] || []).push(i.playerId); });
@@ -4394,7 +4396,10 @@ function renderPastTrades() {
         `<div class="ptsb-ttl">${sample ? '<span class="tag rk">EXAMPLE · not a real trade</span>' : ""}<b>${dshort}:</b> ${teams.map(tn).join(" &#8644; ")}</div>` +
         `<div class="ptsb-v" title="Fantasy points scored since the trade plus the projection for the rest of the season. On ${dshort} the model had ${Math.abs(thenEdge) < 50 ? "it even" : `${thenEdge > 0 ? tn(A) : tn(B)} up ${n0(Math.abs(thenEdge))}`}.">` +
         `${lead == null ? "Even so far" : `<b>${tn(lead)}</b> ahead by <span class="n">${n0(Math.abs(nowEdge))}</span> fantasy points`}</div>` +
-        `<div class="ptsb-row">${box(A, "a")}<div class="ptsb-vs">vs</div>${box(B, "b")}</div></div>`;
+        `<div class="ptsb-row">${box(A, "a")}<div class="ptsb-vs">vs</div>${box(B, "b")}</div>` +
+        // owner 11-16: summary first; a centred arrow under both boxes opens the player detail
+        `<button type="button" class="ptsb-more" data-ptopen="${esc(String(t.id))}" aria-expanded="${PT.open.has(String(t.id))}">` +
+        `<span>${PT.open.has(String(t.id)) ? "Hide player details" : "Player details"}</span><i aria-hidden="true"></i></button></div>`;
     })();
     const sideHtml = (tid) => `<div class="tcol"><div class="tch"><span>${tn(tid)} got</span>` +
       `<span class="dim">${Math.round(sum(tid, "now")).toLocaleString()} fantasy points</span></div>` +
@@ -4403,9 +4408,10 @@ function renderPastTrades() {
       `<strong>${dshort}: ${teams.map(tn).join(" &#8644; ")}</strong></div>`) +
       (board || `<div class="tverd"><span><span class="k">At the time</span><b>${who(thenEdge)}</b></span><span class="arr">&rarr;</span><span><span class="k">Now</span><b>${who(nowEdge)}</b></span></div>`) +
       (B == null ? bawNote : "") +
+      `<div class="ptdet"${board && !PT.open.has(String(t.id)) ? " hidden" : ""}>` +
       `<div class="ptsb-h">The players</div>` +
-      `<div class="tcols" style="margin-top:.6rem">${teams.map(sideHtml).join("")}</div>` +
-      ((t.drops || []).length ? `<p class="note" style="margin:.5rem 0 0">To make room: ${t.drops.map((x) => `${tn(x.teamId)} dropped ${BYID[x.playerId] ? `<span class="name" data-id="${x.playerId}">${esc(BYID[x.playerId].n)}</span>` : esc(lg.name[x.playerId] || "#" + x.playerId)}`).join("; ")}.</p>` : "") + "</div>";
+      `<div class="tcols" style="margin-top:.6rem">${teams.map(sideHtml).join("")}</div>` + detNote.replace('<p class="note">', '<p class="note" style="margin:.6rem 0 0">') +
+      ((t.drops || []).length ? `<p class="note" style="margin:.5rem 0 0">To make room: ${t.drops.map((x) => `${tn(x.teamId)} dropped ${BYID[x.playerId] ? `<span class="name" data-id="${x.playerId}">${esc(BYID[x.playerId].n)}</span>` : esc(lg.name[x.playerId] || "#" + x.playerId)}`).join("; ")}.</p>` : "") + "</div></div>";
   };
   // the example (owner asked to keep it on the page): a made-up Oct 24 swap,
   // Jamal Murray for Anthony Edwards, valued exactly like a real trade
@@ -4416,11 +4422,21 @@ function renderPastTrades() {
   el.innerHTML = (PT.trades.length ? PT.trades.map((t) => tradeCard(t, false)).join("")
       : PT.err ? '<div class="card" style="margin-bottom:.8rem"><p class="note" style="margin:0">Couldn&rsquo;t read the league&rsquo;s trade log from ESPN just now. Press <b>Refresh</b> to try again.</p></div>'
       : '<div class="card" style="margin-bottom:.8rem"><p class="note" style="margin:0">No trades have gone through in this league yet this season. When one does, it shows here like the example below.</p></div>') +
-    (sample && !PT.trades.length ? tradeCard(sample, true) : "") + '<p class="note">Each player has three columns: <strong>On the trade date</strong> (the model&rsquo;s projected FP/G × games left as it stood that day), <strong>Since</strong> (what he has actually scored for his new team) and <strong>From today</strong> (today&rsquo;s rest-of-season projection). <b>Value now</b> = points scored since + points still to come. ' +
-    'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums; when one team got fewer players, the best available waiver player(s) on the trade date are added to its side (dashed gold) so both sides have the same number.</p>';
+    (sample && !PT.trades.length ? tradeCard(sample, true) : "");
 }
 
 function bindTrade() {
+  // past trades: the arrow under the scoreboard shows / hides that trade's player detail
+  $("tab-trade").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-ptopen]");
+    if (!b) return;
+    const id = b.dataset.ptopen, open = !PT.open.has(id);
+    if (open) PT.open.add(id); else PT.open.delete(id);
+    const det = b.closest(".card").querySelector(".ptdet");
+    if (det) det.hidden = !open;
+    b.setAttribute("aria-expanded", open);
+    b.querySelector("span").textContent = open ? "Hide player details" : "Player details";
+  });
   $("tr-a").addEventListener("change", (e) => { TR.a = +e.target.value; TR.give.clear(); TR.get.clear(); if (TR.b === TR.a) TR.b = null; renderTrade(); });
   $("tr-b").addEventListener("change", (e) => { TR.b = +e.target.value; TR.get.clear(); renderTrade(); });
   $("tab-trade").addEventListener("change", (e) => {
