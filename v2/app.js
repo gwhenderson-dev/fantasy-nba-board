@@ -4362,18 +4362,28 @@ function renderPastTrades() {
     const board = B == null ? "" : (() => {
       const lead = Math.abs(nowEdge) < 50 ? null : nowEdge > 0 ? A : B;
       const box = (tid, cls) => {
-        const got = V[tid].filter((x) => !x.baw).map((x) => esc(surname(x.n))).join(", ") +
-          V[tid].filter((x) => x.baw).map((x) => ` <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">+ ${esc(surname(x.n))} <em>(best avail)</em></span>`).join("");
-        const bt = V[tid].reduce((s, x) => s + (x.avg != null ? x.avg * x.agp : 0), 0);
-        const bg = V[tid].reduce((s, x) => s + (x.avg || 0), 0);
-        const played = V[tid].filter((x) => x.sgp);
-        const at = tot_(tid, "since"), ag = played.reduce((s, x) => s + x.since / x.sgp, 0);
+        // one row per player he got (owner: "make it clear which numbers go with which players"),
+        // then the total; before = that player's season up to the trade date, after = since
+        const pl = V[tid].filter((x) => !x.missing);
+        const anyAfter = pl.some((x) => x.sgp);
+        const row = (x) => {
+          const bt = x.avg != null ? x.avg * x.agp : 0;
+          return `<tr${x.baw ? ' class="baw"' : ""}><td class="l"><span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span>` +
+            (x.baw ? ' <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">best avail</span>' : "") + "</td>" +
+            `<td title="${x.agp} games before ${dshort}">${x.avg != null ? n0(bt) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
+            `<td title="${x.sgp} games since ${dshort}">${x.sgp ? n0(x.since) : "–"}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td></tr>`;
+        };
+        const bt = pl.reduce((s, x) => s + (x.avg != null ? x.avg * x.agp : 0), 0), bg = pl.reduce((s, x) => s + (x.avg || 0), 0);
+        const played = pl.filter((x) => x.sgp);
+        const at = played.reduce((s, x) => s + x.since, 0), ag = played.reduce((s, x) => s + x.since / x.sgp, 0);
         return `<div class="ptsb-s ${cls}${lead === tid ? " lead" : ""}">` +
-          `<div class="ptsb-t">${tn(tid)}${lead === tid ? ' <span class="ptsb-w">AHEAD</span>' : ""}</div>` +
-          `<div class="ptsb-g">${got}</div>` +
-          `<table class="ptsb-tb"><thead><tr><th></th><th title="What these players scored this season up to ${dshort}">Before trade</th><th title="What they have scored since ${dshort}">After trade</th></tr></thead><tbody>` +
-          `<tr><td title="All the players' fantasy points added together">Fantasy points</td><td>${n0(bt)}</td><td>${played.length ? n0(at) : '<span class="dim">no games yet</span>'}</td></tr>` +
-          `<tr><td title="The players' per-game averages added together">FP/G</td><td>${fx(bg)}</td><td>${played.length ? fx(ag) : '<span class="dim">–</span>'}</td></tr></tbody></table>` +
+          `<div class="ptsb-t">${tn(tid)} got${lead === tid ? ' <span class="ptsb-w">AHEAD</span>' : ""}</div>` +
+          `<table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th></tr>` +
+          `<tr><th></th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th></tr></thead><tbody>` +
+          pl.map(row).join("") +
+          `<tr class="tot"><td class="l" title="The players' points and per-game averages added together">Total</td><td>${n0(bt)}</td><td>${fx(bg)}</td>` +
+          `<td>${played.length ? n0(at) : "–"}</td><td>${played.length ? fx(ag) : "–"}</td></tr></tbody></table>` +
+          (anyAfter ? "" : `<div class="ptsb-p">No games since the trade yet.</div>`) +
           `<div class="ptsb-p" title="Scored since the trade plus the model's projection for the rest of the season">Projected rest of season <b>${n0(sum(tid, "now"))}</b> pts · <b>${fx(fpg_(tid, "rfp"))}</b> FP/G</div></div>`;
       };
       return '<div class="ptsb">' +
