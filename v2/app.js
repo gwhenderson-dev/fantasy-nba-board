@@ -1797,6 +1797,7 @@ function streamRows() {
     const fpd = fpgUnder(META.league, p.s, p.bp) || fp;
     const scale = fpd > 0 ? fp / fpd : 1;
     const sd = (p.sd || 0) * scale;
+    const hf = healthyF(p);                     // healthy DNPs count (healthy_dnp.py)
     const teamDays = new Set((META.sched[p.tm] || []).map((g) => g[0]));
     const listed = own.has(normName(p.n));
     const psit = listed ? 1 : p.b2b ? p.b2b[2] : B.base;
@@ -1819,7 +1820,7 @@ function streamRows() {
           `   FG% ${opp} allows: ${((mf.fgp || 1) * 100).toFixed(0)}% of league\n` +
           `   ${home ? "home (+0.5)" : "away (−0.5)"} · ${mf.n} ${opp} games so far`;
       }
-      const bst = boostFP(p, d), v = (fp + bst) * rf + adj;
+      const bst = boostFP(p, d), v = (fp * hf + bst) * rf + adj;
       proj += play * v;
       if (play >= 0.5) ceil = Math.max(ceil ?? -1e9, v + CZ * sd * rf);
       return {d, opp, home, second, play, sp, rf, adj, bst, tip, val: play * v, v};
@@ -1837,7 +1838,7 @@ function streamRows() {
     const bg = games.filter((g) => g.bst > 0.05);
     const inj = bg.length ? bg.reduce((a, g) => a + g.bst * g.play, 0) : null;   // FP the injury boost adds in this window
     const sv = games.map((g) => slpFP(p.id, g.d)).filter((v) => v != null);
-    out.push({p, fp, games, proj, ceil, now, adjFp, slp: sv.length ? sv.reduce((a, v) => a + v, 0) / sv.length : null, slpN: sv.length, boost: boostInfo(p), inj, injN: bg.length, injPg: bg.length ? bg.reduce((a, g) => a + g.bst, 0) / bg.length : 0,
+    out.push({p, fp, hf, games, proj, ceil, now, adjFp, slp: sv.length ? sv.reduce((a, v) => a + v, 0) / sv.length : null, slpN: sv.length, boost: boostInfo(p), inj, injN: bg.length, injPg: bg.length ? bg.reduce((a, g) => a + g.bst, 0) / bg.length : 0,
       luck: now != null && adjFp != null ? now - adjFp : null,
       psit, listed, risk: listed || psit >= B.flag, ng: games.length,
       st: rostered ? (lg.byId[lg.owner[p.id]] || {}).ab : lg ? (lg.wv[p.id] ? "WVR" : "FA") : null});
@@ -1906,7 +1907,7 @@ function renderWaivers(only) {
       (r.inj ? `<td class="l grp injcol" title="${esc(boostTip(r.boost) + (r.injN < r.ng ? `\nBoosted in ${r.injN} of his ${r.ng} games in this window (the rest come after a return)` : ""))}">` +
         `<b class="pos-up">+${r.inj.toFixed(1)}</b>${r.ng > 1 ? `<span class="dim inj-pg">${r.injPg.toFixed(1)}/g${r.injN < r.ng ? ` · ${r.injN} of ${r.ng} games` : ""}</span>` : ""}` +
         `<span class="sub">${esc(r.boost.parts.map((x) => surname(x.name)).join(", "))} out</span></td>` : `<td class="grp injcol"></td>`) +
-      `<td class="grp">${fx(r.fp)}${r.slp != null ? `<span class="sub slp" title="Sleeper&rsquo;s projection (Rotowire) for these ${r.slpN} game${r.slpN > 1 ? "s" : ""}, per game, under your scoring. A benchmark: our numbers never use it">Sleeper ${fx(r.slp)}</span>` : ""}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
+      `<td class="grp">${fx(r.fp)}${r.hf < 0.9 ? `<span class="sub" title="${esc(`${fx(r.fp)} is per game he plays. Counting the games he sat while healthy (DNPs as 0): ${fx(r.p.mh)} min per healthy team game vs ${fx(r.p.mpg)} when he plays, so ${fx(r.fp * r.hf)} FP per game is what the projection uses`)}">${fx(r.fp * r.hf)} / team game</span>` : ""}${r.slp != null ? `<span class="sub slp" title="Sleeper&rsquo;s projection (Rotowire) for these ${r.slpN} game${r.slpN > 1 ? "s" : ""}, per game, under your scoring. A benchmark: our numbers never use it">Sleeper ${fx(r.slp)}</span>` : ""}</td><td>${fx(r.now)}</td><td>${fx(r.adjFp)}</td>` +
       `<td class="${r.luck == null ? "" : r.luck >= 1 ? "pos-dn" : r.luck <= -1 ? "pos-up" : ""}">${sg(r.luck)}</td>` +
       `<td class="grp ${r.risk ? "" : "dim"}" title="${b2 ? `Sat ${b2[0]} of ${b2[1]} second nights (last season + this)` : "No second nights on record"}">${r.listed ? "your list" : Math.round(r.psit * 100) + "%"}</td>` +
       `<td class="dim">${p.own != null ? p.own.toFixed(0) : "-"}</td></tr>`;
@@ -3054,11 +3055,17 @@ function mAdj(p, g, scale) {
 // FP/G + injury boost, return ramp, matchup, back-to-back and game-day status
 // odds). ok(d, statusPlayChance) says whether that game can count at all;
 // own = the visitor forced him in (status odds then ignored)
+// Per-game value counts a healthy player's DNPs: ROS FP/G is per game PLAYED,
+// so it is scaled by minutes per HEALTHY team game (p.mh, DNPs as 0) over
+// minutes per game played (src/backtest/healthy_dnp.py: shipped per-game
+// value ran +2.25 FP too high; this cut the error 4.65 -> 4.17, 20/20 test
+// checkpoints, fringe players 5.42 -> 4.36). Not for rookies (untested).
+const healthyF = (p) => (p && p.mh != null && p.mpg > 0 ? p.mh / p.mpg : 1);
 function dayVals(p, days, own, ok) {
   const B = META.b2b;
-  const fp = p ? fpg(p.s, p.bp) : 0;
-  const fpd = p ? fpgUnder(META.league, p.s, p.bp) || fp : 1;
-  const scale = fpd > 0 ? fp / fpd : 1;
+  const fp0 = p ? fpg(p.s, p.bp) : 0, fp = fp0 * healthyF(p);
+  const fpd = p ? fpgUnder(META.league, p.s, p.bp) || fp0 : 1;
+  const scale = fpd > 0 ? fp0 / fpd : 1;          // scoring conversion only (health excluded)
   const sd = p ? (p.sd || 0) * scale : 0;
   const teamDays = new Set(p ? (META.sched[p.tm] || []).map((g) => g[0]) : []);
   const psit = p && p.b2b ? p.b2b[2] : B.base;
@@ -3075,7 +3082,8 @@ function dayVals(p, days, own, ok) {
       val = Math.max(0, play * v);
       avail = true;
       // when he plays: v +- sg2; else 0 -> mean val, variance of that mixture
-      return {d, g, avail, val, play, sd2: sd * sd, st: false, base: fp, bst, rf, adj, parts, v, second, sp,
+      // vp = his value once he is actually on the court (no healthy-DNP discount): Live / My week in-game
+      return {d, g, avail, val, play, sd2: sd * sd, st: false, base: fp, bst, rf, adj, parts, v, vp: (fp0 + bst) * rf + adj, second, sp,
         ceil: play >= 0.5 ? v + META.ceiling.z * sg2 : val,
         var: Math.max(0, play * (sg2 * sg2 + v * v) - val * val)};
     }
@@ -3277,7 +3285,7 @@ function wkLiveLine(p, x, today) {
   const st = wkGame(p, today);
   if (st === "pre") return null;
   const e = WL.ent[p.id] || null, played = !!e && (e.min > 0 || (e.fp || 0) !== 0), left = wkLeft(p, today);
-  const per = played ? (x.v != null ? x.v : x.val) : x.val;
+  const per = played ? (x.vp != null ? x.vp : x.v != null ? x.v : x.val) : x.val;
   const rest = st === "post" ? 0 : per * left;
   return {st, e, played, left, rest, fp: e && e.fp != null ? e.fp : 0, starter: e ? e.slot !== 12 && e.slot !== 13 : null,
     detail: WL.det[p.tm] || "", proj: (e && e.fp != null ? e.fp : 0) + rest};
@@ -4519,7 +4527,7 @@ function liveSide(side, G, P, lg, today) {
     let proj = 0, v = 0, sd2 = 0;
     if (p && g) {
       const dv = dayVals(p, [LV.day], false, (d, sp) => !outOn(p, d) && sp >= 0.05)[0];
-      if (dv && dv.avail) { proj = dv.val; v = dv.v || dv.val; sd2 = dv.sd2 || 0; }
+      if (dv && dv.avail) { proj = dv.val; v = dv.vp || dv.v || dv.val; sd2 = dv.sd2 || 0; }
     }
     const played = (s[40] || 0) > 0;
     const exp = !g ? 0 : g.state === "post" ? 0 : g.state === "in" ? (played ? v : proj) * g.left : proj;
