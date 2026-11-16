@@ -1132,3 +1132,17 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .sp-irplan .sp-ir { margin: 0; font-size: .84rem; }
 .sp-irplan .dim { font-size: .74rem; }
 .sp-seg.irb { background: var(--red-bg); border: 1px dashed var(--red); }
+
+/* trade analyzer: best available waiver player (owner 11-16) */
+.tag.baw { background: transparent; color: var(--gold); border: 1.5px dashed var(--gold); font-weight: 700; margin-right: .35rem; }
+.trow.baw { background: transparent; border: 1.5px dashed var(--gold); border-radius: 8px; padding: .3rem .4rem; margin: .1rem 0 .35rem; }
+.tpc.baw, .ptc.baw { border: 1.5px dashed var(--gold); background: transparent; }
+table.ptsum { width: 100%; border-collapse: collapse; font-size: .84rem; }
+table.ptsum th { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; text-align: right; padding: .2rem .4rem; white-space: nowrap; }
+table.ptsum th.grp0 { text-align: center; }
+table.ptsum th.grp, table.ptsum td.grp { border-left: 1px solid var(--rule2); text-align: right; }
+table.ptsum th[colspan].grp { text-align: center; }
+table.ptsum td { text-align: right; padding: .3rem .4rem; font-variant-numeric: tabular-nums; border-top: 1px solid var(--rule); }
+table.ptsum td.l, table.ptsum th.l { text-align: left; }
+table.ptsum td.big { font-weight: 750; }
+table.ptsum tr.tot td { font-weight: 650; background: var(--band); }
