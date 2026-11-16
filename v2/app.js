@@ -4057,12 +4057,12 @@ function renderTrade() {
   const myBaw = nG > nR ? pool.slice(0, nG - nR) : [], theirBaw = nR > nG ? pool.slice(0, nR - nG) : [];
   const bawRow = (rows, who) => rows.map((r) => `<div class="trow baw"><span>+</span><span>${BAW_TAG} <span class="name" data-id="${r.p.id}">${esc(r.p.n)}</span>` +
     `${lg.wv[r.p.id] ? ' <span class="tag wvr">WVR</span>' : ""}<br><span class="sub">auto-added: ${who} get fewer players, so ${who === "you" ? "your" : "their"} open spot goes to the best available waiver player · ${esc(r.p.tm)} · ${esc(r.p.pos || "")}</span></span>` +
-    `<span class="v">${fx(r.ros)}<br><span class="sub">ROS FP/G</span></span><span class="v">${fx(r.tot, 0)}<br><span class="sub">${fx(r.gl, 0)} gm</span></span></div>`).join("");
+    `<span class="v">${fx(r.ros)}<br><span class="sub">proj FP/G</span></span><span class="v">${fx(r.tot, 0)}<br><span class="sub">${fx(r.gl, 0)} gm</span></span></div>`).join("");
   const list = (rows, set, side) => rows.map((r) => `<label class="trow${set.has(r.p.id) ? " on" : ""}">` +
     `<input type="checkbox" data-side="${side}" data-pid="${r.p.id}"${set.has(r.p.id) ? " checked" : ""}>` +
     `<span><span class="name" data-id="${r.p.id}">${esc(r.p.n)}</span>${tags(r.p)}${lg.slot[r.p.id] === 13 ? ' <span class="sub">IR</span>' : ""}<br>` +
-    `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")} · now ${fx(r.now)} · luck-adj ${fx(r.adj)}</span></span>` +
-    `<span class="v">${fx(r.ros)}<br><span class="sub">ROS FP/G</span></span><span class="v">${fx(r.tot, 0)}<br><span class="sub">${fx(r.gl, 0)} gm</span></span></label>`).join("");
+    `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")} · actual ${fx(r.now)} FP/G (${r.gp} gm) · luck-adj ${fx(r.adj)}</span></span>` +
+    `<span class="v">${fx(r.ros)}<br><span class="sub">proj FP/G</span></span><span class="v">${fx(r.tot, 0)}<br><span class="sub">${fx(r.gl, 0)} gm</span></span></label>`).join("");
   // the best available waiver player joins the side that RECEIVES fewer: yours shows under
   // the players you'd get, theirs under the players you'd send
   $("tr-ra").innerHTML = bawRow(theirBaw, "they") + list(RA, TR.give, "a");
@@ -4108,7 +4108,7 @@ function renderTrade() {
   const cls = (v, base) => (Math.abs(v) < TR_EVEN * base ? "" : v > 0 ? "pos-up" : "pos-dn");
   const bawCard = (r, side, who) => `<div class="tpc ${side} baw"><div class="tph">${BAW_TAG}<span class="name" data-id="${r.p.id}">${esc(r.p.n)}</span>${tags(r.p)}` +
     `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")} · ${who === "you" ? "you'd" : "they'd"} add him with the open roster spot (not part of the deal)</span></div>` +
-    '<div class="tpg">' + [["ROS FP/G", fx(r.ros)], ["Games left", fx(r.gl, 0)], ["ROS points", fx(r.tot, 0)], ["Now FP/G", fx(r.now)]]
+    '<div class="tpg">' + [["Proj FP/G", fx(r.ros)], ["Games left", fx(r.gl, 0)], ["ROS points", fx(r.tot, 0)], ["Actual FP/G", fx(r.now)]]
       .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`).join("") + "</div></div>";
   const c0 = (v) => `<span class="${v > 0.5 ? "pos-up" : v < -0.5 ? "pos-dn" : "dim"}">${Math.abs(v) < 0.5 ? "0" : sg(v, 0)}</span>`;
   const why = (id) => {
@@ -4130,10 +4130,10 @@ function renderTrade() {
     return `<div class="tpc ${side}"><div class="tph"><span class="name" data-id="${id}">${esc(r.p.n)}</span>${tags(r.p)}` +
       `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")}${lg.slot[id] === 13 ? " · on IR" : ""}</span></div>` +
       '<div class="tpg">' +
-      cell("ROS FP/G", fx(r.ros), "Rest-of-season projected fantasy points per game") +
+      cell("Proj FP/G", fx(r.ros), "Rest-of-season PROJECTED fantasy points per game: his preseason line blended with his games so far") +
       cell("Games left", fx(r.gl, 0), "Projected games left: availability × his team's remaining games") +
       cell("ROS points", fx(r.tot, 0), "ROS FP/G × games left") +
-      cell("Now FP/G", fx(r.now), "Actual fantasy points per game so far this season") +
+      cell("Actual FP/G", fx(r.now), `Fantasy points per game he has actually scored this season (${r.gp} games)`) +
       cell("Luck-adj", fx(r.adj), "This season's FP/G with shooting / steal / block luck stripped out") +
       (L.playoff_weeks ? cell("Playoff pts", fx(r.po, 0), `ROS FP/G × his expected games in weeks ${L.playoff_weeks[0]}–${L.playoff_weeks[1]}`) : "") +
       `</div><div class="tpf" title="What he changes in your best ${rostered(L)} (roster + free agents)">Effect on your team ${c0(c)} <span class="dim">${esc(why(id))}</span></div></div>`;
@@ -4143,7 +4143,7 @@ function renderTrade() {
     (rows.length ? rows.map((r) => pcard(r, side)).join("") : '<p class="note" style="margin:.4rem 0">Nobody yet: tick players below.</p>') +
     baws.map((r) => bawCard(r, side, who)).join("") +
     `<div class="tct">${rows.length + baws.length} player${rows.length + baws.length === 1 ? "" : "s"}${baws.length ? ` (incl. ${baws.length} best avail)` : ""} · ` +
-    `<strong>${fx(sumF(rows) + sumF(baws))}</strong> FP/G combined · <strong>${fx(sumT(rows) + sumT(baws), 0)}</strong> ROS points</div></div>`;
+    `<strong>${fx(sumF(rows) + sumF(baws))}</strong> projected FP/G combined · <strong>${fx(sumT(rows) + sumT(baws), 0)}</strong> ROS points</div></div>`;
   const pill = (k, v, t, base) => `<span class="tpill" title="${esc(t)}"><span class="k">${k}</span><b class="${base ? cls(v, base) : ""}">${sg(v, 0)}</b></span>`;
   $("tr-score").innerHTML = '<div class="card tbanner">' +
     `<div class="tbig"><div class="lbl2">Your net rest-of-season points</div><div class="big ${cls(even, sendT)}">${sg(even, 0)}</div>` +
@@ -4152,7 +4152,7 @@ function renderTrade() {
     `<div class="tmath">You get <b>${fx(sumT(inn), 0)}</b>${myBaw.length ? ` + best avail waiver <b>${fx(sumT(myBaw), 0)}</b>` : ""}` +
     ` − they get <b>${fx(sumT(out), 0)}</b>${theirBaw.length ? ` + best avail waiver <b>${fx(sumT(theirBaw), 0)}</b>` : ""}` +
     ` = <b class="${cls(even, sendT)}">${sg(even, 0)}</b> ROS points` +
-    `<span class="dim"> · FP/G ${fx(sumF(inn) + sumF(myBaw))} vs ${fx(sumF(out) + sumF(theirBaw))}</span></div>` +
+    `<span class="dim"> · projected FP/G combined ${fx(sumF(inn) + sumF(myBaw))} vs ${fx(sumF(out) + sumF(theirBaw))}</span></div>` +
     '<div class="tpills">' + pill("Your best-" + rostered(L) + " roster view", mine.tot, `Your best ${rostered(L)} players (roster + free agents) after the trade minus before: counts a forced drop and gives no credit for a pickup you could make today anyway`, give) +
     pill(nm(TR.b) + "’s best-" + rostered(L) + " view", theirs.tot, "Their best-" + rostered(L) + " change, valued the same way", give) +
     pill("Their box-score view", theirs.box, "Actual FP/G so far × games left: how a manager going by averages sees it for them") +
@@ -4231,8 +4231,9 @@ function rosAt(p, T) {
   }
   const sched = (META.sched[p.tm] || []).map((g) => g[0]);
   const before = sched.filter((d) => d < T).length, left = sched.filter((d) => d >= T).length;
-  const av0 = p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
-  const h = rook ? (R.rk_h || 10) : (R.h || 20);
+  // the engine's own availability prior + weight (players.json a0 / ha); older data: approximations
+  const av0 = p.a0 != null ? p.a0 : p.pre_gp ? Math.min(1, p.pre_gp / 82) : (p.av || 0.8);
+  const h = p.ha != null ? p.ha : rook ? (R.rk_h || 10) : (R.h || 20);
   const av = Math.min(1, (av0 * h + gp) / (h + before));
   withX(sl, p.xr);
   return {fp: fpg(sl, bp), av, left, tot: fpg(sl, bp) * av * left, approx, sl, bp};
@@ -4284,10 +4285,12 @@ function renderPastTrades() {
   const tn = (id) => esc((lg.byId[id] || {}).name || "Team " + id);
   const one = (pid, d) => {
     const p = BYID[pid];
-    if (!p) return {pid, n: (lg.name[pid] || "#" + pid), then: 0, since: 0, ros: 0, tfp: 0, rfp: 0, sgp: 0, tgl: 0, rgl: 0, missing: true};
+    if (!p) return {pid, n: (lg.name[pid] || "#" + pid), then: 0, since: 0, ros: 0, tfp: 0, rfp: 0, sgp: 0, tgl: 0, rgl: 0, avg: null, agp: 0, missing: true};
     const a = rosAtC(p, d), sl = seasonLine(p), C = GAMES.C;
     const sg_ = (GAMES.byP[pid] || []).filter((r) => r[C.d] >= d).length;
+    const pre = (GAMES.byP[pid] || []).filter((r) => r[C.d] < d);
     return {pid, p, n: p.n, then: a.tot, tfp: a.fp, tgl: a.av * a.left, since: sinceFP(p, d), sgp: sg_,
+      avg: pre.length ? pre.reduce((s, r) => s + fpgRow(r), 0) / pre.length : null, agp: pre.length,
       ros: sl.tot, rfp: sl.ros, rgl: sl.gl, approx: a.approx};
   };
   // Best available waiver player(s) on the trade date for the side that got fewer players
@@ -4338,11 +4341,12 @@ function renderPastTrades() {
       const now = x.since + x.ros, d = now - x.then;
       return `<div class="ptc${x.baw ? " baw" : ""}"><div class="tph">${x.baw ? BAW_TAG : ""}<span class="name" data-id="${x.pid}">${esc(x.n)}</span>${tags(x.p)}<span class="sub">${esc(x.p.tm)} · ${esc(x.p.pos || "")}${x.baw ? " · free agent on " + t.d + ", fills the open spot (notional)" : ""}</span></div>` +
         '<table class="ptt"><thead><tr><th></th>' +
-        `<th title="The model's rest-of-season view on ${t.d}, from games before that day only">On ${dshort}</th>` +
+        `<th title="Before the trade: his actual average, and the model's rest-of-season view from games before that day only">On ${dshort}</th>` +
         `<th title="What he has actually done for his new team since the trade">Since</th>` +
         `<th title="Today's rest-of-season projection">From today</th></tr></thead><tbody>` +
-        `<tr><td class="l">FP/G</td><td>${fx(x.tfp)}${x.approx ? "*" : ""}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td><td>${fx(x.rfp)}</td></tr>` +
-        `<tr><td class="l">Games</td><td>${fx(x.tgl, 0)}</td><td>${x.sgp}</td><td>${fx(x.rgl, 0)}</td></tr>` +
+        `<tr><td class="l" title="Fantasy points per game he actually scored">Actual FP/G</td><td>${x.avg != null ? fx(x.avg) + ` <span class="dim">(${x.agp} gm)</span>` : "–"}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td><td class="dim">–</td></tr>` +
+        `<tr><td class="l" title="The model's rest-of-season FP/G: his preseason line blended with his games so far">Projected FP/G</td><td>${fx(x.tfp)}${x.approx ? "*" : ""}</td><td class="dim">–</td><td>${fx(x.rfp)}</td></tr>` +
+        `<tr><td class="l" title="On the trade date / today: projected games left (availability × team games left). Since: games he played">Games</td><td>${fx(x.tgl, 0)}</td><td>${x.sgp}</td><td>${fx(x.rgl, 0)}</td></tr>` +
         `<tr class="pts"><td class="l">Points</td><td>${fx(x.then, 0)}</td><td>${fx(x.since, 0)}</td><td>${fx(x.ros, 0)}</td></tr></tbody></table>` +
         `<div class="ptv">Value <span class="dim">${fx(x.then, 0)}</span> &rarr; <b>${fx(now, 0)}</b> <span class="${d > 25 ? "pos-up" : d < -25 ? "pos-dn" : "dim"}">(${sg(d, 0)})</span>` +
         `<span class="dim"> = ${fx(x.since, 0)} scored since + ${fx(x.ros, 0)} to come</span></div>` +
@@ -4351,15 +4355,15 @@ function renderPastTrades() {
     const fpg_ = (tid, k) => V[tid].reduce((a, x) => a + (k === "since" ? (x.sgp ? x.since / x.sgp : 0) : x[k] || 0), 0);
     const nb = (tid) => V[tid].filter((x) => x.baw).length;
     const sumRow = (tid) => `<tr><td class="l">${tn(tid)} got <span class="dim">${V[tid].length - nb(tid)}${nb(tid) ? " + " + nb(tid) + " best avail" : ""}</span></td>` +
-      `<td>${fx(fpg_(tid, "tfp"))}</td><td>${fx(fpg_(tid, "since"))}</td><td>${fx(fpg_(tid, "rfp"))}</td>` +
+      `<td>${fx(fpg_(tid, "avg"))}</td><td>${fx(fpg_(tid, "tfp"))}</td><td>${fx(fpg_(tid, "since"))}</td><td>${fx(fpg_(tid, "rfp"))}</td>` +
       `<td class="grp">${fx(sum(tid, "then"), 0)}</td><td>${fx(V[tid].reduce((a, x) => a + x.since, 0), 0)}</td><td>${fx(V[tid].reduce((a, x) => a + x.ros, 0), 0)}</td><td class="big">${fx(sum(tid, "now"), 0)}</td></tr>`;
-    const dif = (k) => (B != null ? (k === "since" || k === "tfp" || k === "rfp" ? fpg_(A, k) - fpg_(B, k) : 0) : 0);
+    const dif = (k) => (B != null ? fpg_(A, k) - fpg_(B, k) : 0);
     const sumTable = B == null ? "" : '<div class="tablewrap" style="max-height:none;margin-top:.6rem"><table class="ptsum"><thead>' +
-      `<tr><th></th><th colspan="3" class="grp0">Combined FP/G</th><th colspan="4" class="grp">Total fantasy points</th></tr>` +
-      `<tr><th class="l"></th><th title="The model's per-game view on ${t.d}">On ${dshort}</th><th title="Actually scored per game since the trade">Since</th><th title="Today's rest-of-season FP/G">From today</th>` +
+      `<tr><th></th><th colspan="4" class="grp0">Combined FP/G (sum of the players&rsquo; per-game numbers)</th><th colspan="4" class="grp">Total fantasy points</th></tr>` +
+      `<tr><th class="l"></th><th title="What they actually averaged before the trade">Actual before</th><th title="The model's rest-of-season FP/G on ${t.d}">Proj. on ${dshort}</th><th title="Actually scored per game since the trade">Actual since</th><th title="Today's rest-of-season FP/G">Proj. from today</th>` +
       `<th class="grp" title="Projected rest-of-season points on ${t.d}">On ${dshort}</th><th title="Scored since the trade">Scored since</th><th title="Rest-of-season points from today">To come</th><th title="Scored since + to come">Value now</th></tr></thead><tbody>` +
       sumRow(A) + sumRow(B) +
-      `<tr class="tot"><td class="l">Difference (${tn(A)} − ${tn(B)})</td><td>${sg(dif("tfp"))}</td><td>${sg(dif("since"))}</td><td>${sg(dif("rfp"))}</td>` +
+      `<tr class="tot"><td class="l">Difference (${tn(A)} − ${tn(B)})</td><td>${sg(dif("avg"))}</td><td>${sg(dif("tfp"))}</td><td>${sg(dif("since"))}</td><td>${sg(dif("rfp"))}</td>` +
       `<td class="grp">${sg(thenEdge, 0)}</td><td>${sg(V[A].reduce((a, x) => a + x.since, 0) - V[B].reduce((a, x) => a + x.since, 0), 0)}</td>` +
       `<td>${sg(V[A].reduce((a, x) => a + x.ros, 0) - V[B].reduce((a, x) => a + x.ros, 0), 0)}</td><td class="big">${sg(nowEdge, 0)}</td></tr></tbody></table></div>`;
     const sideHtml = (tid) => `<div class="tcol"><div class="tch"><span>${tn(tid)} got</span>` +
