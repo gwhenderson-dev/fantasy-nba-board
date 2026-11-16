@@ -4369,15 +4369,16 @@ function renderPastTrades() {
         const row = (x) => {
           const bt = x.avg != null ? x.avg * x.agp : 0;
           return `<tr${x.baw ? ' class="baw"' : ""}><td class="l"><span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span>` +
-            (x.baw ? ' <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">best avail</span>' : "") + "</td>" +
+            (x.baw ? ' <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">best avail</span>' : "") +
+            `<span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span></td>` +
             `<td title="${x.agp} games before ${dshort}">${x.avg != null ? n0(bt) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
             `<td title="${x.sgp} games since ${dshort}">${x.sgp ? n0(x.since) : "–"}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td></tr>`;
         };
         const bt = pl.reduce((s, x) => s + (x.avg != null ? x.avg * x.agp : 0), 0), bg = pl.reduce((s, x) => s + (x.avg || 0), 0);
         const played = pl.filter((x) => x.sgp);
         const at = played.reduce((s, x) => s + x.since, 0), ag = played.reduce((s, x) => s + x.since / x.sgp, 0);
-        return `<div class="ptsb-s ${cls}${lead === tid ? " lead" : ""}">` +
-          `<div class="ptsb-t">${tn(tid)} got${lead === tid ? ' <span class="ptsb-w">AHEAD</span>' : ""}</div>` +
+        return `<div class="ptsb-s ${cls}">` +
+          `<div class="ptsb-bh"><span>${tn(tid)} got</span>${lead === tid ? '<span class="ptsb-w">AHEAD</span>' : ""}</div>` +
           `<table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th></tr>` +
           `<tr><th></th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th></tr></thead><tbody>` +
           pl.map(row).join("") +
@@ -4386,16 +4387,20 @@ function renderPastTrades() {
           (anyAfter ? "" : `<div class="ptsb-p">No games since the trade yet.</div>`) +
           `<div class="ptsb-p" title="Scored since the trade plus the model's projection for the rest of the season">Projected rest of season <b>${n0(sum(tid, "now"))}</b> pts · <b>${fx(fpg_(tid, "rfp"))}</b> FP/G</div></div>`;
       };
+      // DESIGN (owner 11-16, picked from three mock-ups): the navy "broadcast" panel on top (verdict
+      // in white, margin in lilac) with team-colour header cards (indigo / orange, zebra rows,
+      // total row tinted in the team colour)
       return '<div class="ptsb">' +
+        `<div class="ptsb-ttl">${sample ? '<span class="tag rk">EXAMPLE · not a real trade</span>' : ""}<b>${dshort}:</b> ${teams.map(tn).join(" &#8644; ")}</div>` +
         `<div class="ptsb-v" title="Fantasy points scored since the trade plus the projection for the rest of the season. On ${dshort} the model had ${Math.abs(thenEdge) < 50 ? "it even" : `${thenEdge > 0 ? tn(A) : tn(B)} up ${n0(Math.abs(thenEdge))}`}.">` +
-        `${lead == null ? "Even so far" : `<b>${tn(lead)}</b> ahead by <b>${n0(Math.abs(nowEdge))}</b> fantasy points`}</div>` +
+        `${lead == null ? "Even so far" : `<b>${tn(lead)}</b> ahead by <span class="n">${n0(Math.abs(nowEdge))}</span> fantasy points`}</div>` +
         `<div class="ptsb-row">${box(A, "a")}<div class="ptsb-vs">vs</div>${box(B, "b")}</div></div>`;
     })();
     const sideHtml = (tid) => `<div class="tcol"><div class="tch"><span>${tn(tid)} got</span>` +
       `<span class="dim">${Math.round(sum(tid, "now")).toLocaleString()} fantasy points</span></div>` +
       V[tid].map(pc).join("") + "</div>";
-    return `<div class="card${sample ? " sample" : ""}" style="margin-bottom:.8rem"><div class="controls" style="margin-bottom:.4rem">` + (sample ? '<span class="tag rk" style="margin:0">EXAMPLE · not a real trade</span>' : "") +
-      `<strong>${dshort}: ${teams.map(tn).join(" &#8644; ")}</strong></div>` +
+    return `<div class="card${sample ? " sample" : ""}" style="margin-bottom:.8rem">` + (board ? "" : '<div class="controls" style="margin-bottom:.4rem">' + (sample ? '<span class="tag rk" style="margin:0">EXAMPLE · not a real trade</span>' : "") +
+      `<strong>${dshort}: ${teams.map(tn).join(" &#8644; ")}</strong></div>`) +
       (board || `<div class="tverd"><span><span class="k">At the time</span><b>${who(thenEdge)}</b></span><span class="arr">&rarr;</span><span><span class="k">Now</span><b>${who(nowEdge)}</b></span></div>`) +
       (B == null ? bawNote : "") +
       `<div class="ptsb-h">The players</div>` +
