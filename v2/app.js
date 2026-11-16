@@ -4353,29 +4353,45 @@ function renderPastTrades() {
         `<div class="ptw">${esc(changed(x))}</div></div>`;
     };
     const fpg_ = (tid, k) => V[tid].reduce((a, x) => a + (k === "since" ? (x.sgp ? x.since / x.sgp : 0) : x[k] || 0), 0);
-    const nb = (tid) => V[tid].filter((x) => x.baw).length;
-    const sumRow = (tid) => `<tr><td class="l">${tn(tid)} got <span class="dim">${V[tid].length - nb(tid)}${nb(tid) ? " + " + nb(tid) + " best avail" : ""}</span></td>` +
-      `<td>${fx(fpg_(tid, "avg"))}</td><td>${fx(fpg_(tid, "tfp"))}</td><td>${fx(fpg_(tid, "since"))}</td><td>${fx(fpg_(tid, "rfp"))}</td>` +
-      `<td class="grp">${fx(sum(tid, "then"), 0)}</td><td>${fx(V[tid].reduce((a, x) => a + x.since, 0), 0)}</td><td>${fx(V[tid].reduce((a, x) => a + x.ros, 0), 0)}</td><td class="big">${fx(sum(tid, "now"), 0)}</td></tr>`;
-    const dif = (k) => (B != null ? fpg_(A, k) - fpg_(B, k) : 0);
-    const sumTable = B == null ? "" : '<div class="tablewrap" style="max-height:none;margin-top:.6rem"><table class="ptsum"><thead>' +
-      `<tr><th></th><th colspan="4" class="grp0">Combined FP/G (sum of the players&rsquo; per-game numbers)</th><th colspan="4" class="grp">Total fantasy points</th></tr>` +
-      `<tr><th class="l"></th><th title="What they actually averaged before the trade">Actual before</th><th title="The model's rest-of-season FP/G on ${t.d}">Proj. on ${dshort}</th><th title="Actually scored per game since the trade">Actual since</th><th title="Today's rest-of-season FP/G">Proj. from today</th>` +
-      `<th class="grp" title="Projected rest-of-season points on ${t.d}">On ${dshort}</th><th title="Scored since the trade">Scored since</th><th title="Rest-of-season points from today">To come</th><th title="Scored since + to come">Value now</th></tr></thead><tbody>` +
-      sumRow(A) + sumRow(B) +
-      `<tr class="tot"><td class="l">Difference (${tn(A)} − ${tn(B)})</td><td>${sg(dif("avg"))}</td><td>${sg(dif("tfp"))}</td><td>${sg(dif("since"))}</td><td>${sg(dif("rfp"))}</td>` +
-      `<td class="grp">${sg(thenEdge, 0)}</td><td>${sg(V[A].reduce((a, x) => a + x.since, 0) - V[B].reduce((a, x) => a + x.since, 0), 0)}</td>` +
-      `<td>${sg(V[A].reduce((a, x) => a + x.ros, 0) - V[B].reduce((a, x) => a + x.ros, 0), 0)}</td><td class="big">${sg(nowEdge, 0)}</td></tr></tbody></table></div>`;
-    const sideHtml = (tid) => `<div class="tcol"><div class="tch"><span>${tn(tid)} got</span>` +
-      `<span class="dim">value <span title="On the trade date">${fx(sum(tid, "then"), 0)}</span> &rarr; <b title="Scored since + rest of season from today">${fx(sum(tid, "now"), 0)}</b></span></div>` +
-      V[tid].map(pc).join("") + "</div>";
+    const tot_ = (tid, k) => V[tid].reduce((a, x) => a + (x[k] || 0), 0);
     const flip = Math.sign(nowEdge) !== Math.sign(thenEdge) && Math.abs(nowEdge) >= 50 && Math.abs(thenEdge) >= 50;
+    // SCOREBOARD (owner 11-16: "I don't know what I'm looking at for the summary"): one verdict
+    // line, then one box per team: who they got, ONE big number (total fantasy points from
+    // the trade on), and three plain lines under it.
+    const lead = Math.abs(nowEdge) < 50 ? null : nowEdge > 0 ? A : B;
+    const n0 = (v) => Math.round(v).toLocaleString();
+    const board = B == null ? "" : (() => {
+      const box = (tid, cls) => {
+        const got = V[tid].filter((x) => !x.baw).map((x) => esc(surname(x.n))).join(", ") +
+          V[tid].filter((x) => x.baw).map((x) => ` <span class="baw-n" title="Best available waiver player: not in the deal, fills the open roster spot">+ ${esc(surname(x.n))} <em>(best avail)</em></span>`).join("");
+        const sp = tot_(tid, "since"), sg_ = V[tid].some((x) => x.sgp);
+        return `<div class="ptsb-s ${cls}${lead === tid ? " lead" : ""}">` +
+          `<div class="ptsb-t">${tn(tid)} got${lead === tid ? ' <span class="ptsb-w">AHEAD</span>' : ""}</div>` +
+          `<div class="ptsb-g">${got}</div>` +
+          `<div class="ptsb-big">${n0(sum(tid, "now"))}<span> fantasy points</span></div>` +
+          `<div class="ptsb-x">${sg_ ? `${n0(sp)} scored since the trade + ` : ""}${n0(tot_(tid, "ros"))} still to come (projected)</div>` +
+          `<div class="ptsb-r"><span>Projected FP/G, all players together</span><b>${fx(fpg_(tid, "rfp"))}</b></div>` +
+          `<div class="ptsb-r"><span>Actual FP/G before the trade</span><b>${fx(fpg_(tid, "avg"))}</b></div>` +
+          (sg_ ? `<div class="ptsb-r"><span>Actual FP/G since the trade</span><b>${fx(fpg_(tid, "since"))}</b></div>` : "") +
+          `<div class="ptsb-r dim"><span>Projected on ${dshort}</span><b>${n0(sum(tid, "then"))} pts</b></div></div>`;
+      };
+      const tot = Math.max(1, sum(A, "now") + sum(B, "now")), wa = sum(A, "now") / tot * 100;
+      return '<div class="ptsb">' +
+        `<div class="ptsb-v">${lead == null ? "Even so far" : `<b>${tn(lead)}</b> ${flip ? "now" : "is"} ahead by <b>${n0(Math.abs(nowEdge))}</b> fantasy points`}` +
+        `<span class="dim"> · on ${dshort} the model had ${Math.abs(thenEdge) < 50 ? "it even" : `${thenEdge > 0 ? tn(A) : tn(B)} up ${n0(Math.abs(thenEdge))}`}${flip ? " — the trade has flipped" : ""}</span></div>` +
+        `<div class="ptsb-bar" title="Share of the two sides' total fantasy points"><i class="a" style="width:${wa.toFixed(1)}%"></i><i class="b" style="width:${(100 - wa).toFixed(1)}%"></i></div>` +
+        `<div class="ptsb-row">${box(A, "a")}<div class="ptsb-vs">vs</div>${box(B, "b")}</div>` +
+        `<p class="note" style="margin:.45rem 0 0">Fantasy points = what each side&rsquo;s players have scored since the trade plus their projected points for the rest of the season. ` +
+        `FP/G adds up the players&rsquo; per-game numbers.${V[A].concat(V[B]).some((x) => x.baw) ? " The side that got fewer players also gets the best available waiver player from the trade date, so both sides have the same number of players." : ""}</p></div>`;
+    })();
+    const sideHtml = (tid) => `<div class="tcol"><div class="tch"><span>${tn(tid)} got</span>` +
+      `<span class="dim">${Math.round(sum(tid, "now")).toLocaleString()} fantasy points</span></div>` +
+      V[tid].map(pc).join("") + "</div>";
     return `<div class="card${sample ? " sample" : ""}" style="margin-bottom:.8rem"><div class="controls" style="margin-bottom:.4rem">` + (sample ? '<span class="tag rk" style="margin:0">EXAMPLE · not a real trade</span>' : "") +
       `<strong>${dshort}: ${teams.map(tn).join(" &#8644; ")}</strong></div>` +
-      `<div class="tverd"><span><span class="k">At the time</span><b>${who(thenEdge)}</b></span><span class="arr">&rarr;</span>` +
-      `<span><span class="k">Now</span><b class="${flip ? "pos-dn" : ""}">${who(nowEdge)}</b></span>` +
-      `<span class="dim">${flip ? "The trade has flipped since it was made." : Math.abs(nowEdge - thenEdge) < 50 ? "Playing out about as projected." : "Same winner, margin " + (Math.abs(nowEdge) > Math.abs(thenEdge) ? "wider" : "narrower") + " than projected."}</span></div>` +
-      sumTable + bawNote +
+      (board || `<div class="tverd"><span><span class="k">At the time</span><b>${who(thenEdge)}</b></span><span class="arr">&rarr;</span><span><span class="k">Now</span><b>${who(nowEdge)}</b></span></div>`) +
+      (B == null ? bawNote : "") +
+      `<div class="ptsb-h">The players</div>` +
       `<div class="tcols" style="margin-top:.6rem">${teams.map(sideHtml).join("")}</div>` +
       ((t.drops || []).length ? `<p class="note" style="margin:.5rem 0 0">To make room: ${t.drops.map((x) => `${tn(x.teamId)} dropped ${BYID[x.playerId] ? `<span class="name" data-id="${x.playerId}">${esc(BYID[x.playerId].n)}</span>` : esc(lg.name[x.playerId] || "#" + x.playerId)}`).join("; ")}.</p>` : "") + "</div>";
   };
