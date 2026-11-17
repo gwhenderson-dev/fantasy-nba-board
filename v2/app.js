@@ -4070,7 +4070,8 @@ function renderTrade() {
   const nG = [...TR.give].filter((id) => BYID[id]).length, nR = [...TR.get].filter((id) => BYID[id]).length;
   const pool = nG !== nR ? bawPool(lg) : [];
   const avgRow = (G) => { const m = (k) => G.reduce((a, r) => a + (r[k] || 0), 0) / G.length;
-    return {avgOf: G, ros: m("ros"), tot: m("tot"), gl: m("gl"), now: m("now"), box: m("box"), po: m("po")}; };
+    return {avgOf: G, ros: m("ros"), tot: m("tot"), gl: m("gl"), now: m("now"), box: m("box"), po: m("po"),
+      bt: G.reduce((a, r) => a + (r.now || 0) * (r.gp || 0), 0) / G.length, gp: m("gp")}; };
   const myBaw = nG > nR ? bawGroups(pool, nG - nR).map(avgRow) : [], theirBaw = nR > nG ? bawGroups(pool, nR - nG).map(avgRow) : [];
   const bawList = (r) => r.avgOf.map((x) => `${x.p.n} ${fx(x.ros)} FP/G, ${fx(x.tot, 0)} pts`).join("\n");
   const bawRow = (rows, who) => rows.map((r) => `<div class="trow baw" title="${esc("Average of the top " + r.avgOf.length + " available today:\n" + bawList(r))}"><span>+</span><span>${BAW_TAG} <b>Waiver spot</b> <span class="dim">(avg of top ${r.avgOf.length})</span>` +
@@ -4170,16 +4171,21 @@ function renderTrade() {
   const lead = Math.abs(pct) < TR_EVEN ? null : even > 0 ? "a" : "b";
   const sub = pct > TR_EVEN && theirs.box < 0 ? "By the box score they lose, so expect pushback."
     : pct < -TR_EVEN && theirs.box < 0 ? "By the box score it looks like you&rsquo;re winning it." : "";
+  // owner 11-17: like the recap, BEFORE TRADE = what each player has scored this season up to now,
+  // then PROJECTED ROS = the model's rest-of-season points and FP/G (the verdict is on these)
+  const btPts = (r) => (r.bt != null ? r.bt : (r.now || 0) * (r.gp || 0));
   const sbox = (rows, baws, cls, head, mineSide) => {
-    const prow = (r) => `<tr><td class="l"><span class="name" data-id="${r.p.id}">${esc(surname(r.p.n))}</span><span class="ptsb-lg" title="${esc(r.p.tm)}">${teamLogo(r.p.tm)}</span></td>` +
-      `<td>${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td>${n0(r.tot)}</td></tr>`;
-    const brow = (r) => `<tr class="baw"><td class="l"><span class="baw-n" title="${esc("Not in the deal: " + (mineSide ? "your" : "their") + " open roster spot, valued as the average of the top " + r.avgOf.length + " available today:\n" + bawList(r))}">Waiver spot <small>(avg of top ${r.avgOf.length})</small></span></td>` +
-      `<td>${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td>${n0(r.tot)}</td></tr>`;
-    const all = rows.concat(baws);
+    const nums = (r) => `<td title="${fx(r.gp, 0)} games so far">${r.now != null ? n0(btPts(r)) : "–"}</td><td>${r.now != null ? fx(r.now) : "–"}</td>` +
+      `<td title="${fx(r.gl, 0)} projected games left">${n0(r.tot)}</td><td>${fx(r.ros)}</td></tr>`;
+    const prow = (r) => `<tr><td class="l"><span class="name" data-id="${r.p.id}">${esc(surname(r.p.n))}</span><span class="ptsb-lg" title="${esc(r.p.tm)}">${teamLogo(r.p.tm)}</span></td>` + nums(r);
+    const brow = (r) => `<tr class="baw"><td class="l"><span class="baw-n" title="${esc("Not in the deal: " + (mineSide ? "your" : "their") + " open roster spot, valued as the average of the top " + r.avgOf.length + " available today:\n" + bawList(r))}">Waiver spot <small>(avg of top ${r.avgOf.length})</small></span></td>` + nums(r);
+    const all = rows.concat(baws), had = all.filter((r) => r.now != null);
     return `<div class="ptsb-s ${cls}"><div class="ptsb-bh"><span>${head}</span>${lead === cls ? '<span class="ptsb-w">AHEAD</span>' : ""}</div>` +
-      `<table class="ptsb-tb"><thead><tr><th></th><th title="Projected fantasy points per game for the rest of the season">Proj FP/G</th><th title="Projected games left: availability × team games left">Games</th><th title="Proj FP/G × games left">Points</th></tr></thead><tbody>` +
-      (rows.length ? rows.map(prow).join("") : '<tr><td class="l dim" colspan="4">Nobody yet</td></tr>') + baws.map(brow).join("") +
-      `<tr class="tot"><td class="l">Total</td><td>${fx(sumF(all))}</td><td>${fx(all.reduce((a, r) => a + (r.gl || 0), 0), 0)}</td><td>${n0(sumT(all))}</td></tr></tbody></table></div>`;
+      `<div class="ptsb-sc"><table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season so far">Before trade</th><th colspan="2" class="grp" title="The model's projection for the rest of the season: FP/G × games left">Projected ROS</th></tr>` +
+      `<tr><th></th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th></tr></thead><tbody>` +
+      (rows.length ? rows.map(prow).join("") : '<tr><td class="l dim" colspan="5">Nobody yet</td></tr>') + baws.map(brow).join("") +
+      `<tr class="tot"><td class="l" title="The players' points and per-game numbers added together">Total</td><td>${had.length ? n0(had.reduce((a, r) => a + btPts(r), 0)) : "–"}</td><td>${had.length ? fx(had.reduce((a, r) => a + r.now, 0)) : "–"}</td>` +
+      `<td>${n0(sumT(all))}</td><td>${fx(sumF(all))}</td></tr></tbody></table></div></div>`;
   };
   const board = '<div class="ptsb">' +
     `<div class="ptsb-ttl"><b>Proposed trade:</b> ${nm(TR.a)} &#8644; ${nm(TR.b)}</div>` +
@@ -4436,20 +4442,22 @@ function renderPastTrades() {
             : `<span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span><span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span>`;
           return `<tr${x.baw ? ' class="baw"' : ""}><td class="l">${who}</td>` +
             `<td title="${x.avgOf ? "average of the " + x.avgOf.length : fx(x.agp, 0) + " games before " + dshort}">${x.avg != null ? n0(btOf(x)) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
-            `<td title="${x.avgOf ? "average of the " + x.avgOf.length : x.sgp + " games since " + dshort}">${af != null ? n0(x.since) : "–"}</td><td>${af != null ? fx(af) : "–"}</td></tr>`;
+            `<td title="${x.avgOf ? "average of the " + x.avgOf.length : x.sgp + " games since " + dshort}">${af != null ? n0(x.since) : "–"}</td><td>${af != null ? fx(af) : "–"}</td>` +
+            `<td title="${fx(x.rgl, 0)} projected games left">${n0(x.ros)}</td><td>${fx(x.rfp)}</td></tr>`;
         };
         const bt = pl.reduce((s, x) => s + btOf(x), 0), bg = pl.reduce((s, x) => s + (x.avg || 0), 0);
         const played = pl.filter((x) => afpOf(x) != null);
         const at = played.reduce((s, x) => s + x.since, 0), ag = played.reduce((s, x) => s + afpOf(x), 0);
         return `<div class="ptsb-s ${cls}">` +
           `<div class="ptsb-bh"><span>${tn(tid)} got</span>${lead === tid ? '<span class="ptsb-w">AHEAD</span>' : ""}</div>` +
-          `<table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th></tr>` +
-          `<tr><th></th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th></tr></thead><tbody>` +
+          `<div class="ptsb-sc"><table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th><th colspan="2" class="grp" title="The model's projection from today: rest-of-season FP/G × games left">Projected ROS</th></tr>` +
+          `<tr><th></th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th></tr></thead><tbody>` +
           pl.map(row).join("") +
           `<tr class="tot"><td class="l" title="The players' points and per-game averages added together">Total</td><td>${n0(bt)}</td><td>${fx(bg)}</td>` +
-          `<td>${played.length ? n0(at) : "–"}</td><td>${played.length ? fx(ag) : "–"}</td></tr></tbody></table>` +
+          `<td>${played.length ? n0(at) : "–"}</td><td>${played.length ? fx(ag) : "–"}</td>` +
+          `<td>${n0(pl.reduce((s2, x) => s2 + x.ros, 0))}</td><td>${fx(pl.reduce((s2, x) => s2 + (x.rfp || 0), 0))}</td></tr></tbody></table></div>` +
           (anyAfter ? "" : `<div class="ptsb-p">No games since the trade yet.</div>`) +
-          `<div class="ptsb-p" title="Scored since the trade plus the model's projection for the rest of the season">Projected rest of season <b>${n0(sum(tid, "now"))}</b> pts · <b>${fx(fpg_(tid, "rfp"))}</b> FP/G</div></div>`;
+          `<div class="ptsb-p" title="What the verdict compares">Since the trade + projected ROS = <b>${n0(sum(tid, "now"))}</b> pts</div></div>`;
       };
       // DESIGN (owner 11-16, picked from three mock-ups): the navy "broadcast" panel on top (verdict
       // in white, margin in lilac) with team-colour header cards (indigo / orange, zebra rows,

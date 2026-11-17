@@ -1158,6 +1158,7 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .ptsb-bh { display: flex; align-items: center; gap: .5rem; padding: .55rem .8rem; background: var(--accent); color: var(--paper); font-weight: 700; font-size: .95rem; }
 .ptsb-s.b .ptsb-bh { background: var(--tm2); }
 .ptsb-w { margin-left: auto; font-size: .62rem; font-weight: 800; letter-spacing: .07em; background: var(--paper); color: var(--ink); border-radius: 4px; padding: .05rem .4rem; }
+.ptsb-sc { overflow-x: auto; }
 .ptsb-tb { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .ptsb-tb th { font-size: .64rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; text-align: right; padding: .5rem .8rem .15rem 0; }
 .ptsb-tb th.grp { text-align: center; padding-left: .5rem; }
@@ -1198,4 +1199,11 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
   .ptsb-tb th, .ptsb-tb td { padding-right: .42rem; }
   .ptsb-tb td.l { padding-left: .6rem; }
   .ptsb-tb td { font-size: .84rem; }
+  /* three column groups (past trades) don't fit 375 px: tighter cells, the table scrolls inside its card,
+     the player column stays pinned */
+  .ptsb-tb th, .ptsb-tb td { padding-right: .34rem; }
+  .ptsb-tb td { font-size: .8rem; }
+  .ptsb-tb th { font-size: .58rem; letter-spacing: .03em; }
+  .ptsb-tb td.l { position: sticky; left: 0; z-index: 1; background: var(--paper); box-shadow: 1px 0 0 var(--rule); }
+  .ptsb-tb tbody tr:nth-child(even) td.l { background: var(--band); }
 }
