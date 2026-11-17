@@ -4442,20 +4442,20 @@ function renderPastTrades() {
             : `<span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span><span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span>`;
           return `<tr${x.baw ? ' class="baw"' : ""}><td class="l">${who}</td>` +
             `<td title="${x.avgOf ? "average of the " + x.avgOf.length : fx(x.agp, 0) + " games before " + dshort}">${x.avg != null ? n0(btOf(x)) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
-            `<td title="${x.avgOf ? "average of the " + x.avgOf.length : x.sgp + " games since " + dshort}">${af != null ? n0(x.since) : "–"}</td><td>${af != null ? fx(af) : "–"}</td>` +
-            `<td title="${fx(x.rgl, 0)} projected games left">${n0(x.ros)}</td><td>${fx(x.rfp)}</td></tr>`;
+            `<td title="${fx(x.rgl, 0)} projected games left">${n0(x.ros)}</td><td>${fx(x.rfp)}</td>` +
+            `<td title="${x.avgOf ? "average of the " + x.avgOf.length : x.sgp + " games since " + dshort}">${af != null ? n0(x.since) : "–"}</td><td>${af != null ? fx(af) : "–"}</td></tr>`;
         };
         const bt = pl.reduce((s, x) => s + btOf(x), 0), bg = pl.reduce((s, x) => s + (x.avg || 0), 0);
         const played = pl.filter((x) => afpOf(x) != null);
         const at = played.reduce((s, x) => s + x.since, 0), ag = played.reduce((s, x) => s + afpOf(x), 0);
         return `<div class="ptsb-s ${cls}">` +
           `<div class="ptsb-bh"><span>${tn(tid)} got</span>${lead === tid ? '<span class="ptsb-w">AHEAD</span>' : ""}</div>` +
-          `<div class="ptsb-sc"><table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th><th colspan="2" class="grp" title="The model's projection from today: rest-of-season FP/G × games left">Projected ROS</th></tr>` +
+          `<div class="ptsb-sc"><table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="The model's projection from today: rest-of-season FP/G × games left">Projected ROS</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th></tr>` +
           `<tr><th></th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th><th>Pts</th><th>FP/G</th></tr></thead><tbody>` +
           pl.map(row).join("") +
           `<tr class="tot"><td class="l" title="The players' points and per-game averages added together">Total</td><td>${n0(bt)}</td><td>${fx(bg)}</td>` +
-          `<td>${played.length ? n0(at) : "–"}</td><td>${played.length ? fx(ag) : "–"}</td>` +
-          `<td>${n0(pl.reduce((s2, x) => s2 + x.ros, 0))}</td><td>${fx(pl.reduce((s2, x) => s2 + (x.rfp || 0), 0))}</td></tr></tbody></table></div>` +
+          `<td>${n0(pl.reduce((s2, x) => s2 + x.ros, 0))}</td><td>${fx(pl.reduce((s2, x) => s2 + (x.rfp || 0), 0))}</td>` +
+          `<td>${played.length ? n0(at) : "–"}</td><td>${played.length ? fx(ag) : "–"}</td></tr></tbody></table></div>` +
           (anyAfter ? "" : `<div class="ptsb-p">No games since the trade yet.</div>`) +
           `<div class="ptsb-p" title="What the verdict compares">Since the trade + projected ROS = <b>${n0(sum(tid, "now"))}</b> pts</div></div>`;
       };
