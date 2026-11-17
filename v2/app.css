@@ -1081,6 +1081,14 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .lv-pbar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
 .lv-sc.h .lv-pbar i { background: var(--tm2); margin-left: auto; }
 .lv-sub b { font-variant-numeric: tabular-nums; }
+/* scored / expected today boxes under the big score (owner 11-17) */
+.lv-td { display: flex; gap: .4rem; margin: .35rem 0 .1rem; }
+.lv-sc.h .lv-td { justify-content: flex-end; }
+.lv-td .bx { border: 1px solid var(--rule); border-radius: 8px; padding: .25rem .55rem; min-width: 5.6rem; background: var(--band); text-align: left; }
+.lv-td .bx span { display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.lv-td .bx span em { font-style: normal; }
+.lv-td .bx b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.lv-td .bx i { font-style: normal; font-size: .74rem; font-weight: 650; margin-left: .3rem; font-variant-numeric: tabular-nums; }
 .lv-sub .sep { color: var(--muted); }
 .lv-cnt { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .4rem; }
 .lv-sc.h .lv-cnt { justify-content: flex-end; }
@@ -1096,6 +1104,7 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
   .lv-vs { font-size: .68rem; max-width: 4.2rem; }
   .lv-vs b { font-size: .95rem; }
   .lv-sub { font-size: .72rem; }
+  .lv-td { gap: .25rem; } .lv-td .bx { min-width: 0; padding: .2rem .4rem; } .lv-td .bx b { font-size: .95rem; } .lv-td .bx span { font-size: .56rem; } .lv-td .bx span em { display: none; }
   .lv-cnt .pl { font-size: .62rem; }
   .lv-t .slt-c { width: 2rem; }
   .bd-c { font-size: .7rem; }

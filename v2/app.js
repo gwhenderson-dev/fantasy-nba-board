@@ -4738,6 +4738,10 @@ function liveSide(side, G, P, lg, today) {
   return {rows, teamId: side.teamId, live: (side.totalPointsLive != null ? side.totalPointsLive : side.totalPoints) || 0,
     today: S.reduce((a, r) => a + r.fp, 0), bench: rows.filter((r) => !r.starter && r.slot !== 13).reduce((a, r) => a + r.fp, 0),
     rest: S.reduce((a, r) => a + r.exp, 0), var: S.reduce((a, r) => a + r.var, 0),
+    // expected today (owner 11-17): starters' projected FP for the day, and the part of it due by now
+    // (finished games in full, games in progress by the share of 48 minutes played)
+    xday: S.reduce((a, r) => a + r.proj, 0),
+    xnow: S.reduce((a, r) => a + (!r.g ? 0 : r.g.state === "post" ? r.proj : r.g.state === "in" ? r.proj * (1 - r.g.left) : 0), 0),
     ytp: n((r) => r.g && r.g.state === "pre" && r.proj > 0), ip: n((r) => r.g && r.g.state === "in"), done: n((r) => r.g && r.g.state === "post")};
 }
 function renderLive() {
@@ -4804,9 +4808,13 @@ function renderLive() {
     const fin = isToday && X.final > 0 ? X.final : null, pct = fin ? Math.min(100, X.live / fin * 100) : 0;
     return `<div class="lv-sc ${cls}"><div class="lv-tn${X.teamId === mt ? " mine" : ""}"><i class="lv-sw ${cls}"></i>${tn(X.teamId)}${X.teamId === mt ? ' <span class="tag rk">YOU</span>' : ""}</div>` +
       `<div class="lv-big">${fx(X.live, 0)}</div>` +
+      (() => { const dd = X.today - X.xnow, started = X.done + X.ip > 0, day = isToday ? "today" : "that day";
+        const dTxt = started ? `<i class="${dd >= 0 ? "pos-up" : "pos-dn"}">${dd >= 0 ? "+" : "\u2212"}${fx(Math.abs(dd), 0)}</i>` : "";
+        return `<div class="lv-td">` +
+          `<div class="bx" title="${esc(`Points from starters ${day} (ESPN's live total)` + (started ? `\n${dd >= 0 ? "+" : ""}${fx(dd, 1)} vs what the projections expected from the games played so far (${fx(X.xnow, 1)})` : ""))}"><span>Scored<em> ${day}</em></span><b>${fx(X.today, 0)}</b>${dTxt}</div>` +
+          `<div class="bx" title="${esc(`What the starters ${day} were projected to score in their games (the same per-game projection as My week)`)}"><span>Expected<em> ${day}</em></span><b>${fx(X.xday, 0)}</b></div></div>`; })() +
       (fin ? `<div class="lv-pbar" title="${esc(`Banked ${fx(X.live, 0)} of a projected ${fx(fin, 0)} (live score + still to come today + the best lineup on the days left)`)}"><i style="width:${pct.toFixed(1)}%"></i></div>` : "") +
-      `<div class="lv-sub"><span title="Points in starter slots ${isToday ? "today" : "that day"} (ESPN's live total)"><b>${fx(X.today, 0)}</b> ${isToday ? "today" : "that day"}</span>` +
-      (fin ? ` <span class="sep">·</span> <span title="Projected final for the matchup">proj <b>${fx(fin, 0)}</b></span>` : "") + "</div>" +
+      (fin ? `<div class="lv-sub"><span title="Projected final for the matchup">Projected final <b>${fx(fin, 0)}</b></span></div>` : "") +
       `<div class="lv-cnt" title="Starters ${isToday ? "today" : "that day"}: in progress / yet to play / done">` +
       (X.ip ? `<span class="pl ip"><i></i>${X.ip} playing</span>` : "") + (X.ytp ? `<span class="pl">${X.ytp} to play</span>` : "") + (X.done ? `<span class="pl dn">${X.done} done</span>` : "") +
       "</div></div>";
