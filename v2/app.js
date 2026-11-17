@@ -3984,7 +3984,7 @@ function bindWeek() {
 // ========================================================= TRADE ANALYZER
 // Score = net rest-of-season points (ROS FP/G x projected games left) for
 // your side, after the roster-spot effect of an uneven trade.
-const TR = {a: null, b: null, give: new Set(), get: new Set()};
+const TR = {a: null, b: null, give: new Set(), get: new Set(), open: false};   // open = builder details shown
 const TR_EVEN = 0.03;      // within 3% of what you send = roughly even
 function playoffGames(tm) {
   const pw = L.playoff_weeks;
@@ -4163,11 +4163,36 @@ function renderTrade() {
     `<div class="tct">${rows.length + baws.length} player${rows.length + baws.length === 1 ? "" : "s"}${baws.length ? ` (incl. ${baws.length} waiver spot${baws.length > 1 ? "s" : ""})` : ""} · ` +
     `<strong>${fx(sumF(rows) + sumF(baws))}</strong> projected FP/G combined · <strong>${fx(sumT(rows) + sumT(baws), 0)}</strong> ROS points</div></div>`;
   const pill = (k, v, t, base) => `<span class="tpill" title="${esc(t)}"><span class="k">${k}</span><b class="${base ? cls(v, base) : ""}">${sg(v, 0)}</b></span>`;
-  $("tr-score").innerHTML = '<div class="card tbanner">' +
-    `<div class="tbig"><div class="lbl2">Your net rest-of-season points</div><div class="big ${cls(even, sendT)}">${sg(even, 0)}</div>` +
-    `<div class="lbl2">${sg(pct * 100, 1)}% of what they get</div></div>` +
-    `<div class="tsum"><p style="margin:0 0 .5rem"><strong>${verdict}</strong></p>` +
-    `<div class="tmath">You get <b>${fx(sumT(inn), 0)}</b>${myBaw.length ? ` + waiver spot <b>${fx(sumT(myBaw), 0)}</b>` : ""}` +
+  // SCOREBOARD (owner 11-17: "make the trade totals the main focus, like the past-trade recap; as simple as
+  // possible"): navy panel, one verdict line, one team card per side with a row per player + total,
+  // everything else (both other views, player cards, ledger) behind the same full-width details bar
+  const n0 = (v) => Math.round(v).toLocaleString();
+  const lead = Math.abs(pct) < TR_EVEN ? null : even > 0 ? "a" : "b";
+  const sub = pct > TR_EVEN && theirs.box < 0 ? "By the box score they lose, so expect pushback."
+    : pct < -TR_EVEN && theirs.box < 0 ? "By the box score it looks like you&rsquo;re winning it." : "";
+  const sbox = (rows, baws, cls, head, mineSide) => {
+    const prow = (r) => `<tr><td class="l"><span class="name" data-id="${r.p.id}">${esc(surname(r.p.n))}</span><span class="ptsb-lg" title="${esc(r.p.tm)}">${teamLogo(r.p.tm)}</span></td>` +
+      `<td>${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td>${n0(r.tot)}</td></tr>`;
+    const brow = (r) => `<tr class="baw"><td class="l"><span class="baw-n" title="${esc("Not in the deal: " + (mineSide ? "your" : "their") + " open roster spot, valued as the average of the top " + r.avgOf.length + " available today:\n" + bawList(r))}">Waiver spot <small>(avg of top ${r.avgOf.length})</small></span></td>` +
+      `<td>${fx(r.ros)}</td><td>${fx(r.gl, 0)}</td><td>${n0(r.tot)}</td></tr>`;
+    const all = rows.concat(baws);
+    return `<div class="ptsb-s ${cls}"><div class="ptsb-bh"><span>${head}</span>${lead === cls ? '<span class="ptsb-w">AHEAD</span>' : ""}</div>` +
+      `<table class="ptsb-tb"><thead><tr><th></th><th title="Projected fantasy points per game for the rest of the season">Proj FP/G</th><th title="Projected games left: availability × team games left">Games</th><th title="Proj FP/G × games left">Points</th></tr></thead><tbody>` +
+      (rows.length ? rows.map(prow).join("") : '<tr><td class="l dim" colspan="4">Nobody yet</td></tr>') + baws.map(brow).join("") +
+      `<tr class="tot"><td class="l">Total</td><td>${fx(sumF(all))}</td><td>${fx(all.reduce((a, r) => a + (r.gl || 0), 0), 0)}</td><td>${n0(sumT(all))}</td></tr></tbody></table></div>`;
+  };
+  const board = '<div class="ptsb">' +
+    `<div class="ptsb-ttl"><b>Proposed trade:</b> ${nm(TR.a)} &#8644; ${nm(TR.b)}</div>` +
+    `<div class="ptsb-v" title="Rest-of-season projected points: what you get minus what they get (${sg(pct * 100, 1)}% of what they get). Within ${Math.round(TR_EVEN * 100)}% counts as even.">` +
+    (lead == null ? `Roughly even <span class="dim2">(${sg(even, 0)} projected points)</span>`
+      : lead === "a" ? `<b>You</b> come out ahead by <span class="n">${n0(Math.abs(even))}</span> projected points`
+      : `<b>${nm(TR.b)}</b> comes out ahead by <span class="n">${n0(Math.abs(even))}</span> projected points`) +
+    (sub ? `<div class="ptsb-sub">${sub}</div>` : "") + "</div>" +
+    `<div class="ptsb-row">${sbox(inn, myBaw, "a", "You get", true)}<div class="ptsb-vs">vs</div>${sbox(out, theirBaw, "b", nm(TR.b) + " get" + (/s$/i.test((lg.byId[TR.b] || {}).name || "") ? "" : "s"), false)}</div>` +
+    `<button type="button" class="ptsb-more" data-tropen="1" aria-expanded="${TR.open}"><span>${TR.open ? "Hide details" : "Details"}</span><i aria-hidden="true"></i></button></div>`;
+  $("tr-score").innerHTML = '<div class="card">' + board +
+    `<div class="ptdet"${TR.open ? "" : " hidden"}>` +
+    '<div class="ptsb-h">How it adds up</div><div class="tsum" style="margin-top:.5rem">' + `<div class="tmath">You get <b>${fx(sumT(inn), 0)}</b>${myBaw.length ? ` + waiver spot <b>${fx(sumT(myBaw), 0)}</b>` : ""}` +
     ` − they get <b>${fx(sumT(out), 0)}</b>${theirBaw.length ? ` + waiver spot <b>${fx(sumT(theirBaw), 0)}</b>` : ""}` +
     ` = <b class="${cls(even, sendT)}">${sg(even, 0)}</b> ROS points` +
     `<span class="dim"> · projected FP/G combined ${fx(sumF(inn) + sumF(myBaw))} vs ${fx(sumF(out) + sumF(theirBaw))}</span></div>` +
@@ -4176,7 +4201,7 @@ function renderTrade() {
     pill("Their box-score view", theirs.box, "Actual FP/G so far × games left: how a manager going by averages sees it for them") +
     pill("Your box-score view", mine.box, "Actual FP/G so far × games left, for you") +
     (L.playoff_weeks ? pill(`Your playoff weeks ${L.playoff_weeks[0]}–${L.playoff_weeks[1]}`, mine.po, "ROS FP/G × expected games in your fantasy playoff weeks") : "") +
-    "</div></div></div>" +
+    "</div></div>" +
     '<div class="tcols">' + col(out, theirBaw, "send", "You send", `${nm(TR.b)} gets`, "they") + col(inn, myBaw, "get", "You get", nm(TR.a), "you") + "</div>" +
     (churn.some((id) => Math.abs(contrib(id, "tot")) >= 0.5) ? `<div class="card tspots"><div class="tch"><span>Best-${rostered(L)} roster view</span><span class="dim">the second way to count it: your best ${rostered(L)} incl. free agents, before vs after (free agents you could add anyway are already in the &ldquo;before&rdquo;)</span></div>` +
       churn.filter((id) => Math.abs(contrib(id, "tot")) >= 0.5).map((id) => `<div class="tsr"><span class="name" data-id="${id}">${esc(VAL[id].p.n)}</span> <span class="dim">${esc(why(id))} · ${fx(VAL[id].ros)} FP/G × ${fx(VAL[id].gl, 0)} gm</span>${c0(contrib(id, "tot"))}</div>`).join("") + "</div>" : "") +
@@ -4187,10 +4212,11 @@ function renderTrade() {
     `<tr class="tot"><td class="l">Net for ${nm(TR.a)}</td><td></td><td></td><td class="${cls(mine.tot, give)}">${sg(mine.tot, 0)}</td><td class="grp"></td><td>${sg(mine.box, 0)}</td><td class="grp">${sg(mine.po, 0)}</td></tr>` +
     "</tbody></table></div>" +
     `<p class="note">Each line is that player&rsquo;s change to your best ${rostered(L)} (your roster plus whatever the waiver wire offers): a player you get only counts for what he adds over the free agents you could pick up anyway, ` +
-    `and a player you send only costs what he was worth over them.</p></details>`;
-  $("tr-note").innerHTML = "<strong>Box-score view</strong> is the plain sum of each traded player&rsquo;s actual FP/G so far × games left, with no waiver-wire adjustment: roughly how a manager who goes by average points eyeballs the deal. " +
+    `and a player you send only costs what he was worth over them.</p></details>` +
+    `<p class="note" style="margin:.6rem 0 0">${"<strong>Box-score view</strong> is the plain sum of each traded player&rsquo;s actual FP/G so far × games left, with no waiver-wire adjustment: roughly how a manager who goes by average points eyeballs the deal. " +
     "The best trades win on projection and still look fair by box score. Players on your keep list are never the ones dropped to make room. " +
-    `With about ${Math.max(...Object.values(TEAMLEFT))} team games left, every number here is a forecast; a gap under ${Math.round(TR_EVEN * 100)}% of what you send is inside the noise.`;
+    `With about ${Math.max(...Object.values(TEAMLEFT))} team games left, every number here is a forecast; a gap under ${Math.round(TR_EVEN * 100)}% of what you send is inside the noise.`}</p></div></div>`;
+  $("tr-note").innerHTML = "";
 }
 // ---- past trades: value at the time vs value now ----------------------------
 // At the time = the in-season blend (section 3 of How it works) re-run with
@@ -4472,6 +4498,16 @@ function bindTrade() {
     if (det) det.hidden = !open;
     b.setAttribute("aria-expanded", open);
     b.querySelector("span").textContent = open ? "Hide player details" : "Player details";
+  });
+  // builder: the details bar under the scoreboard
+  $("tr-score").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tropen]");
+    if (!b) return;
+    TR.open = !TR.open;
+    const det = $("tr-score").querySelector(".ptdet");
+    if (det) det.hidden = !TR.open;
+    b.setAttribute("aria-expanded", TR.open);
+    b.querySelector("span").textContent = TR.open ? "Hide details" : "Details";
   });
   $("tr-a").addEventListener("change", (e) => { TR.a = +e.target.value; TR.give.clear(); TR.get.clear(); if (TR.b === TR.a) TR.b = null; renderTrade(); });
   $("tr-b").addEventListener("change", (e) => { TR.b = +e.target.value; TR.get.clear(); renderTrade(); });
