@@ -237,7 +237,10 @@ details.card summary { cursor: pointer; }
 /* ---- trade analyzer ----------------------------------------------------- */
 .trow { display: grid; grid-template-columns: auto 1fr auto auto; gap: .2rem .6rem; align-items: center; font-size: .86rem; padding: .22rem 0; border-bottom: 1px solid var(--rule); }
 .trow:last-child { border-bottom: 0; }
-.trow.on { background: var(--accent-bg); }
+label.trow { cursor: pointer; user-select: none; border-radius: 6px; padding-left: .3rem; padding-right: .3rem; }
+label.trow:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+label.trow .name { cursor: pointer; }
+.trow.on, label.trow.on:hover { background: var(--accent-bg); }
 .trow .sub { color: var(--muted); font-size: .76rem; }
 .trow .v { font-variant-numeric: tabular-nums; text-align: right; }
 .tscore { display: flex; flex-wrap: wrap; gap: .6rem 2rem; align-items: baseline; }

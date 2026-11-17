@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
-<link rel="stylesheet" href="app.css?v=7d87403a95">
+<link rel="stylesheet" href="app.css?v=dd1b4bf03c">
 </head>
 <body>
 <header class="top">
@@ -309,19 +309,19 @@
     <h1>Trade analyzer</h1>
     <p class="lede" id="tr-lede"></p>
     <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="pos-up"><b>+250</b></span> / <span class="pos-dn"><b>&minus;306</b></span> rest-of-season points gained / lost</span><span class="lg-i"><span class="dim">was below the waiver wire</span> = costs nothing, a free agent is as good</span></div>
-    <div id="tr-score"></div>
     <div class="grid2" style="margin-top:1rem">
       <div class="card">
         <div class="ctl"><label for="tr-a">Your side</label><select id="tr-a"></select></div>
-        <p class="note" style="margin:.4rem 0">Tick the players you send.</p>
+        <p class="note" style="margin:.4rem 0">Click the players you send.</p>
         <div id="tr-ra"></div>
       </div>
       <div class="card">
         <div class="ctl"><label for="tr-b">Trading with</label><select id="tr-b"></select></div>
-        <p class="note" style="margin:.4rem 0">Tick the players you get.</p>
+        <p class="note" style="margin:.4rem 0">Click the players you get.</p>
         <div id="tr-rb"></div>
       </div>
     </div>
+    <div id="tr-score" style="margin-top:1rem"></div>
     <p class="note" id="tr-note"></p>
     <h2>Past trades in this league</h2>
     <div id="tr-past"><p class="note">Open this tab to load the league&rsquo;s trades.</p></div>
@@ -804,6 +804,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=ca7e0a8720"></script>
+<script src="app.js?v=5031e6ac12"></script>
 </body>
 </html>

@@ -4086,7 +4086,7 @@ function renderTrade() {
   $("tr-ra").innerHTML = bawRow(theirBaw, "they") + list(RA, TR.give, "a");
   $("tr-rb").innerHTML = bawRow(myBaw, "you") + list(RB, TR.get, "b");
   const out = RA.filter((r) => TR.give.has(r.p.id)), inn = RB.filter((r) => TR.get.has(r.p.id));
-  $("tr-lede").innerHTML = `Tick players on both sides. The score is <strong>your net rest-of-season points</strong> under <strong>${esc(L.name)}</strong>: ` +
+  $("tr-lede").innerHTML = `Click players on both sides (the whole row); the result shows under the two teams. The score is <strong>your net rest-of-season points</strong> under <strong>${esc(L.name)}</strong>: ` +
     `each player&rsquo;s projected FP/G × projected games left (his availability × his team&rsquo;s remaining games), so injuries, durability and schedule all count. ` +
     `When one side gets fewer players, a <strong>waiver spot</strong> is added to that side (marked ${BAW_TAG}), valued as the average of the top ${BAW_N} available players, so both get the same number, and the totals count it. ` +
     `A second view values both rosters as their best ${rostered(L)} players including the free agents available to them, before and after the trade.`;
@@ -4483,8 +4483,9 @@ function bindTrade() {
     renderTrade();
   });
   $("tab-trade").addEventListener("click", (e) => {
+    // in the pick lists the whole row (name included) ticks the player; names elsewhere open his page
     const n = e.target.closest(".name[data-id]");
-    if (n && BYID[+n.dataset.id]) { e.preventDefault(); openPlayer(+n.dataset.id); }
+    if (n && !n.closest("label.trow") && BYID[+n.dataset.id]) { e.preventDefault(); openPlayer(+n.dataset.id); }
   });
 }
 
