@@ -4022,7 +4022,13 @@ function bawPool(lg, skip) {
   return PLAYERS.filter((p) => lg.owner[p.id] == null && p.s && !outNow(p) && !isAbsent(p) && !benched(p) && !(skip && skip.has(p.id)))
     .map((p) => tradeVal(seasonLine(p))).sort((x, y) => y.tot - x.tot);
 }
-const BAW_TAG = '<span class="tag baw" title="Best available waiver player: the side that gets fewer players fills the open roster spot with the best free agent (or waiver claim) available. Counted in the totals so both sides have the same number of players.">BEST AVAIL WAIVER</span>';
+const BAW_TAG = '<span class="tag baw" title="Waiver spot: the side that gets fewer players fills the open roster spot from the waiver wire. Valued as the AVERAGE of the top 5 available players (free agents or waiver claims), since it is an add/drop spot rather than one fixed player. Counted in the totals so both sides have the same number of players.">WAIVER SPOT</span>';
+// owner 11-17: an open roster spot is worth the AVERAGE of the top 5 available players, not
+// the single best one (one hot or cold player shouldn't swing a trade; it's an add/drop spot).
+// Spot k (when a side is short 2+) averages ranks 5k-4..5k.
+const BAW_N = 5;
+const bawGroups = (pool, n) => Array.from({length: n}, (_, k) => pool.slice(k * BAW_N, (k + 1) * BAW_N)).filter((g) => g.length);
+const bawNames = (L) => L.map((x) => x.n || x.p.n).join(", ");
 function tradeSide(lg, tid, out, inn, keep) {
   const fa = PLAYERS.filter((p) => lg.owner[p.id] == null && !outNow(p)).map((p) => p.id);
   const ids = Object.keys(lg.owner).map(Number).filter((id) => lg.owner[id] === tid && BYID[id]);
@@ -4063,9 +4069,12 @@ function renderTrade() {
   const RA = roster(TR.a), RB = roster(TR.b);
   const nG = [...TR.give].filter((id) => BYID[id]).length, nR = [...TR.get].filter((id) => BYID[id]).length;
   const pool = nG !== nR ? bawPool(lg) : [];
-  const myBaw = nG > nR ? pool.slice(0, nG - nR) : [], theirBaw = nR > nG ? pool.slice(0, nR - nG) : [];
-  const bawRow = (rows, who) => rows.map((r) => `<div class="trow baw"><span>+</span><span>${BAW_TAG} <span class="name" data-id="${r.p.id}">${esc(r.p.n)}</span>` +
-    `${lg.wv[r.p.id] ? ' <span class="tag wvr">WVR</span>' : ""}<br><span class="sub">auto-added: ${who} get fewer players, so ${who === "you" ? "your" : "their"} open spot goes to the best available waiver player · ${esc(r.p.tm)} · ${esc(r.p.pos || "")}</span></span>` +
+  const avgRow = (G) => { const m = (k) => G.reduce((a, r) => a + (r[k] || 0), 0) / G.length;
+    return {avgOf: G, ros: m("ros"), tot: m("tot"), gl: m("gl"), now: m("now"), box: m("box"), po: m("po")}; };
+  const myBaw = nG > nR ? bawGroups(pool, nG - nR).map(avgRow) : [], theirBaw = nR > nG ? bawGroups(pool, nR - nG).map(avgRow) : [];
+  const bawList = (r) => r.avgOf.map((x) => `${x.p.n} ${fx(x.ros)} FP/G, ${fx(x.tot, 0)} pts`).join("\n");
+  const bawRow = (rows, who) => rows.map((r) => `<div class="trow baw" title="${esc("Average of the top " + r.avgOf.length + " available today:\n" + bawList(r))}"><span>+</span><span>${BAW_TAG} <b>Waiver spot</b> <span class="dim">(avg of top ${r.avgOf.length})</span>` +
+    `<br><span class="sub">auto-added: ${who} get fewer players, so ${who === "you" ? "your" : "their"} open spot is valued as the average of the top ${r.avgOf.length} available: ${esc(r.avgOf.map((x) => surname(x.p.n)).join(", "))}</span></span>` +
     `<span class="v">${fx(r.ros)}<br><span class="sub">proj FP/G</span></span><span class="v">${fx(r.tot, 0)}<br><span class="sub">${fx(r.gl, 0)} gm</span></span></div>`).join("");
   const list = (rows, set, side) => rows.map((r) => `<label class="trow${set.has(r.p.id) ? " on" : ""}">` +
     `<input type="checkbox" data-side="${side}" data-pid="${r.p.id}"${set.has(r.p.id) ? " checked" : ""}>` +
@@ -4079,7 +4088,7 @@ function renderTrade() {
   const out = RA.filter((r) => TR.give.has(r.p.id)), inn = RB.filter((r) => TR.get.has(r.p.id));
   $("tr-lede").innerHTML = `Tick players on both sides. The score is <strong>your net rest-of-season points</strong> under <strong>${esc(L.name)}</strong>: ` +
     `each player&rsquo;s projected FP/G × projected games left (his availability × his team&rsquo;s remaining games), so injuries, durability and schedule all count. ` +
-    `When one side gets fewer players, the <strong>best available waiver player</strong> is added to that side (marked ${BAW_TAG}) so both get the same number, and the totals count him. ` +
+    `When one side gets fewer players, a <strong>waiver spot</strong> is added to that side (marked ${BAW_TAG}), valued as the average of the top ${BAW_N} available players, so both get the same number, and the totals count it. ` +
     `A second view values both rosters as their best ${rostered(L)} players including the free agents available to them, before and after the trade.`;
   if (!out.length && !inn.length) {
     $("tr-score").innerHTML = '<div class="card"><p class="note" style="margin:0">Pick the players you&rsquo;d send and the players you&rsquo;d get.</p></div>';
@@ -4115,8 +4124,8 @@ function renderTrade() {
     : (theirs.box < 0 ? "You lose projected points, though by the box score it looks like you&rsquo;re winning it." : "You lose projected points.");
   const nm = (id) => esc(lg.byId[id].name);
   const cls = (v, base) => (Math.abs(v) < TR_EVEN * base ? "" : v > 0 ? "pos-up" : "pos-dn");
-  const bawCard = (r, side, who) => `<div class="tpc ${side} baw"><div class="tph">${BAW_TAG}<span class="name" data-id="${r.p.id}">${esc(r.p.n)}</span>${tags(r.p)}` +
-    `<span class="sub">${esc(r.p.tm)} · ${esc(r.p.pos || "")} · ${who === "you" ? "you'd" : "they'd"} add him with the open roster spot (not part of the deal)</span></div>` +
+  const bawCard = (r, side, who) => `<div class="tpc ${side} baw" title="${esc(bawList(r))}"><div class="tph">${BAW_TAG}<b>Waiver spot</b> <span class="dim">(avg of top ${r.avgOf.length})</span>` +
+    `<span class="sub">${who === "you" ? "your" : "their"} open roster spot, not part of the deal: the average of ${esc(r.avgOf.map((x) => surname(x.p.n)).join(", "))}</span></div>` +
     '<div class="tpg">' + [["Proj FP/G", fx(r.ros)], ["Games left", fx(r.gl, 0)], ["ROS points", fx(r.tot, 0)], ["Actual FP/G", fx(r.now)]]
       .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`).join("") + "</div></div>";
   const c0 = (v) => `<span class="${v > 0.5 ? "pos-up" : v < -0.5 ? "pos-dn" : "dim"}">${Math.abs(v) < 0.5 ? "0" : sg(v, 0)}</span>`;
@@ -4151,15 +4160,15 @@ function renderTrade() {
   const col = (rows, baws, side, title, team, who) => `<div class="tcol ${side}"><div class="tch"><span>${title}</span><span class="dim">${team}</span></div>` +
     (rows.length ? rows.map((r) => pcard(r, side)).join("") : '<p class="note" style="margin:.4rem 0">Nobody yet: tick players below.</p>') +
     baws.map((r) => bawCard(r, side, who)).join("") +
-    `<div class="tct">${rows.length + baws.length} player${rows.length + baws.length === 1 ? "" : "s"}${baws.length ? ` (incl. ${baws.length} best avail)` : ""} · ` +
+    `<div class="tct">${rows.length + baws.length} player${rows.length + baws.length === 1 ? "" : "s"}${baws.length ? ` (incl. ${baws.length} waiver spot${baws.length > 1 ? "s" : ""})` : ""} · ` +
     `<strong>${fx(sumF(rows) + sumF(baws))}</strong> projected FP/G combined · <strong>${fx(sumT(rows) + sumT(baws), 0)}</strong> ROS points</div></div>`;
   const pill = (k, v, t, base) => `<span class="tpill" title="${esc(t)}"><span class="k">${k}</span><b class="${base ? cls(v, base) : ""}">${sg(v, 0)}</b></span>`;
   $("tr-score").innerHTML = '<div class="card tbanner">' +
     `<div class="tbig"><div class="lbl2">Your net rest-of-season points</div><div class="big ${cls(even, sendT)}">${sg(even, 0)}</div>` +
     `<div class="lbl2">${sg(pct * 100, 1)}% of what they get</div></div>` +
     `<div class="tsum"><p style="margin:0 0 .5rem"><strong>${verdict}</strong></p>` +
-    `<div class="tmath">You get <b>${fx(sumT(inn), 0)}</b>${myBaw.length ? ` + best avail waiver <b>${fx(sumT(myBaw), 0)}</b>` : ""}` +
-    ` − they get <b>${fx(sumT(out), 0)}</b>${theirBaw.length ? ` + best avail waiver <b>${fx(sumT(theirBaw), 0)}</b>` : ""}` +
+    `<div class="tmath">You get <b>${fx(sumT(inn), 0)}</b>${myBaw.length ? ` + waiver spot <b>${fx(sumT(myBaw), 0)}</b>` : ""}` +
+    ` − they get <b>${fx(sumT(out), 0)}</b>${theirBaw.length ? ` + waiver spot <b>${fx(sumT(theirBaw), 0)}</b>` : ""}` +
     ` = <b class="${cls(even, sendT)}">${sg(even, 0)}</b> ROS points` +
     `<span class="dim"> · projected FP/G combined ${fx(sumF(inn) + sumF(myBaw))} vs ${fx(sumF(out) + sumF(theirBaw))}</span></div>` +
     '<div class="tpills">' + pill("Your best-" + rostered(L) + " roster view", mine.tot, `Your best ${rostered(L)} players (roster + free agents) after the trade minus before: counts a forced drop and gives no credit for a pickup you could make today anyway`, give) +
@@ -4310,10 +4319,21 @@ function renderPastTrades() {
     if (R instanceof Promise) { R.then(() => renderPastTrades()); return null; }
     const owned = R.fail ? lg.owner : R.owner;
     return {pool: PLAYERS.filter((p) => owned[p.id] == null && p.s && !skip.has(p.id) && !outAt(p, t.d))
-      .map((p) => ({p, v: rosAtC(p, t.d).tot})).sort((a, b) => b.v - a.v).slice(0, n).map((x) => x.p.id), today: !!R.fail};
+      .map((p) => ({p, v: rosAtC(p, t.d).tot})).sort((a, b) => b.v - a.v).slice(0, n * BAW_N).map((x) => x.p.id), today: !!R.fail};
   };
   const detNote = '<p class="note">Each player has three columns: <strong>On the trade date</strong> (the model&rsquo;s projected FP/G × games left as it stood that day), <strong>Since</strong> (what he has actually scored for his new team) and <strong>From today</strong> (today&rsquo;s rest-of-season projection). <b>Value now</b> = points scored since + points still to come. ' +
-    'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums; when one team got fewer players, the best available waiver player(s) on the trade date are added to its side (dashed gold) so both sides have the same number.</p>';
+    'The trade-date value re-runs the in-season update with only the games played before that day. * = no preseason line (rookie or call-up), so his current projection stands in. Plain sums; when one team got fewer players, a waiver spot is added to its side (dashed gold), valued as the average of the top 5 available players on the trade date, so both sides have the same number.</p>';
+  // one row standing for the open roster spot: the average of the top 5 available that day
+  const avgEntry = (G, today) => {
+    const m = (f) => G.reduce((a, x) => a + f(x), 0) / G.length, mean = (L, f) => (L.length ? L.reduce((a, x) => a + f(x), 0) / L.length : null);
+    const wb = G.filter((x) => x.avg != null), wa = G.filter((x) => x.sgp);
+    return {baw: true, avgOf: G, today, pid: null, n: "Waiver spot",
+      then: m((x) => x.then), tfp: m((x) => x.tfp), tgl: m((x) => x.tgl), since: m((x) => x.since), sgp: m((x) => x.sgp),
+      avg: mean(wb, (x) => x.avg), agp: m((x) => x.agp), ros: m((x) => x.ros), rfp: m((x) => x.rfp), rgl: m((x) => x.rgl),
+      bt: m((x) => (x.avg != null ? x.avg * x.agp : 0)), afp: mean(wa, (x) => x.since / x.sgp)};
+  };
+  const btOf = (x) => (x.bt != null ? x.bt : x.avg != null ? x.avg * x.agp : 0);
+  const afpOf = (x) => (x.avgOf ? x.afp : x.sgp ? x.since / x.sgp : null);
   const tradeCard = (t, sample) => {
     const sides = {};
     t.items.forEach((i) => { (sides[i.toTeamId] = sides[i.toTeamId] || []).push(i.playerId); });
@@ -4327,10 +4347,11 @@ function renderPastTrades() {
       const B = bawThen(t, n, new Set(t.items.map((i) => i.playerId)));
       if (!B) bawNote = '<p class="note" style="margin:.4rem 0 0">Finding the best available waiver player on the trade date&hellip;</p>';
       else {
-        B.pool.forEach((pid) => V[short].push(Object.assign(one(pid, t.d), {baw: true})));
+        // the open spot = the average of the top 5 available on the trade date (owner 11-17)
+        bawGroups(B.pool.map((pid) => one(pid, t.d)).filter((x) => !x.missing), n).forEach((G) => V[short].push(avgEntry(G, B.today)));
         bawNote = `<p class="note" style="margin:.4rem 0 0">${tn(short)} got ${sides[short].length} player${sides[short].length > 1 ? "s" : ""} for ${sides[short].length + n}, so ` +
-          `${n > 1 ? "the " + n + " best available waiver players" : "the best available waiver player"} on ${t.d} ${n > 1 ? "are" : "is"} added to their side (${BAW_TAG}) to fill the open roster spot${n > 1 ? "s" : ""}` +
-          `${B.today ? " (ESPN&rsquo;s rosters for that day couldn&rsquo;t be read, so today&rsquo;s free agents stand in)" : ""}. He is not part of the deal; he is what the spot was worth.</p>`;
+          `a waiver spot (${BAW_TAG}) is added to their side, valued as the average of the top ${BAW_N} available on ${t.d}` +
+          `${B.today ? " (ESPN&rsquo;s rosters for that day couldn&rsquo;t be read, so today&rsquo;s free agents stand in)" : ""}.</p>`;
       }
     }
     const sum = (tid, k) => V[tid].reduce((a, x) => a + (k === "now" ? x.since + x.ros : x[k]), 0);
@@ -4347,7 +4368,12 @@ function renderPastTrades() {
         (games < 0 && x.p && x.p.inj ? " (" + String(x.p.inj).toLowerCase().replace(/_/g, " ") + ")" : ""));
       return Math.abs(d) < 25 ? "Tracking about where the model had him." : `${d > 0 ? "Worth more" : "Worth less"} than at the trade: ${parts.join(", ") || "small changes in rate and games"}.`;
     };
+    const pcAvg = (x) => `<div class="ptc baw"><div class="tph">${BAW_TAG}<b>Waiver spot</b><span class="sub">not part of the deal: the open roster spot, valued as the average of the top ${x.avgOf.length} available on ${t.d}${x.today ? " (today's free agents stand in)" : ""}</span></div>` +
+      '<table class="ptt"><thead><tr><th></th><th title="Actual FP/G before the trade">Before</th><th title="Actual FP/G since the trade">Since</th><th title="Today\'s projected FP/G">Proj</th><th title="Scored since + projected to come">Value</th></tr></thead><tbody>' +
+      x.avgOf.map((y) => `<tr><td class="l" style="white-space:normal"><span class="name" data-id="${y.pid}" title="${esc(y.n + " · " + y.p.tm)}">${esc(surname(y.n))}</span></td><td>${y.avg != null ? fx(y.avg) : "–"}</td><td>${y.sgp ? fx(y.since / y.sgp) : "–"}</td><td>${fx(y.rfp)}</td><td>${fx(y.since + y.ros, 0)}</td></tr>`).join("") +
+      `<tr class="pts"><td class="l">Average</td><td>${x.avg != null ? fx(x.avg) : "–"}</td><td>${x.afp != null ? fx(x.afp) : "–"}</td><td>${fx(x.rfp)}</td><td>${fx(x.since + x.ros, 0)}</td></tr></tbody></table></div>`;
     const pc = (x) => {
+      if (x.avgOf) return pcAvg(x);
       if (x.missing) return `<div class="ptc"><div class="tph">${esc(x.n)} <span class="sub">no longer in the player pool</span></div></div>`;
       const now = x.since + x.ros, d = now - x.then;
       return `<div class="ptc${x.baw ? " baw" : ""}"><div class="tph">${x.baw ? BAW_TAG : ""}<span class="name" data-id="${x.pid}">${esc(x.n)}</span>${tags(x.p)}<span class="sub">${esc(x.p.tm)} · ${esc(x.p.pos || "")}${x.baw ? " · free agent on " + t.d + ", fills the open spot (notional)" : ""}</span></div>` +
@@ -4363,7 +4389,7 @@ function renderPastTrades() {
         `<span class="dim"> = ${fx(x.since, 0)} scored since + ${fx(x.ros, 0)} to come</span></div>` +
         `<div class="ptw">${esc(changed(x))}</div></div>`;
     };
-    const fpg_ = (tid, k) => V[tid].reduce((a, x) => a + (k === "since" ? (x.sgp ? x.since / x.sgp : 0) : x[k] || 0), 0);
+    const fpg_ = (tid, k) => V[tid].reduce((a, x) => a + (k === "since" ? afpOf(x) || 0 : x[k] || 0), 0);
     const tot_ = (tid, k) => V[tid].reduce((a, x) => a + (x[k] || 0), 0);
     // SCOREBOARD (owner 11-16, third pass: "too noisy" + "before and after = total fantasy points
     // before the trade"). One verdict line, then per team: who they got and a 2x2 — fantasy points
@@ -4376,18 +4402,19 @@ function renderPastTrades() {
         // one row per player he got (owner: "make it clear which numbers go with which players"),
         // then the total; before = that player's season up to the trade date, after = since
         const pl = V[tid].filter((x) => !x.missing);
-        const anyAfter = pl.some((x) => x.sgp);
+        const anyAfter = pl.some((x) => afpOf(x) != null);
         const row = (x) => {
-          const bt = x.avg != null ? x.avg * x.agp : 0;
-          return `<tr${x.baw ? ' class="baw"' : ""}><td class="l"><span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span>` +
-            `<span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span>` +
-            (x.baw ? ' <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">(Best Avail)</span>' : "") + "</td>" +
-            `<td title="${x.agp} games before ${dshort}">${x.avg != null ? n0(bt) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
-            `<td title="${x.sgp} games since ${dshort}">${x.sgp ? n0(x.since) : "–"}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td></tr>`;
+          const af = afpOf(x);
+          const who = x.avgOf
+            ? `<span class="baw-n" title="${esc(`Not in the deal: the open roster spot, valued as the average of the top ${x.avgOf.length} available on ${dshort}: ${bawNames(x.avgOf)}`)}">Waiver spot <small>(avg of top ${x.avgOf.length})</small></span>`
+            : `<span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span><span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span>`;
+          return `<tr${x.baw ? ' class="baw"' : ""}><td class="l">${who}</td>` +
+            `<td title="${x.avgOf ? "average of the " + x.avgOf.length : fx(x.agp, 0) + " games before " + dshort}">${x.avg != null ? n0(btOf(x)) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
+            `<td title="${x.avgOf ? "average of the " + x.avgOf.length : x.sgp + " games since " + dshort}">${af != null ? n0(x.since) : "–"}</td><td>${af != null ? fx(af) : "–"}</td></tr>`;
         };
-        const bt = pl.reduce((s, x) => s + (x.avg != null ? x.avg * x.agp : 0), 0), bg = pl.reduce((s, x) => s + (x.avg || 0), 0);
-        const played = pl.filter((x) => x.sgp);
-        const at = played.reduce((s, x) => s + x.since, 0), ag = played.reduce((s, x) => s + x.since / x.sgp, 0);
+        const bt = pl.reduce((s, x) => s + btOf(x), 0), bg = pl.reduce((s, x) => s + (x.avg || 0), 0);
+        const played = pl.filter((x) => afpOf(x) != null);
+        const at = played.reduce((s, x) => s + x.since, 0), ag = played.reduce((s, x) => s + afpOf(x), 0);
         return `<div class="ptsb-s ${cls}">` +
           `<div class="ptsb-bh"><span>${tn(tid)} got</span>${lead === tid ? '<span class="ptsb-w">AHEAD</span>' : ""}</div>` +
           `<table class="ptsb-tb"><thead><tr><th></th><th colspan="2" class="grp" title="Each player's season up to ${dshort}, on his old team">Before trade</th><th colspan="2" class="grp" title="Each player since ${dshort}, on ${esc(tn(tid))}">After trade</th></tr>` +
