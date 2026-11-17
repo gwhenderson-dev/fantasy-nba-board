@@ -3695,6 +3695,7 @@ function renderWeek() {
       (x.st && x.slot != null || big ? `<span class="slt">${x.st && x.slot != null ? ESPN_SLOT[x.slot] + (big ? " " : "") : ""}` +
         (big ? `<b class="wk-m ${adj > 0 ? "up" : "dn"}">${adj > 0 ? "▲" : "▼"}${Math.abs(adj).toFixed(1)}</b>` : "") + "</span>" : "") + "</td>";
   };
+  const VP = new Map(rows.map((r) => [r, ws <= today ? weekVsProj(r.p, ws, today) : null]));
   const nPicks = T.ps.reduce((a, r) => a + r.days.filter((x) => x.pick != null && !x.lock && x.d >= today).length + (r.manual ? 1 : 0), 0);
   return `<div class="controls" style="align-items:center;margin-top:1.2rem"><h2 style="margin:0"><span class="${tid === mt ? "tn-mine" : ""}">${esc(tname)}</span>${tid === mt ? ' <span class="tag rk">YOU</span>' : ""} &mdash; ${esc(PER.label)}</h2>` +
     `<span class="count" style="margin-left:0">${over ? "final " + fx(T.final, 0) : "projected " + fx(T.final, 0)}</span>` +
@@ -3716,7 +3717,7 @@ function renderWeek() {
       `<td class="l">${statusTag(r, lg)}<span class="dim" style="font-size:.76rem">` +
       `${r.dropped ? ' <span class="tag mv" title="Dropped after today\'s first tip-off: today\'s lineup was already locked, so his game today still counts for you; nothing after today does">dropped · today only</span>' : r.added ? ' <span class="tag mv" title="Added after today\'s first tip-off: pickups made after the lock start tomorrow">added · from tomorrow</span>' : ""}${r.ret ? " back " + r.ret.slice(5) : ""}${r.manual ? ` · <span title="${esc(r.plays ? "You ticked his Plays box for this week, so he counts even though the page had him out" : "You unticked his Plays box for this week, so none of his games count")}. Saved in this browser; Reset lineup choices undoes it.">set by you</span>` : ""}</span></td>` +
       T.days.map((D, i) => cell(r, D, i).replace('<td class="dg', `<td class="dg${i % 2 ? " alt" : ""}`)).join("") +
-      `<td class="grp">${r.games} / ${r.starts}</td>` + (() => { const v = ws <= today ? weekVsProj(r.p, ws, today) : null;
+      `<td class="grp">${r.games} / ${r.starts}</td>` + (() => { const v = VP.get(r);
         if (!v) return '<td class="dim"></td>';
         const d = v.act - v.exp;
         return `<td class="wkvp" title="${esc(`${v.n} game${v.n > 1 ? "s" : ""} played this week: he scored ${fx(v.act)} fantasy points; at the start of the week we expected ${fx(v.exp)} from those games (${fx(v.pg)} per game, adjusted for each opponent). ${d >= 0 ? "He's " + fx(d) + " ahead" : "He's " + fx(-d) + " behind"}.`)}">` +
@@ -3727,7 +3728,15 @@ function renderWeek() {
     T.days.map((D, i) => `<td class="dg${i % 2 ? " alt" : ""}${D.past ? " past" : ""}${D.over ? " pos-dn" : D.open && !D.past ? " part" : ""}" title="${esc(D.over ? D.over + " started player(s) don't fit a slot" : D.open ? "Empty: " + D.openSlots.join(", ") : "All " + SLOTS.length + " filled")}">` +
       (!D.playing ? '<span class="dim">no games</span>' : `${D.started}<small>/${SLOTS.length}</small>${D.over ? " !" : ""}` +
       (D.open && !D.past && D.open <= 5 ? `<span class="slt">${esc(D.openSlots.join(" "))}</span>` : "")) + "</td>").join("") +
-    `<td class="grp"></td><td></td><td>${fx(T.rem, 0)}</td></tr>` +
+    `<td class="grp"></td>` + (() => {
+      // team total of Scored vs expected (owner 11-17): every game his players have played this week
+      const vs = [...VP.values()].filter(Boolean);
+      if (!vs.length) return "<td></td>";
+      const act = vs.reduce((a, v) => a + v.act, 0), exp = vs.reduce((a, v) => a + v.exp, 0), n = vs.reduce((a, v) => a + v.n, 0), d = act - exp;
+      return `<td class="wkvp tot" title="${esc(`Team total: ${n} games played this week by these players scored ${fx(act)} fantasy points against ${fx(exp)} expected at the start of the week. ${d >= 0 ? "Ahead by " + fx(d) : "Behind by " + fx(-d)}. Counts every game played, started or on the bench.`)}">` +
+        `<b class="${d >= 0 ? "pos-up" : "pos-dn"}">${d >= 0 ? "+" : "−"}${fx(Math.abs(d), 0)}</b>` +
+        `<span class="sub">team: ${fx(act, 0)} scored · ${fx(exp, 0)} expected</span></td>`; })() +
+    `<td>${fx(T.rem, 0)}</td></tr>` +
     "</tbody></table></div>";
   };
   $("wk-detail").innerHTML = (over ? `<p class="note">${esc(PER.label)} is over: scores are ESPN&rsquo;s finals. The grid below uses <em>today&rsquo;s</em> rosters, so it shows what the best lineup would have been, not what was played.</p>` : "") +
@@ -4371,8 +4380,8 @@ function renderPastTrades() {
         const row = (x) => {
           const bt = x.avg != null ? x.avg * x.agp : 0;
           return `<tr${x.baw ? ' class="baw"' : ""}><td class="l"><span class="name" data-id="${x.pid}">${esc(surname(x.n))}</span>` +
-            (x.baw ? ' <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">best avail</span>' : "") +
-            `<span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span></td>` +
+            `<span class="ptsb-lg" title="${esc(x.p.tm)}">${teamLogo(x.p.tm)}</span>` +
+            (x.baw ? ' <span class="baw-n" title="Best available waiver player on the trade date: not in the deal, fills the open roster spot so both sides have the same number of players">(Best Avail)</span>' : "") + "</td>" +
             `<td title="${x.agp} games before ${dshort}">${x.avg != null ? n0(bt) : "–"}</td><td>${x.avg != null ? fx(x.avg) : "–"}</td>` +
             `<td title="${x.sgp} games since ${dshort}">${x.sgp ? n0(x.since) : "–"}</td><td>${x.sgp ? fx(x.since / x.sgp) : "–"}</td></tr>`;
         };

@@ -1163,8 +1163,8 @@ td.dg.lk .lk-live { position: absolute; top: 3px; right: 3px; width: 6px; height
 .ptsb-tb td.l { text-align: left; padding-left: .8rem; white-space: nowrap; }
 .ptsb-tb tbody tr:nth-child(even) td { background: var(--band); }
 .ptsb-tb tr.baw td.l .name { color: var(--gold); }
-.ptsb-tb .baw-n { color: var(--gold); font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
-.ptsb-lg .sp-logo { margin: 0 0 0 .35rem; }
+.ptsb-tb .baw-n { color: var(--gold); font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.ptsb-lg .sp-logo { margin: 0 .3rem 0 .35rem; }
 .ptsb-tb tr.tot td { background: var(--accent-bg) !important; font-weight: 700; font-size: 1rem; }
 .ptsb-s.b .ptsb-tb tr.tot td { background: color-mix(in srgb, var(--tm2) 16%, var(--paper)) !important; }
 .ptsb-p { padding: .4rem .8rem 0; font-size: .8rem; color: var(--muted); }
