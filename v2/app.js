@@ -726,9 +726,12 @@ const benched = (p) => {
 // 5 PM reports 2023-26 (src/backtest/status_play.py): Doubtful 1%,
 // Questionable 50% (41% coming back from a layoff), Probable 93% (83%).
 const returning = (p) => !!p && !p.fresh && teamPlayed(p.tm) >= 3;
+// Owner 11-17: Questionable and Probable count as PLAYING (full value): if he's ruled out the report
+// says Out and the game drops to 0, or the visitor unticks him on My week. Only Doubtful is discounted.
+const STATUS_FULL = new Set(["Questionable", "Probable"]);
 function statusPlay(p, d) {
   const o = off(p), S = META.status_play;
-  if (!o || !S || o[1] !== d || !S.play[o[0]]) return 1;
+  if (!o || !S || o[1] !== d || !S.play[o[0]] || STATUS_FULL.has(o[0])) return 1;
   return S.play[o[0]][returning(p) ? 1 : 0];
 }
 const statusPlayTip = (p, d) => {
@@ -4714,7 +4717,11 @@ function liveGames() {
   });
   return G;
 }
-function liveSide(side, G, P, lg, today) {
+function liveSide(side, G, P, lg, today, wk) {
+  // My week choices (owner 11-17): Plays box unticked for the week, or this game's cell unticked ->
+  // he projects 0 while his game hasn't started (once it tips off, what he scores is what counts)
+  const WM = wk != null ? weekMarks(wk) : {}, LM = wk != null ? lineupMarks(wk, side.teamId) : {};
+  const userOut = (id) => WM[id] === 0 || (LM[id] && LM[id][LV.day] === 0);
   const rows = side.rosterForCurrentScoringPeriod.entries.map((e) => {
     const pl = ((e.playerPoolEntry || {}).player) || {}, id = e.playerId, p = BYID[id];
     const st = liveStat(e, P), s = (st && st.stats) || {};
@@ -4727,9 +4734,11 @@ function liveSide(side, G, P, lg, today) {
       const dv = dayVals(p, [LV.day], false, (d, sp) => !outOn(p, d) && sp >= 0.05)[0];
       if (dv && dv.avail) { proj = dv.val; v = dv.vp || dv.v || dv.val; sd2 = dv.sd2 || 0; }
     }
+    const uo = !!g && g.state === "pre" && userOut(id);
+    if (uo) { proj = 0; v = 0; sd2 = 0; }
     const played = (s[40] || 0) > 0;
     const exp = !g ? 0 : g.state === "post" ? 0 : g.state === "in" ? (played ? v : proj) * g.left : proj;
-    return {id, p, n: pl.fullName || (p && p.n) || "#" + id, slot: e.lineupSlotId, starter, inj: pl.injuryStatus, g, s, fp, st: !!st,
+    return {id, p, n: pl.fullName || (p && p.n) || "#" + id, slot: e.lineupSlotId, starter, inj: pl.injuryStatus, g, s, fp, st: !!st, uo,
       played, proj, exp, var: g && g.state !== "post" ? sd2 * (g.state === "in" ? g.left : 1) : 0,
       bump: LV.prev[id] != null && LV.prev[id] !== fp ? fp - LV.prev[id] : 0};
   }).sort((a, b) => LV_SLOT_ORDER(a.slot) - LV_SLOT_ORDER(b.slot) || b.fp - a.fp);
@@ -4789,7 +4798,7 @@ function renderLive() {
     return {pts, var: v};
   };
   const all = ms.map((m) => {
-    const A = liveSide(m.away, G, P, lg, today), H = liveSide(m.home, G, P, lg, today);
+    const A = liveSide(m.away, G, P, lg, today, per.id), H = liveSide(m.home, G, P, lg, today, per.id);
     [A, H].forEach((X) => { const f = fut(X.teamId); X.fut = f.pts;
       X.final = X.live + (isToday ? X.rest : 0) + X.fut; X.fvar = X.var + f.var; });
     const sd = Math.sqrt(A.fvar + H.fvar);
@@ -4859,6 +4868,7 @@ function renderLive() {
     return '<span class="lv-st fin">Final</span>';
   };
   const line = (r) => {
+    if (r.uo) return '<span class="dim" title="You unticked him on My week, so he projects 0 until his game starts">out (your pick on My week) &middot; projected 0</span>';
     if (!r.st || !r.played) return r.g && r.g.state !== "pre" ? '<span class="dim">' + (r.g.state === "post" ? "did not play" : "not in yet") + "</span>" : "";
     const s = r.s, k = (i) => Math.round(s[i] || 0);
     return `<span class="lv-ln">${k(40)} min · <b>${k(0)}</b> pts ${k(6)} reb ${k(3)} ast` +

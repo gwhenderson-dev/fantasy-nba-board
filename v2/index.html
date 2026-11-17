@@ -243,7 +243,7 @@
       </div></div>
       <span class="count" id="wv-count"></span>
     </div>
-    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><b class="pos-up">+6.4</b> <span class="dim">(2.1/g)</span> Injury / team effect: extra FP in the window from teammates out (blank = none; hover for the working)</span><span class="lg-i"><span class="tag dnp">BENCH</span> healthy but barely playing (under 10 minutes per team game lately, DNPs counted): his games don&rsquo;t count</span><span class="lg-i"><span class="gch">vs BOS<span class="dvp dvp-g">27th</span> <span class="m pos-up">+2.1</span></span> opponent&rsquo;s defence rank vs his position (green = 15 easiest, red = 10 toughest) and the matchup adjustment in FP</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span><span class="lg-i"><span class="gch st">vs LAL</span> listed doubtful / questionable that night: counted at the chance he plays (doubtful 1%, questionable ~50%)</span></div>
+    <div class="legend" aria-label="Key"><span class="lg-i"><span class="tag inj">OUT</span><span class="tag doubt">DOUBT</span><span class="tag dtd">DTD</span><span class="tag dtd">Q</span><span class="tag prob">PROB</span> injury status (solid = health; official NBA report first, then ESPN)</span><span class="lg-i"><span class="tag b2b">B2B</span> often rests on the 2nd night of back-to-backs</span><span class="lg-i"><span class="tag wvr">WVR</span> on waivers (a claim, not an instant add)</span><span class="lg-i"><b class="pos-up">+6.4</b> <span class="dim">(2.1/g)</span> Injury / team effect: extra FP in the window from teammates out (blank = none; hover for the working)</span><span class="lg-i"><span class="tag dnp">BENCH</span> healthy but barely playing (under 10 minutes per team game lately, DNPs counted): his games don&rsquo;t count</span><span class="lg-i"><span class="gch">vs BOS<span class="dvp dvp-g">27th</span> <span class="m pos-up">+2.1</span></span> opponent&rsquo;s defence rank vs his position (green = 15 easiest, red = 10 toughest) and the matchup adjustment in FP</span><span class="lg-i"><span class="gch b2">@ NYK</span> 2nd night of a back-to-back</span><span class="lg-i"><span class="gch st">vs LAL</span> listed doubtful that night: counted at the 1% chance he plays (questionable / probable count in full)</span></div>
     <div class="tablewrap"><table id="wv-table"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="wv-note"></p>
     <div id="wv-boosts"></div>
@@ -532,8 +532,10 @@ otherwise ESPN's status (OUT / IR / SUSP / DTD)</div>
       the report we can&rsquo;t match never clears anyone on that team with the same surname.</p>
     <p><strong>Doubtful, questionable, probable</strong> (src/backtest/status_play.py, official game-day reports 2023-26): players listed
       doubtful played <strong>1%</strong> of the time (784 listings), questionable <strong>50%</strong> (41% when coming back from a layoff;
-      5,082), probable <strong>93%</strong> (83%; 1,882). That game counts at that chance on Waivers and My week (a doubtful game is treated
-      as not played unless you tick it). <strong>Back from a layoff</strong> (5+ team games missed): his first game back averages
+      5,082), probable <strong>93%</strong> (83%; 1,882). Only <strong>doubtful</strong> is discounted: that game is treated as not played unless you tick
+      it. <strong>Questionable and probable count in full</strong> (owner&rsquo;s call): the page assumes he plays, and if he is ruled out
+      the report says Out and the game drops to 0 &mdash; or untick him on My week, which also sets his Live projection to 0 until his
+      game starts. <strong>Back from a layoff</strong> (5+ team games missed): his first game back averages
       <strong>83%</strong> of his usual minutes and the second <strong>92%</strong>, then normal (1,527 returns, 2019-26), so those two games
       are scaled down.</p>
     <h3>How long he is out</h3>
@@ -804,6 +806,6 @@ past trades:
 </main>
 
 <div class="scrim" id="scrim" hidden><div class="drawer" id="drawer" role="dialog" aria-modal="true"></div></div>
-<script src="app.js?v=7320d61585"></script>
+<script src="app.js?v=019c966eb7"></script>
 </body>
 </html>
