@@ -4682,7 +4682,11 @@ function liveFetch() {
   const day = LV.day, P = espnPeriod(day);
   const lgP = fetch(espnBase() + L.id + "?view=mMatchupScore&view=mScoreboard&scoringPeriodId=" + P, {cache: "no-store"})
     .then((r) => { if (!r.ok) throw new Error("ESPN answered " + r.status); return r.json(); });
-  return (LV.busy = Promise.all([lgP, espnSite("scoreboard", "dates=" + day.replace(/-/g, ""))]).then(([j, sb]) => {
+  // the official injury report updates through the day: re-read it at most every 10 minutes
+  const injP = Date.now() - (LV.injAt || 0) > 600e3
+    ? fetch("data/injuries.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null) : Promise.resolve(null);
+  return (LV.busy = Promise.all([lgP, espnSite("scoreboard", "dates=" + day.replace(/-/g, "")), injP]).then(([j, sb, inj]) => {
+    if (inj && inj.players) { OFF = inj; LV.injAt = Date.now(); }
     if (LV.day !== day) return;
     if (LV.j) LV.prev = liveFPMap(LV.j, P);
     LV.j = j; LV.sb = sb; LV.at = Date.now(); LV.P = P; LV.err = "";
@@ -4717,6 +4721,16 @@ function liveGames() {
   });
   return G;
 }
+// Live: is he out of the game on day d? The official report decides once it covers his team's game that
+// day (listed Out -> out; listed anything else, or not listed -> playing). Before that, ESPN's live
+// injury status fills the gap (today only: ESPN's status is current, not historical).
+function ruledOut(p, inj, d) {
+  if (p && outOn(p, d)) return true;
+  const o = p && off(p);
+  if (o && o[1] === d) return false;
+  if (p && OFF.avail && OFF.avail[p.id] && OFF.avail[p.id] >= d) return false;
+  return d === todayET() && OUT_SET.includes(inj);
+}
 function liveSide(side, G, P, lg, today, wk) {
   // My week choices (owner 11-17): Plays box unticked for the week, or this game's cell unticked ->
   // he projects 0 while his game hasn't started (once it tips off, what he scores is what counts)
@@ -4737,8 +4751,13 @@ function liveSide(side, G, P, lg, today, wk) {
     const uo = !!g && g.state === "pre" && userOut(id);
     if (uo) { proj = 0; v = 0; sd2 = 0; }
     const played = (s[40] || 0) > 0;
+    // ruled out (owner 11-18, Barnes): official Out for this game, or — until the official report covers
+    // his team's game — ESPN's live status OUT / IR / SUSP (ESPN updates within minutes of a team ruling
+    // a player out; the official report can be hours behind). Projects 0 unless he actually plays.
+    const ro = !!g && !played && !uo && ruledOut(p, pl.injuryStatus, LV.day);
+    if (ro) { proj = 0; v = 0; sd2 = 0; }
     const exp = !g ? 0 : g.state === "post" ? 0 : g.state === "in" ? (played ? v : proj) * g.left : proj;
-    return {id, p, n: pl.fullName || (p && p.n) || "#" + id, slot: e.lineupSlotId, starter, inj: pl.injuryStatus, g, s, fp, st: !!st, uo,
+    return {id, p, n: pl.fullName || (p && p.n) || "#" + id, slot: e.lineupSlotId, starter, inj: pl.injuryStatus, g, s, fp, st: !!st, uo, ro,
       played, proj, exp, var: g && g.state !== "post" ? sd2 * (g.state === "in" ? g.left : 1) : 0,
       bump: LV.prev[id] != null && LV.prev[id] !== fp ? fp - LV.prev[id] : 0};
   }).sort((a, b) => LV_SLOT_ORDER(a.slot) - LV_SLOT_ORDER(b.slot) || b.fp - a.fp);
@@ -4868,6 +4887,7 @@ function renderLive() {
     return '<span class="lv-st fin">Final</span>';
   };
   const line = (r) => {
+    if (r.ro) return `<span class="dim" title="${esc(r.p && outOn(r.p, LV.day) ? "Out on the official NBA injury report for this game" : "ESPN lists him " + (r.inj || "OUT") + " (the official report hasn't covered this game yet)")}, so he projects 0">ruled out &middot; projected 0</span>`;
     if (r.uo) return '<span class="dim" title="You unticked him on My week, so he projects 0 until his game starts">out (your pick on My week) &middot; projected 0</span>';
     if (!r.st || !r.played) return r.g && r.g.state !== "pre" ? '<span class="dim">' + (r.g.state === "post" ? "did not play" : "not in yet") + "</span>" : "";
     const s = r.s, k = (i) => Math.round(s[i] || 0);
@@ -5209,6 +5229,7 @@ function slpFP(id, d) {
 function applyData([meta, players, inj, slp]) {
   META = meta; PLAYERS = players; STATS = meta.stats; SLP = slp || {};
   OFF = inj && inj.players ? inj : {players: {}, as_of: null};   // + teams, cleared
+  LV.injAt = Date.now();
   BC = null;
   STATS.forEach((s, i) => { SI[s] = i; });
   BYID = {}; SL2ID = {};
