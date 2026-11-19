@@ -2125,10 +2125,14 @@ function planStream() {
   const irOk = (id) => IR_STAY.includes(lg.inj[id]);          // may stay on IR without blocking adds
   const irIn = (id) => IR_IN.includes(lg.inj[id]);            // may be moved onto IR
   const nIR = +((L.slots || {}).IR || 0);
+  // "Out all week" (owner 11-19: ESPN's return dates can be placeholders, far too early): the same mark
+  // as My week's Plays box for that matchup, so the two tabs agree; ticked -> he plays none of its days
+  const wkOut = (id, k) => weekMarks(PERS[k].id)[id] === 0;
   const irs = T.ps.filter((r) => lg.slot[r.id] === 13).map((r) => {
     const p = r.p, hurt = p ? isAbsent(p) || espnOut(p, r.inj) : true;
     const ret = p && isAbsent(p) ? absWindow(p).ret : lg.ret[r.id] || null;
-    const dv = p ? dayVals(p, days, false, (d, sp) => !(hurt && (!ret || d < ret)) && !outOn(p, d) && sp >= 0.05)
+    const outD = new Set(days.filter((d, i) => wkOut(r.id, per[i])));
+    const dv = p ? dayVals(p, days, false, (d, sp) => !outD.has(d) && !(hurt && (!ret || d < ret)) && !outOn(p, d) && sp >= 0.05)
       : days.map((d) => ({d, g: null, avail: false, val: 0, play: 0}));
     const ok = irOk(r.id), first = dv.findIndex((x) => x.avail);
     // act = the first day bringing him back can help (his first playable day); lockT = the day ESPN
@@ -2137,6 +2141,7 @@ function planStream() {
     const act = first >= 0 ? first : nd;
     const lockT = !ok ? 0 : r.inj === "DAY_TO_DAY" ? nd : act;
     return {id: r.id, n: r.n, p, inj: r.inj, ok, ret, rIdx: act, act, lockT, tick: pick.has(r.id), tot: p ? seasonLine(p).tot : 0,
+      wkOut: PERS.every((PR, k) => wkOut(r.id, k)),
       m: {id: r.id, n: r.n, p, elig: r.elig, dv, w: dv.map(W), orig: true, ir: true}};
   });
   // OUT players on the active roster who won't play in the plan: they can go on IR at no cost
@@ -2467,7 +2472,7 @@ function renderPlanner() {
   const lg = LGRES[L.id];
   if (lg && !lg._spRet) { lg._spRet = 1; loadReturns(lg).then(() => { SP.key = null; renderPlanner(); }); }
   const locked = dayLocked(todayET());
-  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.wk, [...SP.noMove].sort(), spSaved(), DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length]);
+  const key = JSON.stringify([L.id, myTeam(), SP.n, SP.wk, [...SP.noMove].sort(), spSaved(), DATA_V, lg ? lg.at : 0, locked, Object.keys(OFF.players || {}).length, WM_V]);
   document.querySelectorAll("#sp-n .chip").forEach((c) => c.setAttribute("aria-pressed", String(+c.dataset.n === SP.n)));
   const lockNote = $("sp-lock");
   if (lockNote && SP.wk === "next") lockNote.innerHTML = (lg ? `Next matchup, from your roster as of ${new Date(lg.at).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})}; injuries and matchups as they look today.` : "");
@@ -2527,7 +2532,8 @@ function renderPlanner() {
     if (!P.irs.length && !(P.nIR && P.Xs.length)) return "";
     const rows = P.irs.map((R) => {
       const st = R.ok ? "OUT" : {DAY_TO_DAY: "day-to-day", ACTIVE: "healthy"}[R.inj] || String(R.inj || "healthy").toLowerCase();
-      const when = !R.ok ? `ESPN lists him <b>healthy</b>, so he's no longer IR-eligible: ESPN takes no adds until he's off IR.`
+      const when = R.wkOut && R.ok ? `<b>You marked him out</b> for ${two ? "both matchups" : "the whole matchup"}${R.ret ? ` (ESPN says back about ${esc(niceDay(R.ret))})` : ""}: the planner keeps him on IR every day.`
+        : !R.ok ? `ESPN lists him <b>healthy</b>, so he's no longer IR-eligible: ESPN takes no adds until he's off IR.`
         : R.inj === "DAY_TO_DAY" ? `ESPN lists him <b>day-to-day</b>: still IR-eligible, so he doesn't block adds.` +
           (R.act < nd ? ` He can play from ${dOf(R.act)}: bring him back only if he's worth a roster spot.` : " Not expected to play in this plan.")
         : R.act < nd ? `Out — first game back ${dOf(R.act)}${R.ret ? ` (back about ${esc(niceDay(R.ret))})` : ""}. Once ESPN lists him healthy, it takes no adds until he's off IR.`
@@ -2538,6 +2544,8 @@ function renderPlanner() {
       const mine = P.baseActs.filter((a) => a.R && a.R.id === R.id && a.k !== "stay").map(actTxt);
       return `<div class="sp-irr">${headshot(R.id, "sp-av")}<div><div><span class="name" data-id="${R.id}">${esc(R.n)}</span> ${R.p ? tags(R.p) : ""}</div>` +
         `<div class="sp-irw">${when}</div>` +
+        `<label class="sp-irout" title="ESPN's return dates are sometimes placeholders. Tick this if you think he won't play at all in ${two ? "either matchup" : "this matchup"}: the planner then treats him as out every day (ESPN still decides whether he blocks adds). Same box as his Plays box on My week.">` +
+        `<input type="checkbox" data-irout="${R.id}"${R.wkOut ? " checked" : ""}> Out ${two ? "for both matchups" : "all week"}<span class="dim"> — ignore ESPN's return date</span></label>` +
         (mine.length ? `<div class="sp-irw">With no adds, best: <b>${mine.join("; ")}</b> (no add used).</div>` : "") +
         `<div class="sp-irw">${ros}${R.tick ? " · ticked: the planner may drop him" : " · tick him under <b>Who can be dropped</b> to let the planner drop him"}</div></div></div>`;
     }).join("");
@@ -2698,6 +2706,8 @@ function bindPlanner() {
   });
   chips("sp-wk", "w", (v) => { SP.wk = v; SP.sel = null; SP.choice = {}; });
   $("sp-out").addEventListener("change", (e) => {
+    const io = e.target.closest("input[data-irout]");
+    if (io) { (SP.plan.PERS || []).forEach((PR) => setWeekMark(PR.id, +io.dataset.irout, !io.checked)); renderPlanner(); return; }
     const cb = e.target.closest("input[data-spd]");
     if (!cb) return;
     const s = new Set([...SP.plan.pick]);
@@ -2991,7 +3001,9 @@ const outKey = (wk) => `fnba.v2.week.${L.key}.${wk}`;
 function weekMarks(wk) {
   try { return JSON.parse(localStorage.getItem(outKey(wk)) || "{}") || {}; } catch (e) { return {}; }
 }
+let WM_V = 0;                                       // bumped on every My week choice (planner cache key)
 function setWeekMark(wk, id, plays) {
+  WM_V++;
   const m = weekMarks(wk);
   m[id] = plays ? 1 : 0;
   try { localStorage.setItem(outKey(wk), JSON.stringify(m)); } catch (e) { /* storage blocked */ }
@@ -3001,6 +3013,7 @@ function lineupMarks(wk, tid) {
   try { return JSON.parse(localStorage.getItem(luKey(wk, tid)) || "{}") || {}; } catch (e) { return {}; }
 }
 function setLineup(wk, tid, pid, d, start) {
+  WM_V++;
   const m = lineupMarks(wk, tid);
   (m[pid] = m[pid] || {})[d] = start ? 1 : 0;
   try { localStorage.setItem(luKey(wk, tid), JSON.stringify(m)); } catch (e) { /* storage blocked */ }
